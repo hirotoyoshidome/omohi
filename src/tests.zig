@@ -1,3 +1,4 @@
+// store tests
 const _store_hash = @import("store/object/hash.zig");
 const _store_atomic = @import("store/storage/atomic_write.zig");
 const _store_lock = @import("store/storage/lock.zig");
@@ -8,6 +9,9 @@ const _store_persistence_snapshot = @import("store/storage/persistence/snapshot.
 const _store_persistence_commit = @import("store/storage/persistence/commit.zig");
 const _store_persistence_head = @import("store/storage/persistence/head.zig");
 const _store_local_persistence = @import("store/local/persistence.zig");
+
+// ops tests
+const _ops_commit = @import("ops/commit_ops.zig");
 
 test "load modules" {
     _ = _store_hash;
@@ -20,4 +24,5 @@ test "load modules" {
     _ = _store_persistence_commit;
     _ = _store_persistence_head;
     _ = _store_local_persistence;
+    _ = _ops_commit;
 }
