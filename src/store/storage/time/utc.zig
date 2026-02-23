@@ -1,4 +1,5 @@
 const std = @import("std");
+const testing = std.testing;
 
 /// Errors for timestamp formatting.
 pub const TimestampError = error{
@@ -43,4 +44,9 @@ pub fn iso8601FromMillis(millis: i64) TimestampError![24]u8 {
     ) catch unreachable;
 
     return buffer;
+}
+
+test "iso8601FromMillis formats epoch start" {
+    const result = try iso8601FromMillis(0);
+    try testing.expectEqualStrings("1970-01-01T00:00:00.000Z", &result);
 }
