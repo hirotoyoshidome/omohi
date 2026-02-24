@@ -70,7 +70,8 @@ pub const PersistenceLayout = struct {
     /// Memory: borrowed
     /// Errors: none
     pub fn trackedTrashPath(self: PersistenceLayout) []const u8 {
-        return trashPath(self.tracked_path);
+        _ = self;
+        return trashPath("tracked");
     }
 
     /// Returns the relative path to the journal directory.
@@ -105,7 +106,8 @@ pub const PersistenceLayout = struct {
     /// Memory: borrowed
     /// Errors: none
     pub fn stagedEntriesTrashPath(self: PersistenceLayout) []const u8 {
-        return trashPath(self.staged.entries);
+        _ = self;
+        return trashPath("staged/entries");
     }
 
     /// Returns the relative path to staged objects.
@@ -119,7 +121,8 @@ pub const PersistenceLayout = struct {
     /// Memory: borrowed
     /// Errors: none
     pub fn stagedObjectsTrashPath(self: PersistenceLayout) []const u8 {
-        return trashPath(self.staged.objects);
+        _ = self;
+        return trashPath("staged/objects");
     }
 
     /// Returns the relative path to data root.
@@ -140,7 +143,8 @@ pub const PersistenceLayout = struct {
     /// Memory: borrowed
     /// Errors: none
     pub fn dataTagsTrashPath(self: PersistenceLayout) []const u8 {
-        return trashPath(self.data.tags);
+        _ = self;
+        return trashPath("data/tags");
     }
 
     /// Builds the prefixed path for commit tags data.
