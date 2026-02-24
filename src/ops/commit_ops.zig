@@ -45,8 +45,8 @@ test "commit writes immutable data and cleans staged" {
 
     const entry_text = try std.fmt.allocPrint(
         allocator,
-        "path=/notes/today.txt\ncontentHash={s}\n",
-        .{content_hash},
+        "path=/objects/{s}/{s}\ncontentHash={s}\n",
+        .{ content_hash[0..2], content_hash, content_hash },
     );
     defer allocator.free(entry_text);
 
@@ -88,7 +88,13 @@ test "commit writes immutable data and cleans staged" {
     defer allocator.free(snapshot_path);
     const snapshot_bytes = try omohi_dir.readFileAlloc(allocator, snapshot_path, 512);
     defer allocator.free(snapshot_bytes);
-    try std.testing.expect(std.mem.indexOf(u8, snapshot_bytes, "entry.0.path=/notes/today.txt") != null);
+    const expected_snapshot_path = try std.fmt.allocPrint(
+        allocator,
+        "entry.0.path=/objects/{s}/{s}",
+        .{ content_hash[0..2], content_hash },
+    );
+    defer allocator.free(expected_snapshot_path);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot_bytes, expected_snapshot_path) != null);
     const expected_hash_line = try std.fmt.allocPrint(allocator, "entry.0.contentHash={s}", .{content_hash});
     defer allocator.free(expected_hash_line);
     try std.testing.expect(std.mem.indexOf(u8, snapshot_bytes, expected_hash_line) != null);
