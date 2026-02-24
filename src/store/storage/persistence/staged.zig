@@ -2,11 +2,64 @@ const std = @import("std");
 
 const ContentEntry = @import("../../object/content_entry.zig").ContentEntry;
 const PersistenceLayout = @import("../../object/persistence_layout.zig").PersistenceLayout;
+const atomic_write = @import("../atomic_write.zig");
 const constrained_types = @import("../../object/constrained_types.zig");
 
 pub const EntryList = std.array_list.Managed(ContentEntry);
 
 const max_entry_file_size = 1024 * 1024;
+const max_staged_object_size = 64 * 1024 * 1024;
+
+pub fn writeStagedEntry(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    staged_file_id: []const u8,
+    entry: ContentEntry,
+) !void {
+    _ = try constrained_types.StagedFileId.init(staged_file_id);
+
+    const content = try formatStagedEntry(allocator, entry);
+    defer allocator.free(content);
+
+    const path = try std.fmt.allocPrint(
+        allocator,
+        "{s}/{s}",
+        .{ persistence.stagedEntriesPath(), staged_file_id },
+    );
+    defer allocator.free(path);
+
+    try atomic_write.atomicWrite(allocator, persistence.dir, path, content);
+}
+
+pub fn copyFileToStagedObject(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    source_dir: std.fs.Dir,
+    source_path: []const u8,
+    content_hash: []const u8,
+) !void {
+    _ = try constrained_types.ContentHash.init(content_hash);
+
+    var source_file = try source_dir.openFile(source_path, .{});
+    defer source_file.close();
+
+    const stat = try source_file.stat();
+    const file_size = std.math.cast(usize, stat.size) orelse return error.FileTooLarge;
+    const max_bytes = @max(file_size, @as(usize, 1));
+    if (file_size > max_staged_object_size) return error.FileTooLarge;
+
+    const bytes = try source_file.readToEndAlloc(allocator, max_bytes);
+    defer allocator.free(bytes);
+
+    const dest_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}/{s}",
+        .{ persistence.stagedObjectsPath(), content_hash },
+    );
+    defer allocator.free(dest_path);
+
+    try atomic_write.atomicWrite(allocator, persistence.dir, dest_path, bytes);
+}
 
 pub fn loadStagedEntries(
     allocator: std.mem.Allocator,
@@ -118,6 +171,14 @@ fn parseStagedEntry(allocator: std.mem.Allocator, bytes: []const u8) !ContentEnt
     };
 }
 
+fn formatStagedEntry(allocator: std.mem.Allocator, entry: ContentEntry) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        "path={s}\ncontentHash={s}\n",
+        .{ entry.path.asSlice(), entry.content_hash.asSlice() },
+    );
+}
+
 fn ensureParentDirs(dir: std.fs.Dir, path: []const u8) !void {
     if (std.fs.path.dirname(path)) |parent| {
         if (parent.len == 0) return;
@@ -166,6 +227,66 @@ test "loadStagedEntries parses entries and frees allocated paths" {
     defer allocator.free(expected_path);
     try std.testing.expectEqualStrings(expected_path, entries.items[0].path.asSlice());
     try std.testing.expectEqualSlices(u8, &hash, entries.items[0].content_hash.asSlice());
+}
+
+test "writeStagedEntry persists staged entry via atomic write format" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    var persistence = PersistenceLayout.init(omohi_dir);
+
+    var staged_id: [64]u8 = undefined;
+    @memset(&staged_id, '1');
+    var content_hash: [64]u8 = undefined;
+    @memset(&content_hash, '2');
+
+    const path_owned = try allocator.dupe(u8, "/objects/22/2222");
+    defer allocator.free(path_owned);
+    const entry = ContentEntry{
+        .path = try constrained_types.ContentPath.init(path_owned),
+        .content_hash = try constrained_types.ContentHash.init(&content_hash),
+    };
+
+    try writeStagedEntry(allocator, persistence, &staged_id, entry);
+
+    const file_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ persistence.stagedEntriesPath(), &staged_id });
+    defer allocator.free(file_path);
+    const stored = try omohi_dir.readFileAlloc(allocator, file_path, 1024);
+    defer allocator.free(stored);
+    try std.testing.expect(std.mem.indexOf(u8, stored, "path=/objects/22/2222") != null);
+    try std.testing.expect(std.mem.indexOf(u8, stored, "contentHash=2222222222222222222222222222222222222222222222222222222222222222") != null);
+}
+
+test "copyFileToStagedObject copies source file content into staged objects" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var src_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer src_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    var persistence = PersistenceLayout.init(omohi_dir);
+
+    var source = try src_dir.createFile("note.txt", .{});
+    try source.writeAll("hello-stage");
+    source.close();
+
+    var hash: [64]u8 = undefined;
+    @memset(&hash, '3');
+
+    try copyFileToStagedObject(allocator, persistence, src_dir, "note.txt", &hash);
+
+    const staged_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ persistence.stagedObjectsPath(), &hash });
+    defer allocator.free(staged_path);
+    const stored = try omohi_dir.readFileAlloc(allocator, staged_path, 1024);
+    defer allocator.free(stored);
+    try std.testing.expectEqualStrings("hello-stage", stored);
 }
 
 test "moveObjectsFromStage relocates staged object files" {
