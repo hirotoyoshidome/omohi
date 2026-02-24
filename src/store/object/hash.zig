@@ -3,6 +3,7 @@ const testing = std.testing;
 const sha2 = std.crypto.hash.sha2;
 
 const ContentEntry = @import("content_entry.zig").ContentEntry;
+const constrained_types = @import("constrained_types.zig");
 
 /// Calculates SHA256 and returns lowercase hex.
 pub fn sha256Hex(input: []const u8) [64]u8 {
@@ -22,15 +23,19 @@ pub fn snapshotIdFrom(entries: []const ContentEntry) [64]u8 {
     var hasher = sha2.Sha256.init(.{});
 
     for (entries) |entry| {
-        hasher.update(entry.path);
+        hasher.update(entry.path.asSlice());
         hasher.update("\n");
-        hasher.update(entry.content_hash[0..]);
+        hasher.update(entry.content_hash.asSlice());
         hasher.update("\n");
     }
 
     var digest: [sha2.Sha256.digest_length]u8 = undefined;
     hasher.final(&digest);
     return sha256Hex(digest[0..]);
+}
+
+pub fn snapshotIdVoFrom(entries: []const ContentEntry) constrained_types.SnapshotId {
+    return .{ .value = snapshotIdFrom(entries) };
 }
 
 fn encodeHexLower(dest: []u8, source: []const u8) void {
@@ -57,6 +62,10 @@ pub fn commitIdFrom(snapshotId: []const u8, message: []const u8) [64]u8 {
     return sha256Hex(digest[0..]);
 }
 
+pub fn commitIdVoFrom(snapshot_id: constrained_types.SnapshotId, message: []const u8) constrained_types.CommitId {
+    return .{ .value = commitIdFrom(snapshot_id.asSlice(), message) };
+}
+
 /// StagedFileId is derived from path + content hash.
 /// Memory: value return.
 pub fn stagedFileIdFrom(path: []const u8, contentHash: []const u8) [64]u8 {
@@ -69,6 +78,13 @@ pub fn stagedFileIdFrom(path: []const u8, contentHash: []const u8) [64]u8 {
     var digest: [sha2.Sha256.digest_length]u8 = undefined;
     hasher.final(&digest);
     return sha256Hex(digest[0..]);
+}
+
+pub fn stagedFileIdVoFrom(
+    path: constrained_types.TrackedFilePath,
+    content_hash: constrained_types.ContentHash,
+) constrained_types.StagedFileId {
+    return .{ .value = stagedFileIdFrom(path.asSlice(), content_hash.asSlice()) };
 }
 
 test "sha256Hex matches known digest" {
@@ -86,15 +102,21 @@ test "snapshotIdFrom concatenates entries deterministically" {
     @memset(&eff_hash, 'f');
 
     var entries = [_]ContentEntry{
-        .{ .path = "/a.txt", .content_hash = zero_hash },
-        .{ .path = "/b.txt", .content_hash = eff_hash },
+        .{
+            .path = try constrained_types.ContentPath.init("/objects/a.txt"),
+            .content_hash = try constrained_types.ContentHash.init(&zero_hash),
+        },
+        .{
+            .path = try constrained_types.ContentPath.init("/objects/b.txt"),
+            .content_hash = try constrained_types.ContentHash.init(&eff_hash),
+        },
     };
     const id = snapshotIdFrom(&entries);
 
     var hasher = sha2.Sha256.init(.{});
-    hasher.update("/a.txt\n");
+    hasher.update("/objects/a.txt\n");
     hasher.update(zero_hash[0..]);
-    hasher.update("\n/b.txt\n");
+    hasher.update("\n/objects/b.txt\n");
     hasher.update(eff_hash[0..]);
     hasher.update("\n");
     var digest: [sha2.Sha256.digest_length]u8 = undefined;
@@ -107,4 +129,13 @@ test "stagedFileIdFrom reflects path changes" {
     const hash_a = stagedFileIdFrom("/a.txt", "00");
     const hash_b = stagedFileIdFrom("/b.txt", "00");
     try testing.expect(!std.mem.eql(u8, &hash_a, &hash_b));
+}
+
+test "vo wrappers keep id generation inside store" {
+    const path = try constrained_types.TrackedFilePath.init("/docs/readme.md");
+    var hash_raw: [64]u8 = undefined;
+    @memset(&hash_raw, 'c');
+    const content_hash = try constrained_types.ContentHash.init(&hash_raw);
+    const staged_id = stagedFileIdVoFrom(path, content_hash);
+    try testing.expectEqual(@as(usize, 64), staged_id.asSlice().len);
 }

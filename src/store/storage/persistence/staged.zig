@@ -2,6 +2,7 @@ const std = @import("std");
 
 const ContentEntry = @import("../../object/content_entry.zig").ContentEntry;
 const PersistenceLayout = @import("../../object/persistence_layout.zig").PersistenceLayout;
+const constrained_types = @import("../../object/constrained_types.zig");
 
 pub const EntryList = std.array_list.Managed(ContentEntry);
 
@@ -28,7 +29,7 @@ pub fn loadStagedEntries(
         defer allocator.free(bytes);
 
         const entry = try parseStagedEntry(allocator, bytes);
-        errdefer allocator.free(@constCast(entry.path));
+        errdefer allocator.free(@constCast(entry.path.asSlice()));
         try entries.append(entry);
     }
 
@@ -36,7 +37,7 @@ pub fn loadStagedEntries(
 }
 
 pub fn freeEntries(allocator: std.mem.Allocator, entries: *EntryList) void {
-    for (entries.items) |entry| allocator.free(@constCast(entry.path));
+    for (entries.items) |entry| allocator.free(@constCast(entry.path.asSlice()));
     entries.deinit();
 }
 
@@ -104,33 +105,17 @@ fn parseStagedEntry(allocator: std.mem.Allocator, bytes: []const u8) !ContentEnt
     }
 
     const path = path_value orelse return error.InvalidStagedEntry;
-    try validateContentPath(path);
     const stored_path = try allocator.dupe(u8, path);
-
     errdefer allocator.free(stored_path);
+    const content_path = constrained_types.ContentPath.init(stored_path) catch return error.InvalidStagedEntry;
 
     const hash_str = hash_value orelse return error.InvalidStagedEntry;
-    var hash_buf: [64]u8 = undefined;
-    try parseContentHash(hash_str, &hash_buf);
+    const content_hash = constrained_types.ContentHash.init(hash_str) catch return error.InvalidStagedEntry;
 
     return ContentEntry{
-        .path = stored_path,
-        .content_hash = hash_buf,
+        .path = content_path,
+        .content_hash = content_hash,
     };
-}
-
-fn validateContentPath(path: []const u8) !void {
-    if (path.len == 0) return error.InvalidStagedEntry;
-    if (path[0] != '/') return error.InvalidStagedEntry;
-    if (std.mem.indexOf(u8, path, "..")) |_| return error.InvalidStagedEntry;
-}
-
-fn parseContentHash(source: []const u8, dest: *[64]u8) !void {
-    if (source.len != dest.len) return error.InvalidStagedEntry;
-    for (source, 0..) |ch, idx| {
-        if (!std.ascii.isHex(ch)) return error.InvalidStagedEntry;
-        dest[idx] = std.ascii.toLower(ch);
-    }
 }
 
 fn ensureParentDirs(dir: std.fs.Dir, path: []const u8) !void {
@@ -169,7 +154,7 @@ test "loadStagedEntries parses entries and frees allocated paths" {
     var hash: [64]u8 = undefined;
     @memset(&hash, 'a');
 
-    const entry_text = try std.fmt.allocPrint(allocator, "path=/docs/readme.txt\ncontentHash={s}\n", .{hash});
+    const entry_text = try std.fmt.allocPrint(allocator, "path=/objects/aa/{s}\ncontentHash={s}\n", .{ hash[0..], hash });
     defer allocator.free(entry_text);
 
     try writeStageEntryFile(allocator, omohi_dir, persistence.stagedEntriesPath(), "entry-1", entry_text);
@@ -177,8 +162,10 @@ test "loadStagedEntries parses entries and frees allocated paths" {
     var entries = try loadStagedEntries(allocator, persistence);
     defer freeEntries(allocator, &entries);
     try std.testing.expectEqual(@as(usize, 1), entries.items.len);
-    try std.testing.expectEqualStrings("/docs/readme.txt", entries.items[0].path);
-    try std.testing.expectEqualSlices(u8, &hash, &entries.items[0].content_hash);
+    const expected_path = try std.fmt.allocPrint(allocator, "/objects/aa/{s}", .{hash});
+    defer allocator.free(expected_path);
+    try std.testing.expectEqualStrings(expected_path, entries.items[0].path.asSlice());
+    try std.testing.expectEqualSlices(u8, &hash, entries.items[0].content_hash.asSlice());
 }
 
 test "moveObjectsFromStage relocates staged object files" {
