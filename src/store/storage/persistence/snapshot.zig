@@ -3,6 +3,7 @@ const std = @import("std");
 const ContentEntry = @import("../../object/content_entry.zig").ContentEntry;
 const PersistenceLayout = @import("../../object/persistence_layout.zig").PersistenceLayout;
 const atomic_write = @import("../atomic_write.zig");
+const constrained_types = @import("../../object/constrained_types.zig");
 
 pub fn writeSnapshot(
     allocator: std.mem.Allocator,
@@ -26,8 +27,8 @@ fn formatSnapshotEntries(allocator: std.mem.Allocator, entries: []const ContentE
     var writer = buffer.writer();
     try writer.print("entries.count={d}\n", .{entries.len});
     for (entries, 0..) |entry, idx| {
-        try writer.print("entry.{d}.path={s}\n", .{ idx, entry.path });
-        try writer.print("entry.{d}.contentHash={s}\n", .{ idx, entry.content_hash });
+        try writer.print("entry.{d}.path={s}\n", .{ idx, entry.path.asSlice() });
+        try writer.print("entry.{d}.contentHash={s}\n", .{ idx, entry.content_hash.asSlice() });
     }
 
     return buffer.toOwnedSlice();
@@ -47,24 +48,24 @@ test "writeSnapshot persists entries with predictable format" {
 
     var entries = [_]ContentEntry{
         .{
-            .path = try allocator.dupe(u8, "/file/a.txt"),
-            .content_hash = blk: {
+            .path = try constrained_types.ContentPath.init(try allocator.dupe(u8, "/objects/aa/file-a")),
+            .content_hash = try constrained_types.ContentHash.init(blk: {
                 var buf: [64]u8 = undefined;
                 @memset(&buf, '1');
-                break :blk buf;
-            },
+                break :blk &buf;
+            }),
         },
         .{
-            .path = try allocator.dupe(u8, "/file/b.txt"),
-            .content_hash = blk: {
+            .path = try constrained_types.ContentPath.init(try allocator.dupe(u8, "/objects/bb/file-b")),
+            .content_hash = try constrained_types.ContentHash.init(blk: {
                 var buf: [64]u8 = undefined;
                 @memset(&buf, '2');
-                break :blk buf;
-            },
+                break :blk &buf;
+            }),
         },
     };
-    defer allocator.free(@constCast(entries[0].path));
-    defer allocator.free(@constCast(entries[1].path));
+    defer allocator.free(@constCast(entries[0].path.asSlice()));
+    defer allocator.free(@constCast(entries[1].path.asSlice()));
 
     try writeSnapshot(allocator, persistence, &snapshot_id, &entries);
 
@@ -75,6 +76,6 @@ test "writeSnapshot persists entries with predictable format" {
     defer allocator.free(content);
 
     try std.testing.expect(std.mem.indexOf(u8, content, "entries.count=2") != null);
-    try std.testing.expect(std.mem.indexOf(u8, content, "entry.1.path=/file/b.txt") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "entry.1.path=/objects/bb/file-b") != null);
     try std.testing.expect(std.mem.indexOf(u8, content, "entry.0.contentHash=1111111111111111111111111111111111111111111111111111111111111111") != null);
 }
