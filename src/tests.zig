@@ -16,6 +16,7 @@ const _store_persistence_commit_tags = @import("store/storage/persistence/commit
 const _store_persistence_head = @import("store/storage/persistence/head.zig");
 const _store_persistence_tags = @import("store/storage/persistence/tags.zig");
 const _store_persistence_trash = @import("store/storage/persistence/trash.zig");
+const _store_persistence_version = @import("store/storage/persistence/version.zig");
 // local persistence
 const _store_local_persistence = @import("store/local/persistence.zig");
 
@@ -39,6 +40,7 @@ test "load modules" {
     _ = _store_persistence_head;
     _ = _store_persistence_tags;
     _ = _store_persistence_trash;
+    _ = _store_persistence_version;
     _ = _store_local_persistence;
     _ = _ops_add;
     _ = _ops_commit;
