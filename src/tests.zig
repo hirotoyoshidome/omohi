@@ -20,6 +20,7 @@ const _store_persistence_trash = @import("store/storage/persistence/trash.zig");
 const _store_local_persistence = @import("store/local/persistence.zig");
 
 // ops tests
+const _ops_add = @import("ops/add_ops.zig");
 const _ops_commit = @import("ops/commit_ops.zig");
 
 test "load modules" {
@@ -38,5 +39,6 @@ test "load modules" {
     _ = _store_persistence_tags;
     _ = _store_persistence_trash;
     _ = _store_local_persistence;
+    _ = _ops_add;
     _ = _ops_commit;
 }
