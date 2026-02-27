@@ -6,6 +6,7 @@ const tags_mod = @import("../storage/persistence/tags.zig");
 const commit_tags_mod = @import("../storage/persistence/commit_tags.zig");
 const trash_mod = @import("../storage/persistence/trash.zig");
 const head_mod = @import("../storage/persistence/head.zig");
+const version_mod = @import("../storage/persistence/version.zig");
 const layout = @import("../object/persistence_layout.zig");
 
 pub const PersistenceLayout = layout.PersistenceLayout;
@@ -45,3 +46,7 @@ pub const moveTagToTrash = trash_mod.moveTagToTrash;
 pub const moveCommitTagsToTrash = trash_mod.moveCommitTagsToTrash;
 
 pub const writeHead = head_mod.writeHead;
+
+pub const writeVersion = version_mod.writeVersion;
+pub const readVersion = version_mod.readVersion;
+pub const ensureVersion = version_mod.ensureVersion;
