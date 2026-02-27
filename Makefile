@@ -1,10 +1,3 @@
-# Makefile for Zig projects
-# Usage:
-#   make test
-#   make fmt
-#   make lint
-#   make check   (fmt-check + lint + test)
-
 ZIG ?= zig
 BUILD ?= $(ZIG) build
 FMT ?= $(ZIG) fmt
@@ -20,13 +13,13 @@ help:
 	@echo "  make test       - run tests (zig build test)"
 	@echo "  make fmt        - format source files (zig fmt .)"
 	@echo "  make fmt-check  - check formatting (zig fmt --check .)"
-	# @echo "  make lint       - lightweight lint (fmt-check + compile)"
-	# @echo "  make build      - compile (zig build)"
-	# @echo "  make check      - fmt-check + lint + test"
-	# @echo "  make clean      - clean build artifacts (zig build clean)"
+# 	@echo "  make lint       - lightweight lint (fmt-check + compile)"
+# 	@echo "  make build      - compile (zig build)"
+# 	@echo "  make check      - fmt-check + lint + test"
+	@echo "  make clean      - clean build artifacts"
 
 test:
-	$(ZIG) test src/tests.zig -Doptimize=$(OPTIMIZE)
+	$(BUILD) test -Doptimize=$(OPTIMIZE)
 
 fmt:
 	$(FMT) .
@@ -43,5 +36,5 @@ fmt-check:
 
 # check: fmt-check lint test
 
-# clean:
-# 	$(BUILD) clean
+clean:
+	rm -rf zig-cache .zig-cache zig-out
