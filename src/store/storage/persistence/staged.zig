@@ -124,6 +124,7 @@ pub fn moveObjectsFromStage(
             error.FileNotFound => return error.StagedObjectMissing,
             else => return err,
         };
+        try syncParentDir(persistence.dir, dest_path);
     }
 }
 
@@ -183,6 +184,28 @@ fn ensureParentDirs(dir: std.fs.Dir, path: []const u8) !void {
     if (std.fs.path.dirname(path)) |parent| {
         if (parent.len == 0) return;
         try dir.makePath(parent);
+    }
+}
+
+fn syncParentDir(dir: std.fs.Dir, path: []const u8) !void {
+    if (std.fs.path.dirname(path)) |parent| {
+        if (parent.len == 0) {
+            try syncDir(dir);
+            return;
+        }
+        var parent_dir = try dir.openDir(parent, .{});
+        defer parent_dir.close();
+        try syncDir(parent_dir);
+    } else {
+        try syncDir(dir);
+    }
+}
+
+fn syncDir(dir: std.fs.Dir) !void {
+    const rc = std.posix.system.fsync(dir.fd);
+    switch (std.posix.errno(rc)) {
+        .SUCCESS, .BADF, .INVAL, .ROFS => return,
+        else => |err| return std.posix.unexpectedErrno(err),
     }
 }
 
