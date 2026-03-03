@@ -18,5 +18,11 @@ pub fn exitCodeFor(err: anyerror) u8 {
         return exit_code.use_case_error;
     }
 
+    if (err == error.VersionMismatch) return exit_code.system_error;
+
     return exit_code.system_error;
+}
+
+test "VersionMismatch maps to system error exit code" {
+    try std.testing.expectEqual(exit_code.system_error, exitCodeFor(error.VersionMismatch));
 }
