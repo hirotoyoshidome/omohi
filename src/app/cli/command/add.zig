@@ -4,7 +4,7 @@ const command_types = @import("../runtime/types.zig");
 const environment = @import("../environment.zig");
 const path_resolver = @import("../path_resolver.zig");
 const presenter = @import("../presenter/output.zig");
-const exit_code = @import("../exit_code.zig");
+const exit_code = @import("../error/exit_code.zig");
 const add_ops = @import("../../../ops/add_ops.zig");
 
 pub fn run(allocator: std.mem.Allocator, args: parser_types.AddArgs) !command_types.CommandResult {
