@@ -30,6 +30,11 @@ const _ops_find = @import("ops/find_ops.zig");
 const _ops_show = @import("ops/show_ops.zig");
 const _ops_tag = @import("ops/tag_ops.zig");
 
+// app/cli tests
+const _app_cli_run = @import("app/cli/run.zig");
+const _app_cli_parser = @import("app/cli/parser/parse.zig");
+const _app_cli_dispatch = @import("app/cli/runtime/dispatch.zig");
+
 test "load modules" {
     _ = _store_persistence_layout;
     _ = _store_constrained_types;
@@ -55,4 +60,7 @@ test "load modules" {
     _ = _ops_find;
     _ = _ops_show;
     _ = _ops_tag;
+    _ = _app_cli_run;
+    _ = _app_cli_parser;
+    _ = _app_cli_dispatch;
 }
