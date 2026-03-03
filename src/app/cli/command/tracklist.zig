@@ -1,5 +1,5 @@
 const std = @import("std");
-const command_types = @import("types.zig");
+const command_types = @import("../runtime/types.zig");
 const environment = @import("../environment.zig");
 const presenter = @import("../presenter/output.zig");
 const exit_code = @import("../exit_code.zig");

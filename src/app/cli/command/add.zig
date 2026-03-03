@@ -1,6 +1,6 @@
 const std = @import("std");
 const parser_types = @import("../parser/types.zig");
-const command_types = @import("types.zig");
+const command_types = @import("../runtime/types.zig");
 const environment = @import("../environment.zig");
 const path_resolver = @import("../path_resolver.zig");
 const presenter = @import("../presenter/output.zig");
