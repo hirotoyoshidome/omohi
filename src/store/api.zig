@@ -306,7 +306,7 @@ pub fn show(
     const parsed = try readCommitFile(allocator, persistence, commit_id);
     errdefer freeParsedCommit(allocator, &parsed);
 
-    const entries = try readSnapshotEntries(allocator, persistence, parsed.snapshot_id.asSlice());
+    var entries = try readSnapshotEntries(allocator, persistence, parsed.snapshot_id.asSlice());
     errdefer freeContentEntryList(allocator, &entries);
 
     var tags = TagList.init(allocator);
@@ -395,7 +395,10 @@ pub fn tagAdd(
         error.FileNotFound => null,
         else => return err,
     };
-    defer if (existing) |*record| record.deinit(allocator);
+    defer if (existing) |record| {
+        var mutable = record;
+        mutable.deinit(allocator);
+    };
 
     if (existing) |record| {
         for (record.tags.items) |tag| try merged.append(try allocator.dupe(u8, tag));
@@ -492,7 +495,7 @@ pub fn commit(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     message: []const u8,
-) !void {
+) !constrained_types.CommitId {
     try lock.acquireLock(omohi_dir);
     defer lock.releaseLock(omohi_dir);
 
@@ -514,6 +517,7 @@ pub fn commit(
     try persistence_store.moveObjectsFromStage(allocator, persistence);
     try persistence_store.writeHead(allocator, persistence, commit_id[0..]);
     try persistence_store.resetStaged(persistence);
+    return try constrained_types.CommitId.init(commit_id[0..]);
 }
 
 fn lessThanPath(_: void, lhs: ContentEntry, rhs: ContentEntry) bool {

@@ -110,7 +110,7 @@ test "commit can read staged data created by add" {
     source_file.close();
 
     try add(allocator, omohi_dir, source_dir, source_path);
-    try commit_ops.commit(allocator, omohi_dir, "via add");
+    _ = try commit_ops.commit(allocator, omohi_dir, "via add");
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
