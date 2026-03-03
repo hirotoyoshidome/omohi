@@ -19,7 +19,7 @@ help:
 	@echo "  make clean      - clean build artifacts"
 
 test:
-	$(BUILD) test -Doptimize=$(OPTIMIZE)
+	$(BUILD) test -Doptimize=$(OPTIMIZE) --summary all
 
 fmt:
 	$(FMT) .
