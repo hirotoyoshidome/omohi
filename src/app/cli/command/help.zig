@@ -1,6 +1,6 @@
 const std = @import("std");
 const command_types = @import("../runtime/types.zig");
-const exit_code = @import("../exit_code.zig");
+const exit_code = @import("../error/exit_code.zig");
 const catalog = @import("help/catalog.zig");
 
 pub fn run(allocator: std.mem.Allocator) !command_types.CommandResult {

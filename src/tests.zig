@@ -29,9 +29,12 @@ const _ops_status = @import("ops/status_ops.zig");
 const _ops_find = @import("ops/find_ops.zig");
 const _ops_show = @import("ops/show_ops.zig");
 const _ops_tag = @import("ops/tag_ops.zig");
+const _ops_store_version_guard = @import("ops/preflight/store_version_guard.zig");
 
 // app/cli tests
 const _app_cli_run = @import("app/cli/run.zig");
+const _app_cli_error_map = @import("app/cli/error/error_map.zig");
+const _app_cli_error_message = @import("app/cli/error/error_message.zig");
 const _app_cli_parser = @import("app/cli/parser/parse.zig");
 const _app_cli_dispatch = @import("app/cli/runtime/dispatch.zig");
 
@@ -60,7 +63,10 @@ test "load modules" {
     _ = _ops_find;
     _ = _ops_show;
     _ = _ops_tag;
+    _ = _ops_store_version_guard;
     _ = _app_cli_run;
+    _ = _app_cli_error_map;
+    _ = _app_cli_error_message;
     _ = _app_cli_parser;
     _ = _app_cli_dispatch;
 }
