@@ -2,6 +2,7 @@ const std = @import("std");
 
 const store_api = @import("../store/api.zig");
 const local = @import("../store/local/persistence.zig");
+const version_guard = @import("./preflight/store_version_guard.zig");
 
 /// Registers an absolute file path as tracked.
 pub fn track(
@@ -9,6 +10,7 @@ pub fn track(
     omohi_dir: std.fs.Dir,
     absolute_path: []const u8,
 ) ![32]u8 {
+    try version_guard.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
     const id = try store_api.track(allocator, omohi_dir, absolute_path);
     return id.value;
 }
@@ -19,6 +21,7 @@ pub fn untrack(
     omohi_dir: std.fs.Dir,
     tracked_file_id: []const u8,
 ) !void {
+    try version_guard.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
     try store_api.untrack(allocator, omohi_dir, tracked_file_id);
 }
 
@@ -27,6 +30,7 @@ pub fn tracklist(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
 ) !local.TrackedList {
+    try version_guard.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
     return store_api.tracklist(allocator, omohi_dir);
 }
 

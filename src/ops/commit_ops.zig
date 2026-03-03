@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const store_api = @import("../store/api.zig");
+const version_guard = @import("./preflight/store_version_guard.zig");
 
 /// Executes the durable commit transaction: lock -> persist data -> HEAD -> cleanup.
 pub fn commit(
@@ -8,6 +9,7 @@ pub fn commit(
     omohi_dir: std.fs.Dir,
     message: []const u8,
 ) ![64]u8 {
+    try version_guard.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
     const id = try store_api.commit(allocator, omohi_dir, message);
     return id.value;
 }
@@ -37,6 +39,7 @@ test "commit writes immutable data and cleans staged" {
     const allocator = std.testing.allocator;
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
+    try version_guard.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
 
     try omohi_dir.makePath("staged/entries");
     try omohi_dir.makePath("staged/objects");
@@ -118,6 +121,7 @@ test "commit without staged entries returns NothingToCommit and removes lock" {
 
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
+    try version_guard.ensureStoreVersion(std.testing.allocator, omohi_dir, .{ .allow_bootstrap = true });
     try omohi_dir.makePath("staged/entries");
     try omohi_dir.makePath("staged/objects");
 
