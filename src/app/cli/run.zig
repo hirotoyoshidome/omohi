@@ -2,19 +2,20 @@ const std = @import("std");
 const parser = @import("parser/parse.zig");
 const parser_types = @import("parser/types.zig");
 const dispatch = @import("runtime/dispatch.zig");
-const exit_code = @import("exit_code.zig");
-const error_map = @import("error_map.zig");
+const exit_code = @import("error/exit_code.zig");
+const error_map = @import("error/error_map.zig");
+const error_message = @import("error/error_message.zig");
 
 pub fn run(allocator: std.mem.Allocator, argv: []const []const u8) u8 {
     var parsed = parser.parseArgs(allocator, argv) catch |err| {
-        writeErrWithPrefix("cli parse error: ", @errorName(err));
+        writeErrLine(error_message.forParseError(err));
         return exit_code.usage_error;
     };
     defer parser_types.deinitParsedRequest(allocator, &parsed);
 
     var result = dispatch.dispatch(allocator, parsed) catch |err| {
         const mapped = error_map.exitCodeFor(err);
-        writeErrLine(@errorName(err));
+        writeErrLine(error_message.forRuntimeError(err));
         return mapped;
     };
     defer result.deinit(allocator);
@@ -39,16 +40,6 @@ fn writeErr(text: []const u8) void {
 fn writeErrLine(text: []const u8) void {
     writeErr(text);
     writeErr("\n");
-}
-
-fn writeErrWithPrefix(prefix: []const u8, value: []const u8) void {
-    var buf: [256]u8 = undefined;
-    const line = std.fmt.bufPrint(&buf, "{s}{s}\n", .{ prefix, value }) catch {
-        writeErr(prefix);
-        writeErrLine(value);
-        return;
-    };
-    writeErr(line);
 }
 
 pub fn runFromProcessArgs(allocator: std.mem.Allocator) u8 {
