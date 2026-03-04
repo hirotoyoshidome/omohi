@@ -2,7 +2,6 @@ const std = @import("std");
 
 const add_store = @import("../store/api.zig");
 const commit_ops = @import("./commit_ops.zig");
-const version_guard = @import("./preflight/store_version_guard.zig");
 
 /// Stages a file by writing staged entry/object data.
 pub fn add(
@@ -11,7 +10,7 @@ pub fn add(
     source_dir: std.fs.Dir,
     source_path: []const u8,
 ) !void {
-    try version_guard.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
+    try add_store.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
     try add_store.add(allocator, omohi_dir, source_dir, source_path);
 }
 
@@ -57,7 +56,7 @@ test "add writes staged entry and staged object using content hash" {
     defer source_dir.close();
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
-    try version_guard.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
+    try add_store.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
 
     const source_path = "memo.txt";
     const payload = "hello add";
@@ -105,7 +104,7 @@ test "commit can read staged data created by add" {
     defer source_dir.close();
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
-    try version_guard.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
+    try add_store.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
 
     const source_path = "notes.txt";
     const payload = "flow-check";
