@@ -60,8 +60,8 @@ pub fn add(
     };
     const staged_file_id = hash.stagedFileIdFrom(source_path, &content_hash);
 
-    try persistence_store.writeStagedEntry(allocator, persistence, &staged_file_id, entry);
-    try persistence_store.copyFileToStagedObject(allocator, persistence, source_dir, source_path, &content_hash);
+    try persistence_store.write_staged_entry(allocator, persistence, &staged_file_id, entry);
+    try persistence_store.copy_file_to_staged_object(allocator, persistence, source_dir, source_path, &content_hash);
 }
 
 /// Removes a staged entry/object pair by file path.
@@ -80,17 +80,17 @@ pub fn rm(
     const content_hash = try contentHashFromFile(allocator, source_dir, source_path);
     const staged_file_id = hash.stagedFileIdFrom(source_path, &content_hash);
 
-    persistence_store.moveStagedEntryToTrash(allocator, persistence, &staged_file_id) catch |err| switch (err) {
+    persistence_store.move_staged_entry_to_trash(allocator, persistence, &staged_file_id) catch |err| switch (err) {
         error.FileNotFound => return error.NotFound,
         else => return err,
     };
 
     var has_same_hash = false;
-    var entries = persistence_store.loadStagedEntries(allocator, persistence) catch |err| switch (err) {
+    var entries = persistence_store.load_staged_entries(allocator, persistence) catch |err| switch (err) {
         error.MissingStagedEntries => null,
         else => return err,
     };
-    defer if (entries) |*list| persistence_store.freeEntries(allocator, list);
+    defer if (entries) |*list| persistence_store.free_entries(allocator, list);
 
     if (entries) |*list| {
         for (list.items) |entry| {
@@ -102,7 +102,7 @@ pub fn rm(
     }
 
     if (!has_same_hash) {
-        persistence_store.moveStagedObjectToTrash(allocator, persistence, &content_hash) catch |err| switch (err) {
+        persistence_store.move_staged_object_to_trash(allocator, persistence, &content_hash) catch |err| switch (err) {
             error.FileNotFound => {},
             else => return err,
         };
@@ -127,7 +127,7 @@ pub fn track(
     _ = try constrained_types.TrackedFilePath.init(absolute_path);
 
     var existing = try loadTrackedOrEmpty(allocator, persistence);
-    defer if (existing) |*list| persistence_store.freeTrackedList(allocator, list);
+    defer if (existing) |*list| persistence_store.free_tracked_list(allocator, list);
 
     if (existing) |*list| {
         for (list.items) |entry| {
@@ -136,7 +136,7 @@ pub fn track(
     }
 
     const tracked_id = constrained_types.TrackedFileId.generate();
-    try persistence_store.writeTracked(allocator, persistence, tracked_id.asSlice(), absolute_path);
+    try persistence_store.write_tracked(allocator, persistence, tracked_id.asSlice(), absolute_path);
     return tracked_id;
 }
 
@@ -167,7 +167,7 @@ pub fn untrack(
     };
     file.close();
 
-    try persistence_store.deleteTracked(allocator, persistence, id.asSlice());
+    try persistence_store.delete_tracked(allocator, persistence, id.asSlice());
 }
 
 /// Loads current tracked entries from tracked/.
@@ -181,7 +181,7 @@ pub fn tracklist(
 }
 
 pub fn freeTracklist(allocator: std.mem.Allocator, list: *persistence_store.TrackedList) void {
-    persistence_store.freeTrackedList(allocator, list);
+    persistence_store.free_tracked_list(allocator, list);
 }
 
 /// Computes status for tracked files.
@@ -312,7 +312,7 @@ pub fn show(
     var tags = TagList.init(allocator);
     errdefer freeTagList(allocator, &tags);
 
-    const commit_tags = persistence_store.readCommitTags(allocator, persistence, parsed.commit_id.asSlice()) catch |err| switch (err) {
+    const commit_tags = persistence_store.read_commit_tags(allocator, persistence, parsed.commit_id.asSlice()) catch |err| switch (err) {
         error.FileNotFound => null,
         else => return err,
     };
@@ -353,7 +353,7 @@ pub fn tagList(
     var tags = TagList.init(allocator);
     errdefer freeTagList(allocator, &tags);
 
-    const record = persistence_store.readCommitTags(allocator, persistence, commit_id) catch |err| switch (err) {
+    const record = persistence_store.read_commit_tags(allocator, persistence, commit_id) catch |err| switch (err) {
         error.FileNotFound => return tags,
         else => return err,
     };
@@ -391,7 +391,7 @@ pub fn tagAdd(
     var merged = TagList.init(allocator);
     defer freeTagList(allocator, &merged);
 
-    const existing = persistence_store.readCommitTags(allocator, persistence, id.asSlice()) catch |err| switch (err) {
+    const existing = persistence_store.read_commit_tags(allocator, persistence, id.asSlice()) catch |err| switch (err) {
         error.FileNotFound => null,
         else => return err,
     };
@@ -411,14 +411,14 @@ pub fn tagAdd(
         }
 
         const now = try utc.nowIso8601Utc();
-        const maybe_created = persistence_store.readTagCreatedAt(allocator, persistence, tag_name) catch |err| switch (err) {
+        const maybe_created = persistence_store.read_tag_created_at(allocator, persistence, tag_name) catch |err| switch (err) {
             error.FileNotFound => null,
             else => return err,
         };
         if (maybe_created) |created| {
             allocator.free(created);
         } else {
-            try persistence_store.writeTag(allocator, persistence, tag_name, now[0..]);
+            try persistence_store.write_tag(allocator, persistence, tag_name, now[0..]);
         }
     }
 
@@ -429,7 +429,7 @@ pub fn tagAdd(
     defer allocator.free(tag_views);
     for (merged.items, 0..) |tag, idx| tag_views[idx] = tag;
 
-    try persistence_store.writeCommitTags(
+    try persistence_store.write_commit_tags(
         allocator,
         persistence,
         id.asSlice(),
@@ -453,7 +453,7 @@ pub fn tagRemove(
     const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
     try ensureCommitExists(allocator, persistence, id.asSlice());
 
-    var record = persistence_store.readCommitTags(allocator, persistence, id.asSlice()) catch |err| switch (err) {
+    var record = persistence_store.read_commit_tags(allocator, persistence, id.asSlice()) catch |err| switch (err) {
         error.FileNotFound => return error.NotFound,
         else => return err,
     };
@@ -469,7 +469,7 @@ pub fn tagRemove(
     }
 
     if (remaining.items.len == 0) {
-        try persistence_store.deleteCommitTags(allocator, persistence, id.asSlice());
+        try persistence_store.delete_commit_tags(allocator, persistence, id.asSlice());
         return;
     }
 
@@ -478,7 +478,7 @@ pub fn tagRemove(
     defer allocator.free(tag_views);
     for (remaining.items, 0..) |tag, idx| tag_views[idx] = tag;
 
-    try persistence_store.writeCommitTags(
+    try persistence_store.write_commit_tags(
         allocator,
         persistence,
         id.asSlice(),
@@ -501,27 +501,27 @@ pub fn commit(
 
     const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
 
-    var entries = try persistence_store.loadStagedEntries(allocator, persistence);
-    defer persistence_store.freeEntries(allocator, &entries);
+    var entries = try persistence_store.load_staged_entries(allocator, persistence);
+    defer persistence_store.free_entries(allocator, &entries);
 
     if (entries.items.len == 0) return error.NothingToCommit;
 
-    std.mem.sort(ContentEntry, entries.items, {}, lessThanPath);
+    std.mem.sort(ContentEntry, entries.items, {}, isPathLessThan);
 
     const snapshot_id = hash.snapshotIdFrom(entries.items);
     const commit_id = hash.commitIdFrom(snapshot_id[0..], message);
 
-    try persistence_store.writeSnapshot(allocator, persistence, snapshot_id[0..], entries.items);
-    try persistence_store.writeCommit(allocator, persistence, commit_id[0..], snapshot_id[0..], message);
+    try persistence_store.write_snapshot(allocator, persistence, snapshot_id[0..], entries.items);
+    try persistence_store.write_commit(allocator, persistence, commit_id[0..], snapshot_id[0..], message);
 
-    try persistence_store.moveObjectsFromStage(allocator, persistence);
-    try persistence_store.writeHead(allocator, persistence, commit_id[0..]);
-    try persistence_store.resetStaged(persistence);
+    try persistence_store.move_objects_from_stage(allocator, persistence);
+    try persistence_store.write_head(allocator, persistence, commit_id[0..]);
+    try persistence_store.reset_staged(persistence);
     return try constrained_types.CommitId.init(commit_id[0..]);
 }
 
-fn lessThanPath(_: void, lhs: ContentEntry, rhs: ContentEntry) bool {
-    return ContentEntry.lessThanByPath(lhs, rhs);
+fn isPathLessThan(_: void, lhs: ContentEntry, rhs: ContentEntry) bool {
+    return ContentEntry.isPathLessThan(lhs, rhs);
 }
 
 const ParsedCommit = struct {
@@ -648,11 +648,11 @@ fn listCommitIds(
         }
     }
 
-    std.mem.sort([64]u8, list.items, {}, lessThanCommitIdDesc);
+    std.mem.sort([64]u8, list.items, {}, isCommitIdDescLessThan);
     return list;
 }
 
-fn lessThanCommitIdDesc(_: void, lhs: [64]u8, rhs: [64]u8) bool {
+fn isCommitIdDescLessThan(_: void, lhs: [64]u8, rhs: [64]u8) bool {
     return std.mem.order(u8, &lhs, &rhs) == .gt;
 }
 
@@ -675,7 +675,7 @@ fn commitHasTag(
     commit_id: []const u8,
     tag_name: []const u8,
 ) !bool {
-    const record = persistence_store.readCommitTags(allocator, persistence, commit_id) catch |err| switch (err) {
+    const record = persistence_store.read_commit_tags(allocator, persistence, commit_id) catch |err| switch (err) {
         error.FileNotFound => return false,
         else => return err,
     };
@@ -772,7 +772,7 @@ fn loadTrackedOrEmpty(
     allocator: std.mem.Allocator,
     persistence: persistence_store.PersistenceLayout,
 ) !?persistence_store.TrackedList {
-    return persistence_store.loadTracked(allocator, persistence) catch |err| switch (err) {
+    return persistence_store.load_tracked(allocator, persistence) catch |err| switch (err) {
         error.MissingTracked => null,
         else => return err,
     };

@@ -13,40 +13,40 @@ pub const PersistenceLayout = layout.PersistenceLayout;
 
 pub const TrackedEntry = tracked_mod.TrackedEntry;
 pub const TrackedList = tracked_mod.TrackedList;
-pub const writeTracked = tracked_mod.writeTracked;
-pub const deleteTracked = tracked_mod.deleteTracked;
-pub const loadTracked = tracked_mod.loadTracked;
-pub const freeTrackedList = tracked_mod.freeTrackedList;
+pub const write_tracked = tracked_mod.writeTracked;
+pub const delete_tracked = tracked_mod.deleteTracked;
+pub const load_tracked = tracked_mod.loadTracked;
+pub const free_tracked_list = tracked_mod.freeTrackedList;
 
 pub const EntryList = staged_mod.EntryList;
-pub const loadStagedEntries = staged_mod.loadStagedEntries;
-pub const freeEntries = staged_mod.freeEntries;
-pub const writeStagedEntry = staged_mod.writeStagedEntry;
-pub const copyFileToStagedObject = staged_mod.copyFileToStagedObject;
-pub const moveObjectsFromStage = staged_mod.moveObjectsFromStage;
-pub const resetStaged = staged_mod.resetStaged;
+pub const load_staged_entries = staged_mod.loadStagedEntries;
+pub const free_entries = staged_mod.freeEntries;
+pub const write_staged_entry = staged_mod.writeStagedEntry;
+pub const copy_file_to_staged_object = staged_mod.copyFileToStagedObject;
+pub const move_objects_from_stage = staged_mod.moveObjectsFromStage;
+pub const reset_staged = staged_mod.resetStaged;
 
-pub const writeSnapshot = snapshot_mod.writeSnapshot;
+pub const write_snapshot = snapshot_mod.writeSnapshot;
 
-pub const writeCommit = commit_mod.writeCommit;
+pub const write_commit = commit_mod.writeCommit;
 
-pub const writeTag = tags_mod.writeTag;
-pub const readTagCreatedAt = tags_mod.readTagCreatedAt;
-pub const deleteTag = tags_mod.deleteTag;
+pub const write_tag = tags_mod.writeTag;
+pub const read_tag_created_at = tags_mod.readTagCreatedAt;
+pub const delete_tag = tags_mod.deleteTag;
 
 pub const CommitTagsRecord = commit_tags_mod.CommitTagsRecord;
-pub const writeCommitTags = commit_tags_mod.writeCommitTags;
-pub const readCommitTags = commit_tags_mod.readCommitTags;
-pub const deleteCommitTags = commit_tags_mod.deleteCommitTags;
+pub const write_commit_tags = commit_tags_mod.writeCommitTags;
+pub const read_commit_tags = commit_tags_mod.readCommitTags;
+pub const delete_commit_tags = commit_tags_mod.deleteCommitTags;
 
-pub const moveTrackedToTrash = trash_mod.moveTrackedToTrash;
-pub const moveStagedEntryToTrash = trash_mod.moveStagedEntryToTrash;
-pub const moveStagedObjectToTrash = trash_mod.moveStagedObjectToTrash;
-pub const moveTagToTrash = trash_mod.moveTagToTrash;
-pub const moveCommitTagsToTrash = trash_mod.moveCommitTagsToTrash;
+pub const move_tracked_to_trash = trash_mod.moveTrackedToTrash;
+pub const move_staged_entry_to_trash = trash_mod.moveStagedEntryToTrash;
+pub const move_staged_object_to_trash = trash_mod.moveStagedObjectToTrash;
+pub const move_tag_to_trash = trash_mod.moveTagToTrash;
+pub const move_commit_tags_to_trash = trash_mod.moveCommitTagsToTrash;
 
-pub const writeHead = head_mod.writeHead;
+pub const write_head = head_mod.writeHead;
 
-pub const writeVersion = version_mod.writeVersion;
-pub const readVersion = version_mod.readVersion;
-pub const ensureVersion = version_mod.ensureVersion;
+pub const write_version = version_mod.writeVersion;
+pub const read_version = version_mod.readVersion;
+pub const ensure_version = version_mod.ensureVersion;
