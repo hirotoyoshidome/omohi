@@ -1,9 +1,9 @@
 const std = @import("std");
 
-const atomic_write = @import("../atomic_write.zig");
+const atomic_write = @import("../storage/atomic_write.zig");
 const trash = @import("./trash.zig");
-const PersistenceLayout = @import("../../object/persistence_layout.zig").PersistenceLayout;
-const constrained_types = @import("../../object/constrained_types.zig");
+const PersistenceLayout = @import("../object/persistence_layout.zig").PersistenceLayout;
+const constrained_types = @import("../object/constrained_types.zig");
 
 pub const TagStringList = std.array_list.Managed([]u8);
 

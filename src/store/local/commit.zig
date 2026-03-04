@@ -1,8 +1,8 @@
 const std = @import("std");
 
-const atomic_write = @import("../atomic_write.zig");
-const PersistenceLayout = @import("../../object/persistence_layout.zig").PersistenceLayout;
-const utc = @import("../time/utc.zig");
+const atomic_write = @import("../storage/atomic_write.zig");
+const PersistenceLayout = @import("../object/persistence_layout.zig").PersistenceLayout;
+const utc = @import("../storage/time/utc.zig");
 
 pub fn writeCommit(
     allocator: std.mem.Allocator,

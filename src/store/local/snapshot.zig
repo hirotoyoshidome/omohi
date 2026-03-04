@@ -1,9 +1,9 @@
 const std = @import("std");
 
-const ContentEntry = @import("../../object/content_entry.zig").ContentEntry;
-const PersistenceLayout = @import("../../object/persistence_layout.zig").PersistenceLayout;
-const atomic_write = @import("../atomic_write.zig");
-const constrained_types = @import("../../object/constrained_types.zig");
+const ContentEntry = @import("../object/content_entry.zig").ContentEntry;
+const PersistenceLayout = @import("../object/persistence_layout.zig").PersistenceLayout;
+const atomic_write = @import("../storage/atomic_write.zig");
+const constrained_types = @import("../object/constrained_types.zig");
 
 pub fn writeSnapshot(
     allocator: std.mem.Allocator,
