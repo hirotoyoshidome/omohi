@@ -1,6 +1,7 @@
 const std = @import("std");
 
-const local_persistence = @import("../../store/local/persistence.zig");
+const PersistenceLayout = @import("../object/persistence_layout.zig").PersistenceLayout;
+const version = @import("../local/version.zig");
 
 pub const expected_store_version: u32 = 1;
 
@@ -14,13 +15,13 @@ pub fn ensureStoreVersion(
     omohi_dir: std.fs.Dir,
     options: Options,
 ) !void {
-    const persistence = local_persistence.PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
 
-    const actual = local_persistence.read_version(allocator, persistence) catch |err| switch (err) {
+    const actual = version.readVersion(allocator, persistence) catch |err| switch (err) {
         error.FileNotFound => {
             if (!options.allow_bootstrap) return error.VersionMismatch;
             if (!try isStoreEmpty(omohi_dir)) return error.VersionMismatch;
-            try local_persistence.write_version(allocator, persistence, expected_store_version);
+            try version.writeVersion(allocator, persistence, expected_store_version);
             return;
         },
         error.InvalidVersion => return error.VersionMismatch,
@@ -46,8 +47,8 @@ test "bootstrap writes VERSION for empty store when allowed" {
 
     try ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
 
-    const persistence = local_persistence.PersistenceLayout.init(omohi_dir);
-    const actual = try local_persistence.read_version(allocator, persistence);
+    const persistence = PersistenceLayout.init(omohi_dir);
+    const actual = try version.readVersion(allocator, persistence);
     try std.testing.expectEqual(expected_store_version, actual);
 }
 
@@ -94,8 +95,8 @@ test "different VERSION returns VersionMismatch" {
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
 
-    const persistence = local_persistence.PersistenceLayout.init(omohi_dir);
-    try local_persistence.write_version(allocator, persistence, expected_store_version + 1);
+    const persistence = PersistenceLayout.init(omohi_dir);
+    try version.writeVersion(allocator, persistence, expected_store_version + 1);
 
     try std.testing.expectError(
         error.VersionMismatch,
@@ -111,7 +112,7 @@ test "matching VERSION passes" {
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
 
-    const persistence = local_persistence.PersistenceLayout.init(omohi_dir);
-    try local_persistence.write_version(allocator, persistence, expected_store_version);
+    const persistence = PersistenceLayout.init(omohi_dir);
+    try version.writeVersion(allocator, persistence, expected_store_version);
     try ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
 }

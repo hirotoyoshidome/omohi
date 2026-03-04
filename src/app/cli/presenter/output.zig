@@ -1,9 +1,9 @@
 const std = @import("std");
+const track_ops = @import("../../../ops/track_ops.zig");
 const status_ops = @import("../../../ops/status_ops.zig");
 const find_ops = @import("../../../ops/find_ops.zig");
 const show_ops = @import("../../../ops/show_ops.zig");
 const tag_ops = @import("../../../ops/tag_ops.zig");
-const local_persistence = @import("../../../store/local/persistence.zig");
 
 pub fn message(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
     return allocator.dupe(u8, text);
@@ -17,7 +17,7 @@ pub fn commitResult(allocator: std.mem.Allocator, commit_id: [64]u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "committed: {s}\n", .{&commit_id});
 }
 
-pub fn tracklistResult(allocator: std.mem.Allocator, list: *const local_persistence.TrackedList) ![]u8 {
+pub fn tracklistResult(allocator: std.mem.Allocator, list: *const track_ops.TrackedList) ![]u8 {
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
     const writer = out.writer();
