@@ -1,7 +1,7 @@
 const std = @import("std");
 
-const PersistenceLayout = @import("../../object/persistence_layout.zig").PersistenceLayout;
-const constrained_types = @import("../../object/constrained_types.zig");
+const PersistenceLayout = @import("../object/persistence_layout.zig").PersistenceLayout;
+const constrained_types = @import("../object/constrained_types.zig");
 
 pub fn moveTrackedToTrash(
     allocator: std.mem.Allocator,

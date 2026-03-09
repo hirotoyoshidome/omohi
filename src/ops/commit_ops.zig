@@ -7,8 +7,10 @@ pub fn commit(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     message: []const u8,
-) !void {
-    try store_api.commit(allocator, omohi_dir, message);
+) ![64]u8 {
+    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
+    const id = try store_api.commit(allocator, omohi_dir, message);
+    return id.value;
 }
 
 fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
@@ -36,6 +38,7 @@ test "commit writes immutable data and cleans staged" {
     const allocator = std.testing.allocator;
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
+    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
 
     try omohi_dir.makePath("staged/entries");
     try omohi_dir.makePath("staged/objects");
@@ -63,13 +66,14 @@ test "commit writes immutable data and cleans staged" {
     object_file.close();
 
     const message = "initial commit";
-    try commit(allocator, omohi_dir, message);
+    const commit_id = try commit(allocator, omohi_dir, message);
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
     const head_value = propertyValue(head_bytes, "commitId");
     try std.testing.expect(head_value != null);
     const head_id = head_value.?;
+    try std.testing.expectEqualSlices(u8, &commit_id, head_id);
     try std.testing.expectEqual(@as(usize, 64), head_id.len);
 
     const commit_path = try std.fmt.allocPrint(allocator, "commits/{s}/{s}", .{ head_id[0..2], head_id });
@@ -116,6 +120,7 @@ test "commit without staged entries returns NothingToCommit and removes lock" {
 
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
+    try store_api.ensureStoreVersion(std.testing.allocator, omohi_dir, .{ .allow_bootstrap = true });
     try omohi_dir.makePath("staged/entries");
     try omohi_dir.makePath("staged/objects");
 

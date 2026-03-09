@@ -15,7 +15,7 @@ pub const ContentEntry = struct {
     }
 
     /// Returns true when `lhs.path` comes before `rhs.path`.
-    pub fn lessThanByPath(lhs: ContentEntry, rhs: ContentEntry) bool {
+    pub fn isPathLessThan(lhs: ContentEntry, rhs: ContentEntry) bool {
         return std.mem.lessThan(u8, lhs.path.asSlice(), rhs.path.asSlice());
     }
 };

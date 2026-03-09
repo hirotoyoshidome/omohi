@@ -10,6 +10,7 @@ pub fn show(
     omohi_dir: std.fs.Dir,
     commit_id: []const u8,
 ) !CommitDetails {
+    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
     return store_api.show(allocator, omohi_dir, commit_id);
 }
 

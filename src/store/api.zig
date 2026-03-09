@@ -1,6 +1,15 @@
 const std = @import("std");
 
-const persistence_store = @import("./local/persistence.zig");
+const PersistenceLayout = @import("./object/persistence_layout.zig").PersistenceLayout;
+const local_tracked = @import("./local/tracked.zig");
+const local_staged = @import("./local/staged.zig");
+const local_snapshot = @import("./local/snapshot.zig");
+const local_commit = @import("./local/commit.zig");
+const local_tags = @import("./local/tags.zig");
+const local_commit_tags = @import("./local/commit_tags.zig");
+const local_trash = @import("./local/trash.zig");
+const local_head = @import("./local/head.zig");
+const version_guard = @import("./storage/version_guard.zig");
 const ContentEntry = @import("./object/content_entry.zig").ContentEntry;
 const api_types = @import("./object/api_types.zig");
 const hash = @import("./object/hash.zig");
@@ -17,6 +26,19 @@ pub const CommitSummary = api_types.CommitSummary;
 pub const CommitSummaryList = api_types.CommitSummaryList;
 pub const TagList = api_types.TagList;
 pub const CommitDetails = api_types.CommitDetails;
+pub const TrackedEntry = local_tracked.TrackedEntry;
+pub const TrackedList = local_tracked.TrackedList;
+pub const StoreVersionOptions = version_guard.Options;
+pub const expected_store_version = version_guard.expected_store_version;
+
+/// Validates store VERSION and optionally bootstraps VERSION for empty store.
+pub fn ensureStoreVersion(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    options: StoreVersionOptions,
+) !void {
+    try version_guard.ensureStoreVersion(allocator, omohi_dir, options);
+}
 
 /// Store facade API for ops layer.
 /// The facade hides store internals (object/storage/local).
@@ -42,7 +64,7 @@ pub fn add(
     try lock.acquireLock(omohi_dir);
     defer lock.releaseLock(omohi_dir);
 
-    const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
     try omohi_dir.makePath(persistence.stagedEntriesPath());
     try omohi_dir.makePath(persistence.stagedObjectsPath());
 
@@ -60,8 +82,8 @@ pub fn add(
     };
     const staged_file_id = hash.stagedFileIdFrom(source_path, &content_hash);
 
-    try persistence_store.writeStagedEntry(allocator, persistence, &staged_file_id, entry);
-    try persistence_store.copyFileToStagedObject(allocator, persistence, source_dir, source_path, &content_hash);
+    try local_staged.writeStagedEntry(allocator, persistence, &staged_file_id, entry);
+    try local_staged.copyFileToStagedObject(allocator, persistence, source_dir, source_path, &content_hash);
 }
 
 /// Removes a staged entry/object pair by file path.
@@ -76,21 +98,21 @@ pub fn rm(
     try lock.acquireLock(omohi_dir);
     defer lock.releaseLock(omohi_dir);
 
-    const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
     const content_hash = try contentHashFromFile(allocator, source_dir, source_path);
     const staged_file_id = hash.stagedFileIdFrom(source_path, &content_hash);
 
-    persistence_store.moveStagedEntryToTrash(allocator, persistence, &staged_file_id) catch |err| switch (err) {
+    local_trash.moveStagedEntryToTrash(allocator, persistence, &staged_file_id) catch |err| switch (err) {
         error.FileNotFound => return error.NotFound,
         else => return err,
     };
 
     var has_same_hash = false;
-    var entries = persistence_store.loadStagedEntries(allocator, persistence) catch |err| switch (err) {
+    var entries = local_staged.loadStagedEntries(allocator, persistence) catch |err| switch (err) {
         error.MissingStagedEntries => null,
         else => return err,
     };
-    defer if (entries) |*list| persistence_store.freeEntries(allocator, list);
+    defer if (entries) |*list| local_staged.freeEntries(allocator, list);
 
     if (entries) |*list| {
         for (list.items) |entry| {
@@ -102,7 +124,7 @@ pub fn rm(
     }
 
     if (!has_same_hash) {
-        persistence_store.moveStagedObjectToTrash(allocator, persistence, &content_hash) catch |err| switch (err) {
+        local_trash.moveStagedObjectToTrash(allocator, persistence, &content_hash) catch |err| switch (err) {
             error.FileNotFound => {},
             else => return err,
         };
@@ -120,14 +142,14 @@ pub fn track(
     try lock.acquireLock(omohi_dir);
     defer lock.releaseLock(omohi_dir);
 
-    const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
     try omohi_dir.makePath(persistence.trackedPath());
     try omohi_dir.makePath(persistence.trackedTrashPath());
 
     _ = try constrained_types.TrackedFilePath.init(absolute_path);
 
     var existing = try loadTrackedOrEmpty(allocator, persistence);
-    defer if (existing) |*list| persistence_store.freeTrackedList(allocator, list);
+    defer if (existing) |*list| local_tracked.freeTrackedList(allocator, list);
 
     if (existing) |*list| {
         for (list.items) |entry| {
@@ -136,7 +158,7 @@ pub fn track(
     }
 
     const tracked_id = constrained_types.TrackedFileId.generate();
-    try persistence_store.writeTracked(allocator, persistence, tracked_id.asSlice(), absolute_path);
+    try local_tracked.writeTracked(allocator, persistence, tracked_id.asSlice(), absolute_path);
     return tracked_id;
 }
 
@@ -153,7 +175,7 @@ pub fn untrack(
     try lock.acquireLock(omohi_dir);
     defer lock.releaseLock(omohi_dir);
 
-    const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
     const tracked_path = try std.fmt.allocPrint(
         allocator,
         "{s}/{s}",
@@ -167,7 +189,7 @@ pub fn untrack(
     };
     file.close();
 
-    try persistence_store.deleteTracked(allocator, persistence, id.asSlice());
+    try local_tracked.deleteTracked(allocator, persistence, id.asSlice());
 }
 
 /// Loads current tracked entries from tracked/.
@@ -175,13 +197,13 @@ pub fn untrack(
 pub fn tracklist(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
-) !persistence_store.TrackedList {
-    const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
-    return (try loadTrackedOrEmpty(allocator, persistence)) orelse persistence_store.TrackedList.init(allocator);
+) !local_tracked.TrackedList {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    return (try loadTrackedOrEmpty(allocator, persistence)) orelse TrackedList.init(allocator);
 }
 
-pub fn freeTracklist(allocator: std.mem.Allocator, list: *persistence_store.TrackedList) void {
-    persistence_store.freeTrackedList(allocator, list);
+pub fn freeTracklist(allocator: std.mem.Allocator, list: *TrackedList) void {
+    local_tracked.freeTrackedList(allocator, list);
 }
 
 /// Computes status for tracked files.
@@ -193,7 +215,7 @@ pub fn status(
     var results = StatusList.init(allocator);
     errdefer freeStatusList(allocator, &results);
 
-    const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
     var tracked = try tracklist(allocator, omohi_dir);
     defer freeTracklist(allocator, &tracked);
 
@@ -256,7 +278,7 @@ pub fn find(
     var out = CommitSummaryList.init(allocator);
     errdefer freeCommitSummaryList(allocator, &out);
 
-    const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
     var commit_ids = try listCommitIds(allocator, persistence);
     defer commit_ids.deinit();
 
@@ -302,17 +324,17 @@ pub fn show(
     omohi_dir: std.fs.Dir,
     commit_id: []const u8,
 ) !CommitDetails {
-    const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
     const parsed = try readCommitFile(allocator, persistence, commit_id);
     errdefer freeParsedCommit(allocator, &parsed);
 
-    const entries = try readSnapshotEntries(allocator, persistence, parsed.snapshot_id.asSlice());
+    var entries = try readSnapshotEntries(allocator, persistence, parsed.snapshot_id.asSlice());
     errdefer freeContentEntryList(allocator, &entries);
 
     var tags = TagList.init(allocator);
     errdefer freeTagList(allocator, &tags);
 
-    const commit_tags = persistence_store.readCommitTags(allocator, persistence, parsed.commit_id.asSlice()) catch |err| switch (err) {
+    const commit_tags = local_commit_tags.readCommitTags(allocator, persistence, parsed.commit_id.asSlice()) catch |err| switch (err) {
         error.FileNotFound => null,
         else => return err,
     };
@@ -347,13 +369,13 @@ pub fn tagList(
     omohi_dir: std.fs.Dir,
     commit_id: []const u8,
 ) !TagList {
-    const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
     _ = try constrained_types.CommitId.init(commit_id);
 
     var tags = TagList.init(allocator);
     errdefer freeTagList(allocator, &tags);
 
-    const record = persistence_store.readCommitTags(allocator, persistence, commit_id) catch |err| switch (err) {
+    const record = local_commit_tags.readCommitTags(allocator, persistence, commit_id) catch |err| switch (err) {
         error.FileNotFound => return tags,
         else => return err,
     };
@@ -384,18 +406,21 @@ pub fn tagAdd(
     try lock.acquireLock(omohi_dir);
     defer lock.releaseLock(omohi_dir);
 
-    const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
     try ensureCommitExists(allocator, persistence, id.asSlice());
     try omohi_dir.makePath(persistence.dataTagsPath());
 
     var merged = TagList.init(allocator);
     defer freeTagList(allocator, &merged);
 
-    const existing = persistence_store.readCommitTags(allocator, persistence, id.asSlice()) catch |err| switch (err) {
+    const existing = local_commit_tags.readCommitTags(allocator, persistence, id.asSlice()) catch |err| switch (err) {
         error.FileNotFound => null,
         else => return err,
     };
-    defer if (existing) |*record| record.deinit(allocator);
+    defer if (existing) |record| {
+        var mutable = record;
+        mutable.deinit(allocator);
+    };
 
     if (existing) |record| {
         for (record.tags.items) |tag| try merged.append(try allocator.dupe(u8, tag));
@@ -408,14 +433,14 @@ pub fn tagAdd(
         }
 
         const now = try utc.nowIso8601Utc();
-        const maybe_created = persistence_store.readTagCreatedAt(allocator, persistence, tag_name) catch |err| switch (err) {
+        const maybe_created = local_tags.readTagCreatedAt(allocator, persistence, tag_name) catch |err| switch (err) {
             error.FileNotFound => null,
             else => return err,
         };
         if (maybe_created) |created| {
             allocator.free(created);
         } else {
-            try persistence_store.writeTag(allocator, persistence, tag_name, now[0..]);
+            try local_tags.writeTag(allocator, persistence, tag_name, now[0..]);
         }
     }
 
@@ -426,7 +451,7 @@ pub fn tagAdd(
     defer allocator.free(tag_views);
     for (merged.items, 0..) |tag, idx| tag_views[idx] = tag;
 
-    try persistence_store.writeCommitTags(
+    try local_commit_tags.writeCommitTags(
         allocator,
         persistence,
         id.asSlice(),
@@ -447,10 +472,10 @@ pub fn tagRemove(
     try lock.acquireLock(omohi_dir);
     defer lock.releaseLock(omohi_dir);
 
-    const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
     try ensureCommitExists(allocator, persistence, id.asSlice());
 
-    var record = persistence_store.readCommitTags(allocator, persistence, id.asSlice()) catch |err| switch (err) {
+    var record = local_commit_tags.readCommitTags(allocator, persistence, id.asSlice()) catch |err| switch (err) {
         error.FileNotFound => return error.NotFound,
         else => return err,
     };
@@ -466,7 +491,7 @@ pub fn tagRemove(
     }
 
     if (remaining.items.len == 0) {
-        try persistence_store.deleteCommitTags(allocator, persistence, id.asSlice());
+        try local_commit_tags.deleteCommitTags(allocator, persistence, id.asSlice());
         return;
     }
 
@@ -475,7 +500,7 @@ pub fn tagRemove(
     defer allocator.free(tag_views);
     for (remaining.items, 0..) |tag, idx| tag_views[idx] = tag;
 
-    try persistence_store.writeCommitTags(
+    try local_commit_tags.writeCommitTags(
         allocator,
         persistence,
         id.asSlice(),
@@ -492,32 +517,33 @@ pub fn commit(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     message: []const u8,
-) !void {
+) !constrained_types.CommitId {
     try lock.acquireLock(omohi_dir);
     defer lock.releaseLock(omohi_dir);
 
-    const persistence = persistence_store.PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
 
-    var entries = try persistence_store.loadStagedEntries(allocator, persistence);
-    defer persistence_store.freeEntries(allocator, &entries);
+    var entries = try local_staged.loadStagedEntries(allocator, persistence);
+    defer local_staged.freeEntries(allocator, &entries);
 
     if (entries.items.len == 0) return error.NothingToCommit;
 
-    std.mem.sort(ContentEntry, entries.items, {}, lessThanPath);
+    std.mem.sort(ContentEntry, entries.items, {}, isPathLessThan);
 
     const snapshot_id = hash.snapshotIdFrom(entries.items);
     const commit_id = hash.commitIdFrom(snapshot_id[0..], message);
 
-    try persistence_store.writeSnapshot(allocator, persistence, snapshot_id[0..], entries.items);
-    try persistence_store.writeCommit(allocator, persistence, commit_id[0..], snapshot_id[0..], message);
+    try local_snapshot.writeSnapshot(allocator, persistence, snapshot_id[0..], entries.items);
+    try local_commit.writeCommit(allocator, persistence, commit_id[0..], snapshot_id[0..], message);
 
-    try persistence_store.moveObjectsFromStage(allocator, persistence);
-    try persistence_store.writeHead(allocator, persistence, commit_id[0..]);
-    try persistence_store.resetStaged(persistence);
+    try local_staged.moveObjectsFromStage(allocator, persistence);
+    try local_head.writeHead(allocator, persistence, commit_id[0..]);
+    try local_staged.resetStaged(persistence);
+    return try constrained_types.CommitId.init(commit_id[0..]);
 }
 
-fn lessThanPath(_: void, lhs: ContentEntry, rhs: ContentEntry) bool {
-    return ContentEntry.lessThanByPath(lhs, rhs);
+fn isPathLessThan(_: void, lhs: ContentEntry, rhs: ContentEntry) bool {
+    return ContentEntry.isPathLessThan(lhs, rhs);
 }
 
 const ParsedCommit = struct {
@@ -529,7 +555,7 @@ const ParsedCommit = struct {
 
 fn readCommitFile(
     allocator: std.mem.Allocator,
-    persistence: persistence_store.PersistenceLayout,
+    persistence: PersistenceLayout,
     commit_id: []const u8,
 ) !ParsedCommit {
     const id = try constrained_types.CommitId.init(commit_id);
@@ -559,7 +585,7 @@ fn freeParsedCommit(allocator: std.mem.Allocator, parsed: *const ParsedCommit) v
 
 fn readSnapshotEntries(
     allocator: std.mem.Allocator,
-    persistence: persistence_store.PersistenceLayout,
+    persistence: PersistenceLayout,
     snapshot_id: []const u8,
 ) !std.array_list.Managed(ContentEntry) {
     _ = try constrained_types.SnapshotId.init(snapshot_id);
@@ -616,7 +642,7 @@ fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
 
 fn listCommitIds(
     allocator: std.mem.Allocator,
-    persistence: persistence_store.PersistenceLayout,
+    persistence: PersistenceLayout,
 ) !std.array_list.Managed([64]u8) {
     var list = std.array_list.Managed([64]u8).init(allocator);
     errdefer list.deinit();
@@ -644,11 +670,11 @@ fn listCommitIds(
         }
     }
 
-    std.mem.sort([64]u8, list.items, {}, lessThanCommitIdDesc);
+    std.mem.sort([64]u8, list.items, {}, isCommitIdDescLessThan);
     return list;
 }
 
-fn lessThanCommitIdDesc(_: void, lhs: [64]u8, rhs: [64]u8) bool {
+fn isCommitIdDescLessThan(_: void, lhs: [64]u8, rhs: [64]u8) bool {
     return std.mem.order(u8, &lhs, &rhs) == .gt;
 }
 
@@ -667,11 +693,11 @@ fn copyHexId(source: []const u8, out: *[64]u8, comptime err_tag: anytype) !void 
 
 fn commitHasTag(
     allocator: std.mem.Allocator,
-    persistence: persistence_store.PersistenceLayout,
+    persistence: PersistenceLayout,
     commit_id: []const u8,
     tag_name: []const u8,
 ) !bool {
-    const record = persistence_store.readCommitTags(allocator, persistence, commit_id) catch |err| switch (err) {
+    const record = local_commit_tags.readCommitTags(allocator, persistence, commit_id) catch |err| switch (err) {
         error.FileNotFound => return false,
         else => return err,
     };
@@ -688,7 +714,7 @@ fn commitHasTag(
 
 fn ensureCommitExists(
     allocator: std.mem.Allocator,
-    persistence: persistence_store.PersistenceLayout,
+    persistence: PersistenceLayout,
     commit_id: []const u8,
 ) !void {
     const path = try persistence.commitsPath(allocator, commit_id);
@@ -710,7 +736,7 @@ fn containsTag(list: []const []const u8, target: []const u8) bool {
 
 fn headCommitId(
     allocator: std.mem.Allocator,
-    persistence: persistence_store.PersistenceLayout,
+    persistence: PersistenceLayout,
 ) !?constrained_types.CommitId {
     const bytes = persistence.dir.readFileAlloc(allocator, persistence.headPath(), 256) catch |err| switch (err) {
         error.FileNotFound => return null,
@@ -724,7 +750,7 @@ fn headCommitId(
 
 fn hasStagedEntry(
     allocator: std.mem.Allocator,
-    persistence: persistence_store.PersistenceLayout,
+    persistence: PersistenceLayout,
     staged_file_id: []const u8,
 ) !bool {
     const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ persistence.stagedEntriesPath(), staged_file_id });
@@ -766,9 +792,9 @@ fn contentHashFromOpenedFile(
 
 fn loadTrackedOrEmpty(
     allocator: std.mem.Allocator,
-    persistence: persistence_store.PersistenceLayout,
-) !?persistence_store.TrackedList {
-    return persistence_store.loadTracked(allocator, persistence) catch |err| switch (err) {
+    persistence: PersistenceLayout,
+) !?TrackedList {
+    return local_tracked.loadTracked(allocator, persistence) catch |err| switch (err) {
         error.MissingTracked => null,
         else => return err,
     };

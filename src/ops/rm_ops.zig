@@ -9,5 +9,6 @@ pub fn rm(
     source_dir: std.fs.Dir,
     source_path: []const u8,
 ) !void {
+    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
     try store_api.rm(allocator, omohi_dir, source_dir, source_path);
 }

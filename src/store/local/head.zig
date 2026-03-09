@@ -1,7 +1,7 @@
 const std = @import("std");
 
-const atomic_write = @import("../atomic_write.zig");
-const PersistenceLayout = @import("../../object/persistence_layout.zig").PersistenceLayout;
+const atomic_write = @import("../storage/atomic_write.zig");
+const PersistenceLayout = @import("../object/persistence_layout.zig").PersistenceLayout;
 
 pub fn writeHead(
     allocator: std.mem.Allocator,
