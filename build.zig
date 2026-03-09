@@ -1,6 +1,11 @@
 const std = @import("std");
+const layer_import_guard = @import("contracts/layer_import_guard.zig");
 
 pub fn build(b: *std.Build) void {
+    layer_import_guard.runCheck(b.allocator) catch |err| {
+        std.debug.panic("layer import contract check failed: {s}", .{@errorName(err)});
+    };
+
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
