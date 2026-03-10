@@ -7,11 +7,10 @@ const commit_ops = @import("./commit_ops.zig");
 pub fn add(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
-    source_dir: std.fs.Dir,
-    source_path: []const u8,
+    absolute_path: []const u8,
 ) !void {
     try add_store.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
-    try add_store.add(allocator, omohi_dir, source_dir, source_path);
+    try add_store.add(allocator, omohi_dir, absolute_path);
 }
 
 fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
@@ -64,7 +63,11 @@ test "add writes staged entry and staged object using content hash" {
     try source_file.writeAll(payload);
     source_file.close();
 
-    try add(allocator, omohi_dir, source_dir, source_path);
+    const absolute_path = try source_dir.realpathAlloc(allocator, source_path);
+    defer allocator.free(absolute_path);
+    _ = try add_store.track(allocator, omohi_dir, absolute_path);
+
+    try add(allocator, omohi_dir, absolute_path);
 
     var staged_object_hash: [64]u8 = undefined;
     try onlyFileNameInDir(omohi_dir, "staged/objects", &staged_object_hash);
@@ -112,7 +115,11 @@ test "commit can read staged data created by add" {
     try source_file.writeAll(payload);
     source_file.close();
 
-    try add(allocator, omohi_dir, source_dir, source_path);
+    const absolute_path = try source_dir.realpathAlloc(allocator, source_path);
+    defer allocator.free(absolute_path);
+    _ = try add_store.track(allocator, omohi_dir, absolute_path);
+
+    try add(allocator, omohi_dir, absolute_path);
     _ = try commit_ops.commit(allocator, omohi_dir, "via add");
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
