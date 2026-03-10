@@ -14,10 +14,45 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.RmArgs) !command_typ
     const absolute_path = try path_resolver.resolveAbsolutePath(allocator, args.path);
     defer allocator.free(absolute_path);
 
-    var source = try path_resolver.openSourcePath(absolute_path);
-    defer source.source_dir.close();
-
-    try rm_ops.rm(allocator, omohi.dir, source.source_dir, source.relative_path);
+    rm_ops.rm(allocator, omohi.dir, absolute_path) catch |err| switch (err) {
+        error.TrackedFileNotFound => return trackedNotFoundResult(allocator, absolute_path),
+        error.StagedFileNotFound => return stagedNotFoundResult(allocator, absolute_path),
+        else => return err,
+    };
     const output = try presenter.message(allocator, "unstaged\n");
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
+}
+
+fn trackedNotFoundResult(
+    allocator: std.mem.Allocator,
+    absolute_path: []const u8,
+) !command_types.CommandResult {
+    const output = try std.fmt.allocPrint(allocator, "Tracked file not found: {s}\n", .{absolute_path});
+    return .{ .output = output, .to_stderr = true, .exit_code = exit_code.use_case_error };
+}
+
+fn stagedNotFoundResult(
+    allocator: std.mem.Allocator,
+    absolute_path: []const u8,
+) !command_types.CommandResult {
+    const output = try std.fmt.allocPrint(allocator, "Staged file not found: {s}\n", .{absolute_path});
+    return .{ .output = output, .to_stderr = true, .exit_code = exit_code.use_case_error };
+}
+
+test "trackedNotFoundResult returns expected message and exit code" {
+    const result = try trackedNotFoundResult(std.testing.allocator, "/tmp/not-tracked.txt");
+    defer std.testing.allocator.free(result.output);
+
+    try std.testing.expect(result.to_stderr);
+    try std.testing.expectEqual(exit_code.use_case_error, result.exit_code);
+    try std.testing.expectEqualStrings("Tracked file not found: /tmp/not-tracked.txt\n", result.output);
+}
+
+test "stagedNotFoundResult returns expected message and exit code" {
+    const result = try stagedNotFoundResult(std.testing.allocator, "/tmp/not-staged.txt");
+    defer std.testing.allocator.free(result.output);
+
+    try std.testing.expect(result.to_stderr);
+    try std.testing.expectEqual(exit_code.use_case_error, result.exit_code);
+    try std.testing.expectEqualStrings("Staged file not found: /tmp/not-staged.txt\n", result.output);
 }
