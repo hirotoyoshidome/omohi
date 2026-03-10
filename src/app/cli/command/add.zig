@@ -18,7 +18,7 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.AddArgs) !command_ty
         error.TrackedFileNotFound => return trackedNotFoundResult(allocator, absolute_path),
         else => return err,
     };
-    const output = try presenter.message(allocator, "staged\n");
+    const output = try presenter.addResult(allocator, absolute_path);
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
 }
 

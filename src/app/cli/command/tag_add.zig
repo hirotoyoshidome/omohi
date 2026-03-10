@@ -10,7 +10,42 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.TagAddArgs) !command
     var omohi = try environment.openOmohiDir(allocator, false);
     defer omohi.deinit(allocator);
 
-    try tag_ops.add(allocator, omohi.dir, args.commit_id, args.tag_names);
-    const output = try presenter.message(allocator, "tags added\n");
+    var before = tag_ops.list(allocator, omohi.dir, args.commit_id) catch |err| switch (err) {
+        error.CommitNotFound => return commitNotFoundResult(allocator, args.commit_id),
+        else => return err,
+    };
+    defer tag_ops.freeTagList(allocator, &before);
+
+    tag_ops.add(allocator, omohi.dir, args.commit_id, args.tag_names) catch |err| switch (err) {
+        error.CommitNotFound => return commitNotFoundResult(allocator, args.commit_id),
+        else => return err,
+    };
+
+    var after = try tag_ops.list(allocator, omohi.dir, args.commit_id);
+    defer tag_ops.freeTagList(allocator, &after);
+
+    var added_count: usize = 0;
+    for (after.items) |tag_name| {
+        if (!containsTag(before.items, tag_name)) {
+            added_count += 1;
+        }
+    }
+
+    const output = try presenter.tagAddResult(allocator, args.commit_id, added_count, &after);
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
+}
+
+fn containsTag(tags: []const []u8, target: []const u8) bool {
+    for (tags) |tag_name| {
+        if (std.mem.eql(u8, tag_name, target)) return true;
+    }
+    return false;
+}
+
+fn commitNotFoundResult(
+    allocator: std.mem.Allocator,
+    commit_id: []const u8,
+) !command_types.CommandResult {
+    const output = try std.fmt.allocPrint(allocator, "Commit not found: {s}\n", .{commit_id});
+    return .{ .output = output, .to_stderr = true, .exit_code = exit_code.use_case_error };
 }

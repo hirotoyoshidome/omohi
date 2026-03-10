@@ -19,7 +19,7 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.RmArgs) !command_typ
         error.StagedFileNotFound => return stagedNotFoundResult(allocator, absolute_path),
         else => return err,
     };
-    const output = try presenter.message(allocator, "unstaged\n");
+    const output = try presenter.rmResult(allocator, absolute_path);
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
 }
 

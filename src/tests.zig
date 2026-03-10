@@ -35,6 +35,7 @@ const _app_cli_error_map = @import("app/cli/error/error_map.zig");
 const _app_cli_error_message = @import("app/cli/error/error_message.zig");
 const _app_cli_parser = @import("app/cli/parser/parse.zig");
 const _app_cli_dispatch = @import("app/cli/runtime/dispatch.zig");
+const _app_cli_output = @import("app/cli/presenter/output.zig");
 
 test "load modules" {
     _ = _store_persistence_layout;
@@ -66,4 +67,5 @@ test "load modules" {
     _ = _app_cli_error_message;
     _ = _app_cli_parser;
     _ = _app_cli_dispatch;
+    _ = _app_cli_output;
 }

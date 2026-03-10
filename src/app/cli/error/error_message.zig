@@ -21,7 +21,7 @@ pub fn forRuntimeError(err: anyerror) []const u8 {
     }
 
     return switch (err) {
-        error.NothingToCommit => "Nothing to commit. Stage files with `omohi add <path>` first.",
+        error.NothingToCommit => "No staged files to commit.",
         error.OmohiNotInitialized => "Store is not initialized. Run `omohi track <path>` to create ~/.omohi.",
         error.CommitNotFound => "Commit not found. Check the commit ID with `omohi find`.",
         error.NotFound => "Target not found. Check the ID/path and try again.",
@@ -45,5 +45,5 @@ test "runtime version mismatch message includes cause and remedy" {
 
 test "runtime NothingToCommit is user-friendly" {
     const text = forRuntimeError(error.NothingToCommit);
-    try std.testing.expect(std.mem.indexOf(u8, text, "Nothing to commit") != null);
+    try std.testing.expectEqualStrings("No staged files to commit.", text);
 }
