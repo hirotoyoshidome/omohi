@@ -4,6 +4,8 @@ const sha2 = std.crypto.hash.sha2;
 
 const ContentEntry = @import("content_entry.zig").ContentEntry;
 const constrained_types = @import("constrained_types.zig");
+const id_field_separator = ":";
+const snapshot_entry_separator = "|";
 
 /// Calculates SHA256 and returns lowercase hex.
 pub fn sha256Hex(input: []const u8) [64]u8 {
@@ -26,9 +28,9 @@ pub fn snapshotIdFrom(allocator: std.mem.Allocator, entries: []const ContentEntr
 
     var hasher = sha2.Sha256.init(.{});
     for (sorted_entries, 0..) |entry, idx| {
-        if (idx != 0) hasher.update("|");
+        if (idx != 0) hasher.update(snapshot_entry_separator);
         hasher.update(entry.path.asSlice());
-        hasher.update(":");
+        hasher.update(id_field_separator);
         hasher.update(entry.content_hash.asSlice());
     }
 
@@ -65,7 +67,7 @@ fn encodeHexLower(dest: []u8, source: []const u8) void {
 pub fn commitIdFrom(snapshotId: []const u8, message: []const u8) [64]u8 {
     var hasher = sha2.Sha256.init(.{});
     hasher.update(snapshotId);
-    hasher.update(":");
+    hasher.update(id_field_separator);
     hasher.update(message);
 
     var digest: [sha2.Sha256.digest_length]u8 = undefined;
@@ -84,7 +86,7 @@ pub fn commitIdVoFrom(snapshot_id: constrained_types.SnapshotId, message: []cons
 pub fn stagedFileIdFrom(path: []const u8, contentHash: []const u8) [64]u8 {
     var hasher = sha2.Sha256.init(.{});
     hasher.update(contentHash);
-    hasher.update(":");
+    hasher.update(id_field_separator);
     hasher.update(path);
 
     var digest: [sha2.Sha256.digest_length]u8 = undefined;
@@ -127,7 +129,11 @@ test "snapshotIdFrom sorts by path and uses pipe-separated path-hash pairs" {
     };
     const id = try snapshotIdFrom(testing.allocator, &entries);
 
-    const joined = "/objects/a.txt:0000000000000000000000000000000000000000000000000000000000000000|/objects/b.txt:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    const joined = "/objects/a.txt" ++ id_field_separator ++
+        "0000000000000000000000000000000000000000000000000000000000000000" ++
+        snapshot_entry_separator ++
+        "/objects/b.txt" ++ id_field_separator ++
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
     const expected = sha256Hex(joined);
     try testing.expectEqualSlices(u8, expected[0..], id[0..]);
 }
@@ -140,13 +146,13 @@ test "stagedFileIdFrom reflects path changes" {
 
 test "stagedFileIdFrom uses content-hash colon path format" {
     const id = stagedFileIdFrom("/docs/readme.md", "abc123");
-    const expected = sha256Hex("abc123:/docs/readme.md");
+    const expected = sha256Hex("abc123" ++ id_field_separator ++ "/docs/readme.md");
     try testing.expectEqualSlices(u8, expected[0..], id[0..]);
 }
 
 test "commitIdFrom uses snapshot-id colon message format" {
     const id = commitIdFrom("snapshot-1", "hello");
-    const expected = sha256Hex("snapshot-1:hello");
+    const expected = sha256Hex("snapshot-1" ++ id_field_separator ++ "hello");
     try testing.expectEqualSlices(u8, expected[0..], id[0..]);
 }
 
