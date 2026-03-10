@@ -54,12 +54,11 @@ pub fn ensureStoreVersion(
 ///
 /// Adds a file into staging and writes both entry and staged object.
 /// Memory: borrowed (allocator is only used for temporary allocations)
-/// Errors: lock/I/O errors, error{FileTooLarge}, and constrained type errors.
+/// Errors: lock/I/O errors, error{TrackedFileNotFound, FileTooLarge}, and constrained type errors.
 pub fn add(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
-    source_dir: std.fs.Dir,
-    source_path: []const u8,
+    absolute_path: []const u8,
 ) !void {
     try lock.acquireLock(omohi_dir);
     defer lock.releaseLock(omohi_dir);
@@ -68,7 +67,17 @@ pub fn add(
     try omohi_dir.makePath(persistence.stagedEntriesPath());
     try omohi_dir.makePath(persistence.stagedObjectsPath());
 
-    const content_hash = try contentHashFromFile(allocator, source_dir, source_path);
+    _ = try constrained_types.TrackedFilePath.init(absolute_path);
+    try ensureTrackedPathExists(allocator, persistence, absolute_path);
+
+    const source_parent = std.fs.path.dirname(absolute_path) orelse return error.InvalidPath;
+    const source_name = std.fs.path.basename(absolute_path);
+    if (source_name.len == 0) return error.InvalidPath;
+
+    var source_dir = try std.fs.openDirAbsolute(source_parent, .{});
+    defer source_dir.close();
+
+    const content_hash = try contentHashFromFile(allocator, source_dir, source_name);
     const entry_path = try std.fmt.allocPrint(
         allocator,
         "/objects/{s}/{s}",
@@ -80,30 +89,39 @@ pub fn add(
         .path = try constrained_types.ContentPath.init(entry_path),
         .content_hash = try constrained_types.ContentHash.init(&content_hash),
     };
-    const staged_file_id = hash.stagedFileIdFrom(source_path, &content_hash);
+    const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
 
     try local_staged.writeStagedEntry(allocator, persistence, &staged_file_id, entry);
-    try local_staged.copyFileToStagedObject(allocator, persistence, source_dir, source_path, &content_hash);
+    try local_staged.copyFileToStagedObject(allocator, persistence, source_dir, source_name, &content_hash);
 }
 
 /// Removes a staged entry/object pair by file path.
 /// Memory: borrowed
-/// Errors: error{NotFound} plus lock/I/O and constrained type errors.
+/// Errors: error{TrackedFileNotFound, StagedFileNotFound} plus lock/I/O and constrained type errors.
 pub fn rm(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
-    source_dir: std.fs.Dir,
-    source_path: []const u8,
+    absolute_path: []const u8,
 ) !void {
     try lock.acquireLock(omohi_dir);
     defer lock.releaseLock(omohi_dir);
 
     const persistence = PersistenceLayout.init(omohi_dir);
-    const content_hash = try contentHashFromFile(allocator, source_dir, source_path);
-    const staged_file_id = hash.stagedFileIdFrom(source_path, &content_hash);
+    _ = try constrained_types.TrackedFilePath.init(absolute_path);
+    try ensureTrackedPathExists(allocator, persistence, absolute_path);
+
+    const source_parent = std.fs.path.dirname(absolute_path) orelse return error.InvalidPath;
+    const source_name = std.fs.path.basename(absolute_path);
+    if (source_name.len == 0) return error.InvalidPath;
+
+    var source_dir = try std.fs.openDirAbsolute(source_parent, .{});
+    defer source_dir.close();
+
+    const content_hash = try contentHashFromFile(allocator, source_dir, source_name);
+    const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
 
     local_trash.moveStagedEntryToTrash(allocator, persistence, &staged_file_id) catch |err| switch (err) {
-        error.FileNotFound => return error.NotFound,
+        error.FileNotFound => return error.StagedFileNotFound,
         else => return err,
     };
 
@@ -795,6 +813,23 @@ fn contentHashFromOpenedFile(
     return hash.sha256Hex(encoded);
 }
 
+fn ensureTrackedPathExists(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    absolute_path: []const u8,
+) !void {
+    var tracked = try loadTrackedOrEmpty(allocator, persistence);
+    defer if (tracked) |*list| local_tracked.freeTrackedList(allocator, list);
+
+    if (tracked) |*list| {
+        for (list.items) |entry| {
+            if (std.mem.eql(u8, entry.path.asSlice(), absolute_path)) return;
+        }
+    }
+
+    return error.TrackedFileNotFound;
+}
+
 fn loadTrackedOrEmpty(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -803,6 +838,18 @@ fn loadTrackedOrEmpty(
         error.MissingTracked => null,
         else => return err,
     };
+}
+
+fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
+    var target = try dir.openDir(path, .{ .iterate = true });
+    defer target.close();
+
+    var it = target.iterate();
+    const first = (try it.next()) orelse return error.MissingFile;
+    if (first.kind != .file) return error.InvalidEntry;
+    if ((try it.next()) != null) return error.TooManyFiles;
+    if (first.name.len != out.len) return error.InvalidHashLength;
+    @memcpy(out, first.name);
 }
 
 test "track writes tracked entry and tracklist returns it" {
@@ -895,4 +942,73 @@ test "content hash uses sha256 of base64-encoded file bytes" {
     const content_hash = try contentHashFromFile(allocator, source_dir, "memo.txt");
     const expected = hash.sha256Hex("aGVsbG8gYWRk");
     try std.testing.expectEqualSlices(u8, expected[0..], content_hash[0..]);
+}
+
+test "add requires tracked absolute path" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    var source_file = try source_dir.createFile("untracked.txt", .{});
+    try source_file.writeAll("payload");
+    source_file.close();
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, "untracked.txt");
+    defer allocator.free(absolute_path);
+
+    try std.testing.expectError(error.TrackedFileNotFound, add(allocator, omohi_dir, absolute_path));
+}
+
+test "rm distinguishes tracked-not-found and staged-not-found" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    var source_file = try source_dir.createFile("memo.txt", .{});
+    try source_file.writeAll("payload");
+    source_file.close();
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, "memo.txt");
+    defer allocator.free(absolute_path);
+
+    try std.testing.expectError(error.TrackedFileNotFound, rm(allocator, omohi_dir, absolute_path));
+    _ = try track(allocator, omohi_dir, absolute_path);
+    try std.testing.expectError(error.StagedFileNotFound, rm(allocator, omohi_dir, absolute_path));
+}
+
+test "add uses absolute path when generating staged file id" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    var source_file = try source_dir.createFile("memo.txt", .{});
+    try source_file.writeAll("hello add");
+    source_file.close();
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, "memo.txt");
+    defer allocator.free(absolute_path);
+    _ = try track(allocator, omohi_dir, absolute_path);
+    try add(allocator, omohi_dir, absolute_path);
+
+    const content_hash = try contentHashFromFile(allocator, source_dir, "memo.txt");
+    const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
+
+    var staged_entry_id: [64]u8 = undefined;
+    try onlyFileNameInDir(omohi_dir, "staged/entries", &staged_entry_id);
+    try std.testing.expectEqualSlices(u8, staged_file_id[0..], staged_entry_id[0..]);
 }
