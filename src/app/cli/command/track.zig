@@ -14,8 +14,8 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.TrackArgs) !command_
     const absolute_path = try path_resolver.resolveAbsolutePath(allocator, args.path);
     defer allocator.free(absolute_path);
 
-    const tracked_id = try track_ops.track(allocator, omohi.dir, absolute_path);
-    const output = try presenter.trackResult(allocator, tracked_id);
+    _ = try track_ops.track(allocator, omohi.dir, absolute_path);
+    const output = try presenter.trackResult(allocator, absolute_path);
 
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
 }
