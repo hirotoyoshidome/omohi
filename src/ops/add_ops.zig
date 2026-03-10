@@ -46,6 +46,16 @@ fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
     return null;
 }
 
+fn headValue(bytes: []const u8) ?[]const u8 {
+    var iter = std.mem.splitScalar(u8, bytes, '\n');
+    while (iter.next()) |raw| {
+        const line = std.mem.trim(u8, std.mem.trimRight(u8, raw, "\r"), " \t");
+        if (line.len == 0) continue;
+        return line;
+    }
+    return null;
+}
+
 test "add writes staged entry and staged object using content hash" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -124,7 +134,7 @@ test "commit can read staged data created by add" {
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
-    const commit_id = propertyValue(head_bytes, "commitId") orelse return error.MissingCommitId;
+    const commit_id = headValue(head_bytes) orelse return error.MissingCommitId;
 
     const commit_path = try std.fmt.allocPrint(allocator, "commits/{s}/{s}", .{ commit_id[0..2], commit_id });
     defer allocator.free(commit_path);
@@ -136,7 +146,10 @@ test "commit can read staged data created by add" {
     defer allocator.free(snapshot_path);
     const snapshot_bytes = try omohi_dir.readFileAlloc(allocator, snapshot_path, 1024);
     defer allocator.free(snapshot_bytes);
-    const hash_value = propertyValue(snapshot_bytes, "entry.0.contentHash") orelse return error.MissingContentHash;
+    const entries_value = propertyValue(snapshot_bytes, "entries") orelse return error.MissingContentHash;
+    const separator = std.mem.lastIndexOfScalar(u8, entries_value, ':') orelse return error.MissingContentHash;
+    if (separator + 1 >= entries_value.len) return error.MissingContentHash;
+    const hash_value = entries_value[separator + 1 ..];
 
     const object_path = try std.fmt.allocPrint(allocator, "objects/{s}/{s}", .{ hash_value[0..2], hash_value });
     defer allocator.free(object_path);
