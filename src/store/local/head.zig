@@ -14,7 +14,7 @@ pub fn writeHead(
 }
 
 fn formatHeadFile(allocator: std.mem.Allocator, commit_id: []const u8) ![]u8 {
-    return std.fmt.allocPrint(allocator, "commitId={s}\n", .{commit_id});
+    return std.fmt.allocPrint(allocator, "{s}\n", .{commit_id});
 }
 
 test "writeHead replaces head file with new commit id" {
@@ -36,5 +36,5 @@ test "writeHead replaces head file with new commit id" {
 
     const content = try omohi_dir.readFileAlloc(allocator, persistence.headPath(), 256);
     defer allocator.free(content);
-    try std.testing.expect(std.mem.indexOf(u8, content, "commitId=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb") != null);
+    try std.testing.expectEqualStrings("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n", content);
 }

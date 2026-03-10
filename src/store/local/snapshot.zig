@@ -25,11 +25,12 @@ fn formatSnapshotEntries(allocator: std.mem.Allocator, entries: []const ContentE
     defer buffer.deinit();
 
     var writer = buffer.writer();
-    try writer.print("entries.count={d}\n", .{entries.len});
+    try writer.writeAll("entries=");
     for (entries, 0..) |entry, idx| {
-        try writer.print("entry.{d}.path={s}\n", .{ idx, entry.path.asSlice() });
-        try writer.print("entry.{d}.contentHash={s}\n", .{ idx, entry.content_hash.asSlice() });
+        if (idx != 0) try writer.writeByte(',');
+        try writer.print("{s}:{s}", .{ entry.path.asSlice(), entry.content_hash.asSlice() });
     }
+    try writer.writeByte('\n');
 
     return buffer.toOwnedSlice();
 }
@@ -75,7 +76,8 @@ test "writeSnapshot persists entries with predictable format" {
     const content = try omohi_dir.readFileAlloc(allocator, path, 4096);
     defer allocator.free(content);
 
-    try std.testing.expect(std.mem.indexOf(u8, content, "entries.count=2") != null);
-    try std.testing.expect(std.mem.indexOf(u8, content, "entry.1.path=/objects/bb/file-b") != null);
-    try std.testing.expect(std.mem.indexOf(u8, content, "entry.0.contentHash=1111111111111111111111111111111111111111111111111111111111111111") != null);
+    try std.testing.expectEqualStrings(
+        "entries=/objects/aa/file-a:1111111111111111111111111111111111111111111111111111111111111111,/objects/bb/file-b:2222222222222222222222222222222222222222222222222222222222222222\n",
+        content,
+    );
 }
