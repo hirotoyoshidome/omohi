@@ -530,7 +530,7 @@ pub fn commit(
 
     std.mem.sort(ContentEntry, entries.items, {}, isPathLessThan);
 
-    const snapshot_id = hash.snapshotIdFrom(entries.items);
+    const snapshot_id = try hash.snapshotIdFrom(allocator, entries.items);
     const commit_id = hash.commitIdFrom(snapshot_id[0..], message);
 
     try local_snapshot.writeSnapshot(allocator, persistence, snapshot_id[0..], entries.items);
@@ -787,7 +787,12 @@ fn contentHashFromOpenedFile(
     const bytes = try source_file.readToEndAlloc(allocator, max_bytes);
     defer allocator.free(bytes);
 
-    return hash.sha256Hex(bytes);
+    const encoded_len = std.base64.standard.Encoder.calcSize(bytes.len);
+    const encoded = try allocator.alloc(u8, encoded_len);
+    defer allocator.free(encoded);
+    _ = std.base64.standard.Encoder.encode(encoded, bytes);
+
+    return hash.sha256Hex(encoded);
 }
 
 fn loadTrackedOrEmpty(
@@ -873,4 +878,21 @@ test "tracklist returns empty when tracked directory does not exist" {
     var list = try tracklist(allocator, omohi_dir);
     defer freeTracklist(allocator, &list);
     try std.testing.expectEqual(@as(usize, 0), list.items.len);
+}
+
+test "content hash uses sha256 of base64-encoded file bytes" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+
+    var source_file = try source_dir.createFile("memo.txt", .{});
+    try source_file.writeAll("hello add");
+    source_file.close();
+
+    const content_hash = try contentHashFromFile(allocator, source_dir, "memo.txt");
+    const expected = hash.sha256Hex("aGVsbG8gYWRk");
+    try std.testing.expectEqualSlices(u8, expected[0..], content_hash[0..]);
 }
