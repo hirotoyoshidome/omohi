@@ -15,6 +15,7 @@ const api_types = @import("./object/api_types.zig");
 const hash = @import("./object/hash.zig");
 const lock = @import("./storage/lock.zig");
 const utc = @import("./storage/time/utc.zig");
+const local_date = @import("./storage/time/local_date.zig");
 const constrained_types = @import("./object/constrained_types.zig");
 
 const max_add_file_size = 64 * 1024 * 1024;
@@ -286,12 +287,12 @@ pub fn freeStatusList(allocator: std.mem.Allocator, list: *StatusList) void {
 }
 
 /// Finds commits with optional tag and date filters.
-/// Date format is YYYY-MM-DD and compared with createdAt prefix.
+/// Date format is YYYY-MM-DD and compared against createdAt in local timezone.
 pub fn find(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     tag_name: ?[]const u8,
-    date_prefix: ?[]const u8,
+    date_ymd: ?[]const u8,
 ) !CommitSummaryList {
     var out = CommitSummaryList.init(allocator);
     errdefer freeCommitSummaryList(allocator, &out);
@@ -300,12 +301,22 @@ pub fn find(
     var commit_ids = try listCommitIds(allocator, persistence);
     defer commit_ids.deinit();
 
+    var matches = std.array_list.Managed(FindCandidate).init(allocator);
+    defer freeFindCandidates(allocator, &matches);
+
     for (commit_ids.items) |commit_id_buf| {
         const parsed = try readCommitFile(allocator, persistence, commit_id_buf[0..]);
         errdefer freeParsedCommit(allocator, &parsed);
 
-        if (date_prefix) |prefix| {
-            if (!std.mem.startsWith(u8, parsed.created_at, prefix)) {
+        const created_at_millis = local_date.parseUtcIso8601Millis(parsed.created_at) catch |err| switch (err) {
+            error.InvalidTimestamp, error.TimestampBeforeEpoch, error.TimestampOutOfRange => return error.InvalidCommit,
+        };
+
+        if (date_ymd) |target_date| {
+            const local_ymd = local_date.utcIso8601ToLocalYmd(parsed.created_at) catch |err| switch (err) {
+                error.InvalidTimestamp, error.TimestampBeforeEpoch, error.TimestampOutOfRange, error.LocaltimeFailed => return error.InvalidCommit,
+            };
+            if (!std.mem.eql(u8, local_ymd[0..], target_date)) {
                 freeParsedCommit(allocator, &parsed);
                 continue;
             }
@@ -318,10 +329,23 @@ pub fn find(
             }
         }
 
+        try matches.append(.{
+            .parsed = parsed,
+            .created_at_millis = created_at_millis,
+        });
+    }
+
+    std.mem.sort(FindCandidate, matches.items, {}, isFindCandidateDescLessThan);
+
+    const max_results: usize = 10;
+    const keep_count = @min(matches.items.len, max_results);
+    var idx: usize = 0;
+    while (idx < keep_count) : (idx += 1) {
+        const candidate = matches.items[idx];
         try out.append(.{
-            .commit_id = parsed.commit_id,
-            .message = parsed.message,
-            .created_at = parsed.created_at,
+            .commit_id = candidate.parsed.commit_id,
+            .message = try allocator.dupe(u8, candidate.parsed.message),
+            .created_at = try allocator.dupe(u8, candidate.parsed.created_at),
         });
     }
 
@@ -571,6 +595,11 @@ const ParsedCommit = struct {
     created_at: []u8,
 };
 
+const FindCandidate = struct {
+    parsed: ParsedCommit,
+    created_at_millis: i64,
+};
+
 fn readCommitFile(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -599,6 +628,11 @@ fn readCommitFile(
 fn freeParsedCommit(allocator: std.mem.Allocator, parsed: *const ParsedCommit) void {
     allocator.free(parsed.message);
     allocator.free(parsed.created_at);
+}
+
+fn freeFindCandidates(allocator: std.mem.Allocator, candidates: *std.array_list.Managed(FindCandidate)) void {
+    for (candidates.items) |candidate| freeParsedCommit(allocator, &candidate.parsed);
+    candidates.deinit();
 }
 
 fn readSnapshotEntries(
@@ -697,6 +731,11 @@ fn listCommitIds(
 
 fn isCommitIdDescLessThan(_: void, lhs: [64]u8, rhs: [64]u8) bool {
     return std.mem.order(u8, &lhs, &rhs) == .gt;
+}
+
+fn isFindCandidateDescLessThan(_: void, lhs: FindCandidate, rhs: FindCandidate) bool {
+    if (lhs.created_at_millis != rhs.created_at_millis) return lhs.created_at_millis > rhs.created_at_millis;
+    return std.mem.order(u8, lhs.parsed.commit_id.asSlice(), rhs.parsed.commit_id.asSlice()) == .gt;
 }
 
 fn isTwoHex(input: []const u8) bool {
@@ -864,6 +903,56 @@ fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
     if ((try it.next()) != null) return error.TooManyFiles;
     if (first.name.len != out.len) return error.InvalidHashLength;
     @memcpy(out, first.name);
+}
+
+fn filledHexId(ch: u8) [64]u8 {
+    var value: [64]u8 = undefined;
+    @memset(&value, ch);
+    return value;
+}
+
+fn writeFindFixtureCommit(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    commit_id: []const u8,
+    message: []const u8,
+    created_at: []const u8,
+) !void {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    const path = try persistence.commitsPath(allocator, commit_id);
+    defer allocator.free(path);
+
+    const snapshot_id = filledHexId('a');
+    const content = try std.fmt.allocPrint(
+        allocator,
+        "snapshotId={s}\nmessage={s}\ncreatedAt={s}\n",
+        .{ snapshot_id[0..], message, created_at },
+    );
+    defer allocator.free(content);
+
+    const parent = std.fs.path.dirname(path) orelse return error.InvalidPath;
+    try omohi_dir.makePath(parent);
+
+    var file = try omohi_dir.createFile(path, .{ .truncate = true });
+    defer file.close();
+    try file.writeAll(content);
+}
+
+fn writeFindFixtureTags(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    commit_id: []const u8,
+    tag_names: []const []const u8,
+) !void {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    try local_commit_tags.writeCommitTags(
+        allocator,
+        persistence,
+        commit_id,
+        tag_names,
+        "2026-03-11T00:00:00.000Z",
+        "2026-03-11T00:00:00.000Z",
+    );
 }
 
 test "propertyValue ignores java properties comment lines" {
@@ -1050,4 +1139,76 @@ test "add uses absolute path when generating staged file id" {
     var staged_entry_id: [64]u8 = undefined;
     try onlyFileNameInDir(omohi_dir, "staged/entries", &staged_entry_id);
     try std.testing.expectEqualSlices(u8, staged_file_id[0..], staged_entry_id[0..]);
+}
+
+test "find sorts by createdAt desc and limits to ten commits" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const id_chars = [_]u8{ 'f', 'e', 'd', 'c', 'b', 'a', '9', '8', '7', '6', '0' };
+    for (id_chars, 0..) |id_ch, idx| {
+        const commit_id = filledHexId(id_ch);
+        const created_at = try std.fmt.allocPrint(
+            allocator,
+            "2026-03-{d:0>2}T00:00:00.000Z",
+            .{idx + 1},
+        );
+        defer allocator.free(created_at);
+        const message = try std.fmt.allocPrint(allocator, "msg-{d}", .{idx + 1});
+        defer allocator.free(message);
+
+        try writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], message, created_at);
+    }
+
+    var list = try find(allocator, omohi_dir, null, null);
+    defer freeCommitSummaryList(allocator, &list);
+
+    try std.testing.expectEqual(@as(usize, 10), list.items.len);
+    try std.testing.expectEqualStrings("msg-11", list.items[0].message);
+    try std.testing.expectEqualStrings("msg-2", list.items[9].message);
+    try std.testing.expectEqualSlices(u8, filledHexId('0')[0..], list.items[0].commit_id.asSlice());
+}
+
+test "find applies tag and date filters as intersection" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const commit_a = filledHexId('a');
+    const commit_b = filledHexId('b');
+
+    try writeFindFixtureCommit(allocator, omohi_dir, commit_a[0..], "release-a", "2026-03-10T18:00:00.000Z");
+    try writeFindFixtureCommit(allocator, omohi_dir, commit_b[0..], "prod-b", "2026-03-07T01:00:00.000Z");
+
+    const release_tags = [_][]const u8{"release"};
+    const prod_tags = [_][]const u8{"prod"};
+    try writeFindFixtureTags(allocator, omohi_dir, commit_a[0..], &release_tags);
+    try writeFindFixtureTags(allocator, omohi_dir, commit_b[0..], &prod_tags);
+
+    var by_tag = try find(allocator, omohi_dir, "release", null);
+    defer freeCommitSummaryList(allocator, &by_tag);
+    try std.testing.expectEqual(@as(usize, 1), by_tag.items.len);
+    try std.testing.expectEqualStrings("release-a", by_tag.items[0].message);
+
+    const date_a = try local_date.utcIso8601ToLocalYmd("2026-03-10T18:00:00.000Z");
+    var by_date = try find(allocator, omohi_dir, null, date_a[0..]);
+    defer freeCommitSummaryList(allocator, &by_date);
+    try std.testing.expectEqual(@as(usize, 1), by_date.items.len);
+    try std.testing.expectEqualStrings("release-a", by_date.items[0].message);
+
+    var by_tag_and_date = try find(allocator, omohi_dir, "release", date_a[0..]);
+    defer freeCommitSummaryList(allocator, &by_tag_and_date);
+    try std.testing.expectEqual(@as(usize, 1), by_tag_and_date.items.len);
+    try std.testing.expectEqualStrings("release-a", by_tag_and_date.items[0].message);
+
+    var no_intersection = try find(allocator, omohi_dir, "prod", date_a[0..]);
+    defer freeCommitSummaryList(allocator, &no_intersection);
+    try std.testing.expectEqual(@as(usize, 0), no_intersection.items.len);
 }
