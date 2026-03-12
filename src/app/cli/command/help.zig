@@ -2,8 +2,11 @@ const std = @import("std");
 const command_types = @import("../runtime/types.zig");
 const exit_code = @import("../error/exit_code.zig");
 const catalog = @import("help/catalog.zig");
+const parser_types = @import("../parser/types.zig");
 
-pub fn run(allocator: std.mem.Allocator) !command_types.CommandResult {
+pub fn run(allocator: std.mem.Allocator, args: parser_types.HelpArgs) !command_types.CommandResult {
+    _ = args;
+
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
     const writer = out.writer();
@@ -17,7 +20,7 @@ pub fn run(allocator: std.mem.Allocator) !command_types.CommandResult {
 }
 
 test "help includes all public commands" {
-    var result = try run(std.testing.allocator);
+    var result = try run(std.testing.allocator, .{ .topic = null });
     defer result.deinit(std.testing.allocator);
 
     try std.testing.expect(std.mem.indexOf(u8, result.output, "track <path>") != null);

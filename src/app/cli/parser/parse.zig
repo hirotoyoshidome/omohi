@@ -3,11 +3,14 @@ const types = @import("types.zig");
 const date_validation = @import("../validation/date.zig");
 
 pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.ParsedRequest {
-    if (argv.len == 0) return .help;
+    if (argv.len == 0) return .{ .help = .{ .topic = null } };
 
-    if (std.mem.eql(u8, argv[0], "help")) {
-        if (argv.len != 1) return error.UnexpectedArgument;
-        return .help;
+    if (equalsIgnoreAsciiCase(argv[0], "-h") or equalsIgnoreAsciiCase(argv[0], "--help")) {
+        return try parseHelp(argv[1..]);
+    }
+
+    if (equalsIgnoreAsciiCase(argv[0], "help")) {
+        return try parseHelp(argv[1..]);
     }
 
     if (argv.len >= 2 and std.mem.eql(u8, argv[0], "tag")) {
@@ -30,9 +33,34 @@ pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.
     return error.InvalidCommand;
 }
 
+fn parseHelp(args: []const []const u8) !types.ParsedRequest {
+    if (args.len == 0) return .{ .help = .{ .topic = null } };
+    if (args.len == 1) return .{ .help = .{ .topic = args[0] } };
+    return error.UnexpectedArgument;
+}
+
 fn parseNoArgsCommand(comptime tag: anytype, args: []const []const u8) !types.ParsedRequest {
     if (args.len != 0) return error.UnexpectedArgument;
     return @unionInit(types.ParsedRequest, @tagName(tag), {});
+}
+
+fn equalsIgnoreAsciiCase(lhs: []const u8, rhs: []const u8) bool {
+    return std.ascii.eqlIgnoreCase(lhs, rhs);
+}
+
+fn parseLongOption(token: []const u8) ?struct { key: []const u8, value: ?[]const u8 } {
+    if (!std.mem.startsWith(u8, token, "--")) return null;
+    const body = token[2..];
+    if (body.len == 0) return null;
+
+    if (std.mem.indexOfScalar(u8, body, '=')) |eq| {
+        const key = body[0..eq];
+        const value = body[eq + 1 ..];
+        if (key.len == 0) return null;
+        return .{ .key = key, .value = value };
+    }
+
+    return .{ .key = body, .value = null };
 }
 
 fn parseTrack(args: []const []const u8) !types.ParsedRequest {
@@ -97,48 +125,49 @@ fn parseCommit(allocator: std.mem.Allocator, args: []const []const u8) !types.Pa
             continue;
         }
 
-        if (!stop_option and std.mem.startsWith(u8, token, "--")) {
-            if (std.mem.eql(u8, token, "--dry-run")) {
-                dry_run = true;
-                continue;
-            }
+        if (!stop_option) {
+            if (parseLongOption(token)) |opt| {
+                if (equalsIgnoreAsciiCase(opt.key, "dry-run")) {
+                    if (opt.value != null) return error.UnknownOption;
+                    dry_run = true;
+                    continue;
+                }
 
-            if (std.mem.eql(u8, token, "--message")) {
-                idx += 1;
-                if (idx >= args.len) return error.MissingValue;
-                message = args[idx];
-                continue;
-            }
+                if (equalsIgnoreAsciiCase(opt.key, "message")) {
+                    if (opt.value) |value| {
+                        message = value;
+                        continue;
+                    }
+                    idx += 1;
+                    if (idx >= args.len) return error.MissingValue;
+                    message = args[idx];
+                    continue;
+                }
 
-            if (std.mem.startsWith(u8, token, "--message=")) {
-                message = token["--message=".len..];
-                continue;
-            }
+                if (equalsIgnoreAsciiCase(opt.key, "tag")) {
+                    if (opt.value) |value| {
+                        try tags.append(value);
+                        continue;
+                    }
+                    idx += 1;
+                    if (idx >= args.len) return error.MissingValue;
+                    try tags.append(args[idx]);
+                    continue;
+                }
 
-            if (std.mem.eql(u8, token, "--tag")) {
-                idx += 1;
-                if (idx >= args.len) return error.MissingValue;
-                try tags.append(args[idx]);
-                continue;
+                return error.UnknownOption;
             }
-
-            if (std.mem.startsWith(u8, token, "--tag=")) {
-                try tags.append(token["--tag=".len..]);
-                continue;
-            }
-
-            return error.UnknownOption;
         }
 
         if (!stop_option and std.mem.startsWith(u8, token, "-") and token.len > 1) {
-            if (std.mem.eql(u8, token, "-m")) {
+            if (equalsIgnoreAsciiCase(token, "-m")) {
                 idx += 1;
                 if (idx >= args.len) return error.MissingValue;
                 message = args[idx];
                 continue;
             }
 
-            if (std.mem.eql(u8, token, "-t")) {
+            if (equalsIgnoreAsciiCase(token, "-t")) {
                 idx += 1;
                 if (idx >= args.len) return error.MissingValue;
                 try tags.append(args[idx]);
@@ -175,45 +204,44 @@ fn parseFind(args: []const []const u8) !types.ParsedRequest {
             continue;
         }
 
-        if (!stop_option and std.mem.startsWith(u8, token, "--")) {
-            if (std.mem.eql(u8, token, "--tag")) {
-                idx += 1;
-                if (idx >= args.len) return error.MissingValue;
-                tag_name = args[idx];
-                continue;
-            }
+        if (!stop_option) {
+            if (parseLongOption(token)) |opt| {
+                if (equalsIgnoreAsciiCase(opt.key, "tag")) {
+                    if (opt.value) |value| {
+                        tag_name = value;
+                        continue;
+                    }
+                    idx += 1;
+                    if (idx >= args.len) return error.MissingValue;
+                    tag_name = args[idx];
+                    continue;
+                }
 
-            if (std.mem.startsWith(u8, token, "--tag=")) {
-                tag_name = token["--tag=".len..];
-                continue;
-            }
+                if (equalsIgnoreAsciiCase(opt.key, "date")) {
+                    if (opt.value) |value| {
+                        try date_validation.validateDateYmd(value);
+                        date = value;
+                        continue;
+                    }
+                    idx += 1;
+                    if (idx >= args.len) return error.MissingValue;
+                    try date_validation.validateDateYmd(args[idx]);
+                    date = args[idx];
+                    continue;
+                }
 
-            if (std.mem.eql(u8, token, "--date")) {
-                idx += 1;
-                if (idx >= args.len) return error.MissingValue;
-                try date_validation.validateDateYmd(args[idx]);
-                date = args[idx];
-                continue;
+                return error.UnknownOption;
             }
-
-            if (std.mem.startsWith(u8, token, "--date=")) {
-                const raw = token["--date=".len..];
-                try date_validation.validateDateYmd(raw);
-                date = raw;
-                continue;
-            }
-
-            return error.UnknownOption;
         }
 
         if (!stop_option and std.mem.startsWith(u8, token, "-") and token.len > 1) {
-            if (std.mem.eql(u8, token, "-t")) {
+            if (equalsIgnoreAsciiCase(token, "-t")) {
                 idx += 1;
                 if (idx >= args.len) return error.MissingValue;
                 tag_name = args[idx];
                 continue;
             }
-            if (std.mem.eql(u8, token, "-d")) {
+            if (equalsIgnoreAsciiCase(token, "-d")) {
                 idx += 1;
                 if (idx >= args.len) return error.MissingValue;
                 try date_validation.validateDateYmd(args[idx]);
@@ -260,4 +288,110 @@ test "parser accepts commit options" {
         },
         else => return error.UnexpectedResult,
     }
+}
+
+test "parser resolves help from help aliases and accepts topic" {
+    const allocator = std.testing.allocator;
+
+    {
+        const argv = [_][]const u8{};
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+        switch (parsed) {
+            .help => |args| try std.testing.expect(args.topic == null),
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        const argv = [_][]const u8{"-h"};
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+        switch (parsed) {
+            .help => |args| try std.testing.expect(args.topic == null),
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        const argv = [_][]const u8{"--HELP"};
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+        switch (parsed) {
+            .help => |args| try std.testing.expect(args.topic == null),
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        const argv = [_][]const u8{ "help", "commit" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+        switch (parsed) {
+            .help => |args| try std.testing.expectEqualStrings("commit", args.topic.?),
+            else => return error.UnexpectedResult,
+        }
+    }
+}
+
+test "parser rejects help with too many topics" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{ "help", "commit", "extra" };
+    try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &argv));
+}
+
+test "parser normalizes option keys for commit" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{ "commit", "-M", "msg", "--TAG=release", "--DRY-RUN" };
+    var parsed = try parseArgs(allocator, &argv);
+    defer types.deinitParsedRequest(allocator, &parsed);
+
+    switch (parsed) {
+        .commit => |args| {
+            try std.testing.expectEqualStrings("msg", args.message);
+            try std.testing.expect(args.dry_run);
+            try std.testing.expectEqual(@as(usize, 1), args.tags.len);
+            try std.testing.expectEqualStrings("release", args.tags[0]);
+        },
+        else => return error.UnexpectedResult,
+    }
+}
+
+test "parser normalizes option keys for find" {
+    const allocator = std.testing.allocator;
+
+    {
+        const argv = [_][]const u8{ "find", "--TAG", "release", "--DATE=2026-03-12" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+        switch (parsed) {
+            .find => |args| {
+                try std.testing.expectEqualStrings("release", args.tag.?);
+                try std.testing.expectEqualStrings("2026-03-12", args.date.?);
+            },
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        const argv = [_][]const u8{ "find", "-T", "release", "-D", "2026-03-12" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+        switch (parsed) {
+            .find => |args| {
+                try std.testing.expectEqualStrings("release", args.tag.?);
+                try std.testing.expectEqualStrings("2026-03-12", args.date.?);
+            },
+            else => return error.UnexpectedResult,
+        }
+    }
+}
+
+test "parser keeps double-dash behavior for positional arguments" {
+    const allocator = std.testing.allocator;
+    const commit_argv = [_][]const u8{ "commit", "-m", "msg", "--", "--tag", "release" };
+    try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &commit_argv));
+
+    const find_argv = [_][]const u8{ "find", "--", "--tag", "release" };
+    try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &find_argv));
 }
