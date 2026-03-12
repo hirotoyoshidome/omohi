@@ -29,6 +29,6 @@ pub fn dispatch(allocator: std.mem.Allocator, parsed: parser_types.ParsedRequest
         .tag_ls => |args| try tag_ls.run(allocator, args),
         .tag_add => |args| try tag_add.run(allocator, args),
         .tag_rm => |args| try tag_rm.run(allocator, args),
-        .help => try help.run(allocator),
+        .help => |args| try help.run(allocator, args),
     };
 }
