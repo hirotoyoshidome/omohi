@@ -412,12 +412,13 @@ pub fn tagList(
     commit_id: []const u8,
 ) !TagList {
     const persistence = PersistenceLayout.init(omohi_dir);
-    _ = try constrained_types.CommitId.init(commit_id);
+    const id = try constrained_types.CommitId.init(commit_id);
+    try ensureCommitExists(allocator, persistence, id.asSlice());
 
     var tags = TagList.init(allocator);
     errdefer freeTagList(allocator, &tags);
 
-    const record = local_commit_tags.readCommitTags(allocator, persistence, commit_id) catch |err| switch (err) {
+    const record = local_commit_tags.readCommitTags(allocator, persistence, id.asSlice()) catch |err| switch (err) {
         error.FileNotFound => return tags,
         else => return err,
     };
@@ -1211,4 +1212,38 @@ test "find applies tag and date filters as intersection" {
     var no_intersection = try find(allocator, omohi_dir, "prod", date_a[0..]);
     defer freeCommitSummaryList(allocator, &no_intersection);
     try std.testing.expectEqual(@as(usize, 0), no_intersection.items.len);
+}
+
+test "tagList returns CommitNotFound when commit does not exist" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const missing_commit = filledHexId('a');
+    try std.testing.expectError(error.CommitNotFound, tagList(allocator, omohi_dir, missing_commit[0..]));
+}
+
+test "tagList returns empty when commit exists and has no tags" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const existing_commit = filledHexId('b');
+    try writeFindFixtureCommit(
+        allocator,
+        omohi_dir,
+        existing_commit[0..],
+        "fixture-message",
+        "2026-03-12T00:00:00.000Z",
+    );
+
+    var tags = try tagList(allocator, omohi_dir, existing_commit[0..]);
+    defer freeTagList(allocator, &tags);
+    try std.testing.expectEqual(@as(usize, 0), tags.items.len);
 }
