@@ -389,7 +389,10 @@ pub fn show(
     commit_id: []const u8,
 ) !CommitDetails {
     const persistence = PersistenceLayout.init(omohi_dir);
-    const parsed = try readCommitFile(allocator, persistence, commit_id);
+    const parsed = readCommitFile(allocator, persistence, commit_id) catch |err| switch (err) {
+        error.FileNotFound => return error.CommitNotFound,
+        else => return err,
+    };
     errdefer freeParsedCommit(allocator, &parsed);
 
     var entries = try readSnapshotEntries(allocator, persistence, parsed.snapshot_id.asSlice());
@@ -1279,6 +1282,18 @@ test "tagList returns CommitNotFound when commit does not exist" {
 
     const missing_commit = filledHexId('a');
     try std.testing.expectError(error.CommitNotFound, tagList(allocator, omohi_dir, missing_commit[0..]));
+}
+
+test "show returns CommitNotFound when commit does not exist" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const missing_commit = filledHexId('c');
+    try std.testing.expectError(error.CommitNotFound, show(allocator, omohi_dir, missing_commit[0..]));
 }
 
 test "tagList returns empty when commit exists and has no tags" {
