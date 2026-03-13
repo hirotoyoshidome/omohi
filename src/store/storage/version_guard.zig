@@ -5,25 +5,15 @@ const version = @import("../local/version.zig");
 
 pub const expected_store_version: u32 = 1;
 
-pub const Options = struct {
-    allow_bootstrap: bool,
-};
-
-/// Validates store VERSION and optionally bootstraps VERSION=1 for a newly created empty store.
+/// Validates store VERSION.
 pub fn ensureStoreVersion(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
-    options: Options,
 ) !void {
     const persistence = PersistenceLayout.init(omohi_dir);
 
     const actual = version.readVersion(allocator, persistence) catch |err| switch (err) {
-        error.FileNotFound => {
-            if (!options.allow_bootstrap) return error.VersionMismatch;
-            if (!try isStoreEmpty(omohi_dir)) return error.VersionMismatch;
-            try version.writeVersion(allocator, persistence, expected_store_version);
-            return;
-        },
+        error.FileNotFound => return error.MissingStoreVersion,
         error.InvalidVersion => return error.VersionMismatch,
         else => return err,
     };
@@ -31,13 +21,7 @@ pub fn ensureStoreVersion(
     if (actual != expected_store_version) return error.VersionMismatch;
 }
 
-fn isStoreEmpty(omohi_dir: std.fs.Dir) !bool {
-    var it = omohi_dir.iterate();
-    while (try it.next()) |_| return false;
-    return true;
-}
-
-test "bootstrap writes VERSION for empty store when allowed" {
+test "missing VERSION on empty store returns MissingStoreVersion" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -45,14 +29,10 @@ test "bootstrap writes VERSION for empty store when allowed" {
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
 
-    try ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
-
-    const persistence = PersistenceLayout.init(omohi_dir);
-    const actual = try version.readVersion(allocator, persistence);
-    try std.testing.expectEqual(expected_store_version, actual);
+    try std.testing.expectError(error.MissingStoreVersion, ensureStoreVersion(allocator, omohi_dir));
 }
 
-test "missing VERSION on non-empty store returns VersionMismatch" {
+test "missing VERSION on non-empty store returns MissingStoreVersion" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -64,8 +44,8 @@ test "missing VERSION on non-empty store returns VersionMismatch" {
     try marker.writeAll("commitId=abc\n");
 
     try std.testing.expectError(
-        error.VersionMismatch,
-        ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true }),
+        error.MissingStoreVersion,
+        ensureStoreVersion(allocator, omohi_dir),
     );
 }
 
@@ -83,7 +63,7 @@ test "invalid VERSION maps to VersionMismatch" {
 
     try std.testing.expectError(
         error.VersionMismatch,
-        ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false }),
+        ensureStoreVersion(allocator, omohi_dir),
     );
 }
 
@@ -100,7 +80,7 @@ test "different VERSION returns VersionMismatch" {
 
     try std.testing.expectError(
         error.VersionMismatch,
-        ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false }),
+        ensureStoreVersion(allocator, omohi_dir),
     );
 }
 
@@ -114,5 +94,5 @@ test "matching VERSION passes" {
 
     const persistence = PersistenceLayout.init(omohi_dir);
     try version.writeVersion(allocator, persistence, expected_store_version);
-    try ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
+    try ensureStoreVersion(allocator, omohi_dir);
 }
