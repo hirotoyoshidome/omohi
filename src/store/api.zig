@@ -9,6 +9,7 @@ const local_tags = @import("./local/tags.zig");
 const local_commit_tags = @import("./local/commit_tags.zig");
 const local_trash = @import("./local/trash.zig");
 const local_head = @import("./local/head.zig");
+const local_version = @import("./local/version.zig");
 const version_guard = @import("./storage/version_guard.zig");
 const ContentEntry = @import("./object/content_entry.zig").ContentEntry;
 const api_types = @import("./object/api_types.zig");
@@ -29,16 +30,37 @@ pub const TagList = api_types.TagList;
 pub const CommitDetails = api_types.CommitDetails;
 pub const TrackedEntry = local_tracked.TrackedEntry;
 pub const TrackedList = local_tracked.TrackedList;
-pub const StoreVersionOptions = version_guard.Options;
 pub const expected_store_version = version_guard.expected_store_version;
 
-/// Validates store VERSION and optionally bootstraps VERSION for empty store.
+/// Validates store VERSION.
 pub fn ensureStoreVersion(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
-    options: StoreVersionOptions,
 ) !void {
-    try version_guard.ensureStoreVersion(allocator, omohi_dir, options);
+    try version_guard.ensureStoreVersion(allocator, omohi_dir);
+}
+
+/// Initializes VERSION for first track only.
+pub fn initializeVersionForFirstTrack(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+) !void {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    var file = omohi_dir.openFile(persistence.versionPath(), .{}) catch |err| switch (err) {
+        error.FileNotFound => {
+            if (!try isStoreEmpty(omohi_dir)) return error.MissingStoreVersion;
+            try local_version.writeVersion(allocator, persistence, expected_store_version);
+            return;
+        },
+        else => return err,
+    };
+    file.close();
+}
+
+fn isStoreEmpty(omohi_dir: std.fs.Dir) !bool {
+    var it = omohi_dir.iterate();
+    while (try it.next()) |_| return false;
+    return true;
 }
 
 /// Store facade API for ops layer.
@@ -1054,6 +1076,39 @@ test "tracklist returns empty when tracked directory does not exist" {
     var list = try tracklist(allocator, omohi_dir);
     defer freeTracklist(allocator, &list);
     try std.testing.expectEqual(@as(usize, 0), list.items.len);
+}
+
+test "initializeVersionForFirstTrack writes VERSION for empty store" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    const persistence = PersistenceLayout.init(omohi_dir);
+    const actual = try local_version.readVersion(allocator, persistence);
+    try std.testing.expectEqual(expected_store_version, actual);
+}
+
+test "initializeVersionForFirstTrack rejects non-empty store without VERSION" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    var marker = try omohi_dir.createFile("HEAD", .{});
+    defer marker.close();
+    try marker.writeAll("dummy\n");
+
+    try std.testing.expectError(
+        error.MissingStoreVersion,
+        initializeVersionForFirstTrack(allocator, omohi_dir),
+    );
 }
 
 test "content hash uses sha256 of base64-encoded file bytes" {
