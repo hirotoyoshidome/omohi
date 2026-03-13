@@ -208,7 +208,7 @@ test "writeCommitTags and readCommitTags round-trip record" {
     try std.testing.expectEqualStrings("2026-02-24T03:00:00.000Z", record.updated_at);
 }
 
-test "deleteCommitTags moves file into prefixed trash" {
+test "deleteCommitTags moves file into sibling trash path" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
