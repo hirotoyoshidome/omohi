@@ -8,7 +8,7 @@ pub fn rm(
     omohi_dir: std.fs.Dir,
     absolute_path: []const u8,
 ) !void {
-    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
+    try store_api.ensureStoreVersion(allocator, omohi_dir);
     try store_api.rm(allocator, omohi_dir, absolute_path);
 }
 
@@ -21,7 +21,7 @@ test "rm removes staged entry for tracked file" {
     defer source_dir.close();
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
-    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
+    try store_api.initializeVersionForFirstTrack(allocator, omohi_dir);
 
     var file = try source_dir.createFile("memo.txt", .{});
     try file.writeAll("hello");
@@ -51,7 +51,7 @@ test "rm propagates staged-not-found for tracked but unstaged path" {
     defer source_dir.close();
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
-    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
+    try store_api.initializeVersionForFirstTrack(allocator, omohi_dir);
 
     var file = try source_dir.createFile("memo.txt", .{});
     try file.writeAll("hello");

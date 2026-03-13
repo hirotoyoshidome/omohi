@@ -1,6 +1,8 @@
 const std = @import("std");
 
 const store_api = @import("../store/api.zig");
+const version = @import("../store/local/version.zig");
+const PersistenceLayout = @import("../store/object/persistence_layout.zig").PersistenceLayout;
 
 pub const TrackedList = store_api.TrackedList;
 
@@ -10,7 +12,8 @@ pub fn track(
     omohi_dir: std.fs.Dir,
     absolute_path: []const u8,
 ) ![32]u8 {
-    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
+    try store_api.initializeVersionForFirstTrack(allocator, omohi_dir);
+    try store_api.ensureStoreVersion(allocator, omohi_dir);
     const id = try store_api.track(allocator, omohi_dir, absolute_path);
     return id.value;
 }
@@ -21,7 +24,7 @@ pub fn untrack(
     omohi_dir: std.fs.Dir,
     tracked_file_id: []const u8,
 ) !void {
-    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
+    try store_api.ensureStoreVersion(allocator, omohi_dir);
     try store_api.untrack(allocator, omohi_dir, tracked_file_id);
 }
 
@@ -30,7 +33,7 @@ pub fn tracklist(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
 ) !TrackedList {
-    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
+    try store_api.ensureStoreVersion(allocator, omohi_dir);
     return store_api.tracklist(allocator, omohi_dir);
 }
 
@@ -47,6 +50,9 @@ test "ops track and tracklist round-trip" {
     defer omohi_dir.close();
 
     const tracked_id = try track(allocator, omohi_dir, "/tmp/ops-track.txt");
+    const persistence = PersistenceLayout.init(omohi_dir);
+    const actual_version = try version.readVersion(allocator, persistence);
+    try std.testing.expectEqual(store_api.expected_store_version, actual_version);
 
     var list = try tracklist(allocator, omohi_dir);
     defer freeTracklist(allocator, &list);
@@ -72,4 +78,22 @@ test "ops untrack removes tracked entry and propagates NotFound" {
     try std.testing.expectEqual(@as(usize, 0), list.items.len);
 
     try std.testing.expectError(error.NotFound, untrack(allocator, omohi_dir, &tracked_id));
+}
+
+test "track fails when VERSION is missing in non-empty store" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    var marker = try omohi_dir.createFile("HEAD", .{});
+    defer marker.close();
+    try marker.writeAll("dummy\n");
+
+    try std.testing.expectError(
+        error.MissingStoreVersion,
+        track(allocator, omohi_dir, "/tmp/ops-track-missing-version.txt"),
+    );
 }
