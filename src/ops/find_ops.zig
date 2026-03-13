@@ -12,7 +12,7 @@ pub fn find(
     tag_name: ?[]const u8,
     date_prefix: ?[]const u8,
 ) !CommitSummaryList {
-    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
+    try store_api.ensureStoreVersion(allocator, omohi_dir);
     return store_api.find(allocator, omohi_dir, tag_name, date_prefix);
 }
 

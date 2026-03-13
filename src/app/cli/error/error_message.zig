@@ -19,6 +19,9 @@ pub fn forRuntimeError(err: anyerror) []const u8 {
     if (err == error.VersionMismatch) {
         return "Store version mismatch detected in ~/.omohi/VERSION.\nThe store may be from a different format or corrupted.\nBack up ~/.omohi, then migrate or recreate the store.";
     }
+    if (err == error.MissingStoreVersion) {
+        return "Store metadata is incomplete because ~/.omohi/VERSION is missing.\nThis can indicate corruption or tampering.\nBack up ~/.omohi and restore VERSION before retrying.";
+    }
 
     return switch (err) {
         error.NothingToCommit => "No staged files to commit.",
@@ -41,6 +44,12 @@ test "runtime version mismatch message includes cause and remedy" {
     const text = forRuntimeError(error.VersionMismatch);
     try std.testing.expect(std.mem.indexOf(u8, text, "mismatch") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "migrate or recreate") != null);
+}
+
+test "runtime missing store version message includes missing VERSION guidance" {
+    const text = forRuntimeError(error.MissingStoreVersion);
+    try std.testing.expect(std.mem.indexOf(u8, text, "VERSION") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "corruption or tampering") != null);
 }
 
 test "runtime NothingToCommit is user-friendly" {

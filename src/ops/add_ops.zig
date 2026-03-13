@@ -9,7 +9,7 @@ pub fn add(
     omohi_dir: std.fs.Dir,
     absolute_path: []const u8,
 ) !void {
-    try add_store.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
+    try add_store.ensureStoreVersion(allocator, omohi_dir);
     try add_store.add(allocator, omohi_dir, absolute_path);
 }
 
@@ -65,7 +65,7 @@ test "add writes staged entry and staged object using content hash" {
     defer source_dir.close();
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
-    try add_store.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
+    try add_store.initializeVersionForFirstTrack(allocator, omohi_dir);
 
     const source_path = "memo.txt";
     const payload = "hello add";
@@ -117,7 +117,7 @@ test "commit can read staged data created by add" {
     defer source_dir.close();
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
-    try add_store.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
+    try add_store.initializeVersionForFirstTrack(allocator, omohi_dir);
 
     const source_path = "notes.txt";
     const payload = "flow-check";
