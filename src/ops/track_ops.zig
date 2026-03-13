@@ -1,8 +1,6 @@
 const std = @import("std");
 
 const store_api = @import("../store/api.zig");
-const version = @import("../store/local/version.zig");
-const PersistenceLayout = @import("../store/object/persistence_layout.zig").PersistenceLayout;
 
 pub const TrackedList = store_api.TrackedList;
 
@@ -50,9 +48,10 @@ test "ops track and tracklist round-trip" {
     defer omohi_dir.close();
 
     const tracked_id = try track(allocator, omohi_dir, "/tmp/ops-track.txt");
-    const persistence = PersistenceLayout.init(omohi_dir);
-    const actual_version = try version.readVersion(allocator, persistence);
-    try std.testing.expectEqual(store_api.expected_store_version, actual_version);
+    const version_bytes = try omohi_dir.readFileAlloc(allocator, "VERSION", 64);
+    defer allocator.free(version_bytes);
+    const actual_version = std.mem.trim(u8, std.mem.trimRight(u8, version_bytes, "\r\n"), " \t");
+    try std.testing.expectEqualStrings("1", actual_version);
 
     var list = try tracklist(allocator, omohi_dir);
     defer freeTracklist(allocator, &list);
