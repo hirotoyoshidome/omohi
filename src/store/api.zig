@@ -9,6 +9,7 @@ const local_tags = @import("./local/tags.zig");
 const local_commit_tags = @import("./local/commit_tags.zig");
 const local_trash = @import("./local/trash.zig");
 const local_head = @import("./local/head.zig");
+const local_journal = @import("./local/journal.zig");
 const local_version = @import("./local/version.zig");
 const version_guard = @import("./storage/version_guard.zig");
 const ContentEntry = @import("./object/content_entry.zig").ContentEntry;
@@ -17,6 +18,7 @@ const hash = @import("./object/hash.zig");
 const lock = @import("./storage/lock.zig");
 const utc = @import("./storage/time/utc.zig");
 const local_date = @import("./storage/time/local_date.zig");
+const local_timestamp = @import("./storage/time/local_timestamp.zig");
 const constrained_types = @import("./object/constrained_types.zig");
 
 const max_add_file_size = 64 * 1024 * 1024;
@@ -30,7 +32,6 @@ pub const TagList = api_types.TagList;
 pub const CommitDetails = api_types.CommitDetails;
 pub const TrackedEntry = local_tracked.TrackedEntry;
 pub const TrackedList = local_tracked.TrackedList;
-pub const expected_store_version = version_guard.expected_store_version;
 
 /// Validates store VERSION.
 pub fn ensureStoreVersion(
@@ -49,12 +50,32 @@ pub fn initializeVersionForFirstTrack(
     var file = omohi_dir.openFile(persistence.versionPath(), .{}) catch |err| switch (err) {
         error.FileNotFound => {
             if (!try isStoreEmpty(omohi_dir)) return error.MissingStoreVersion;
-            try local_version.writeVersion(allocator, persistence, expected_store_version);
+            try local_version.writeVersion(allocator, persistence, version_guard.expected_store_version);
             return;
         },
         else => return err,
     };
     file.close();
+}
+
+/// Appends one successful command event into journal.
+pub fn appendJournal(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    command_type: []const u8,
+    payload_json: []const u8,
+) !void {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    const ts_millis = std.time.milliTimestamp();
+    const ts_utc = try utc.iso8601FromMillis(ts_millis);
+    const local_ts = try local_timestamp.iso8601FromMillisLocal(ts_millis);
+
+    try local_journal.appendRecord(allocator, persistence, .{
+        .ts_utc = ts_utc,
+        .local_ts = local_ts,
+        .command_type = command_type,
+        .payload_json = payload_json,
+    });
 }
 
 fn isStoreEmpty(omohi_dir: std.fs.Dir) !bool {
@@ -1093,7 +1114,7 @@ test "initializeVersionForFirstTrack writes VERSION for empty store" {
 
     const persistence = PersistenceLayout.init(omohi_dir);
     const actual = try local_version.readVersion(allocator, persistence);
-    try std.testing.expectEqual(expected_store_version, actual);
+    try std.testing.expectEqual(version_guard.expected_store_version, actual);
 }
 
 test "initializeVersionForFirstTrack rejects non-empty store without VERSION" {
@@ -1316,4 +1337,30 @@ test "tagList returns empty when commit exists and has no tags" {
     var tags = try tagList(allocator, omohi_dir, existing_commit[0..]);
     defer freeTagList(allocator, &tags);
     try std.testing.expectEqual(@as(usize, 0), tags.items.len);
+}
+
+test "appendJournal writes one line into UTC daily file" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    try appendJournal(allocator, omohi_dir, "track", "{\"path\":\"/tmp/sample\"}");
+
+    var journal_dir = try omohi_dir.openDir("journal", .{ .iterate = true });
+    defer journal_dir.close();
+
+    var it = journal_dir.iterate();
+    const entry = (try it.next()) orelse return error.ExpectedJournalFile;
+    try std.testing.expectEqual(std.fs.File.Kind.file, entry.kind);
+
+    const journal_path = try std.fmt.allocPrint(allocator, "journal/{s}", .{entry.name});
+    defer allocator.free(journal_path);
+    const bytes = try omohi_dir.readFileAlloc(allocator, journal_path, 4096);
+    defer allocator.free(bytes);
+
+    try std.testing.expect(std.mem.indexOf(u8, bytes, " track 1 ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "{\"path\":\"/tmp/sample\"}") != null);
 }

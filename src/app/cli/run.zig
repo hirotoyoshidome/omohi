@@ -2,9 +2,12 @@ const std = @import("std");
 const parser = @import("parser/parse.zig");
 const parser_types = @import("parser/types.zig");
 const dispatch = @import("runtime/dispatch.zig");
+const journal_adapter = @import("runtime/journal_adapter.zig");
 const exit_code = @import("error/exit_code.zig");
 const error_map = @import("error/error_map.zig");
 const error_message = @import("error/error_message.zig");
+const environment = @import("environment.zig");
+const journal_append = @import("../../ops/journal/append.zig");
 
 pub fn run(allocator: std.mem.Allocator, argv: []const []const u8) u8 {
     var parsed = parser.parseArgs(allocator, argv) catch |err| {
@@ -13,12 +16,36 @@ pub fn run(allocator: std.mem.Allocator, argv: []const []const u8) u8 {
     };
     defer parser_types.deinitParsedRequest(allocator, &parsed);
 
+    var maybe_journal_event = journal_adapter.fromParsedRequest(allocator, parsed) catch |err| {
+        const mapped = error_map.exitCodeFor(err);
+        writeErrLine(error_message.forRuntimeError(err));
+        return mapped;
+    };
+    defer if (maybe_journal_event) |*event| event.deinit(allocator);
+
     var result = dispatch.dispatch(allocator, parsed) catch |err| {
         const mapped = error_map.exitCodeFor(err);
         writeErrLine(error_message.forRuntimeError(err));
         return mapped;
     };
     defer result.deinit(allocator);
+
+    if (result.exit_code == exit_code.ok) {
+        if (maybe_journal_event) |event| {
+            var omohi = environment.openOmohiDir(allocator, false) catch |err| {
+                const mapped = error_map.exitCodeFor(err);
+                writeErrLine(error_message.forRuntimeError(err));
+                return mapped;
+            };
+            defer omohi.deinit(allocator);
+
+            journal_append.appendJournal(allocator, omohi.dir, event.command_type, event.payload_json) catch |err| {
+                const mapped = error_map.exitCodeFor(err);
+                writeErrLine(error_message.forRuntimeError(err));
+                return mapped;
+            };
+        }
+    }
 
     if (result.to_stderr) {
         writeErr(result.output);
