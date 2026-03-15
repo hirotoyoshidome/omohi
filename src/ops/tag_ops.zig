@@ -6,7 +6,7 @@ pub const TagList = store_api.TagList;
 
 /// Lists tags for a commit.
 pub fn list(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir, commit_id: []const u8) !TagList {
-    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
+    try store_api.ensureStoreVersion(allocator, omohi_dir);
     return store_api.tagList(allocator, omohi_dir, commit_id);
 }
 
@@ -21,7 +21,7 @@ pub fn add(
     commit_id: []const u8,
     tag_names: []const []const u8,
 ) !void {
-    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
+    try store_api.ensureStoreVersion(allocator, omohi_dir);
     try store_api.tagAdd(allocator, omohi_dir, commit_id, tag_names);
 }
 
@@ -32,6 +32,6 @@ pub fn rm(
     commit_id: []const u8,
     tag_names: []const []const u8,
 ) !void {
-    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
+    try store_api.ensureStoreVersion(allocator, omohi_dir);
     try store_api.tagRemove(allocator, omohi_dir, commit_id, tag_names);
 }

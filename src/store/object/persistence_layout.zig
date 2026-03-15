@@ -37,7 +37,7 @@ pub const PersistenceLayout = struct {
             return buildPrefixedPath(allocator, self.base, hex_id, .normal);
         }
 
-        /// Builds a prefixed trash path using the leading two characters of the hex id.
+        /// Builds a sibling trash path under `<base>/.trash/<hex_id>`.
         /// Memory: owned (caller must free)
         /// Errors: error{InvalidHexId,OutOfMemory}
         pub fn trashPath(self: PrefixedDirectory, allocator: std.mem.Allocator, hex_id: []const u8) ![]u8 {
@@ -207,9 +207,8 @@ fn buildPrefixedPath(
             hex_id[0..2],
             hex_id,
         }),
-        .trash => std.fmt.allocPrint(allocator, "{s}/.trash/{s}/{s}", .{
+        .trash => std.fmt.allocPrint(allocator, "{s}/.trash/{s}", .{
             base,
-            hex_id[0..2],
             hex_id,
         }),
     };
@@ -238,11 +237,17 @@ test "PersistenceLayout builds prefixed paths" {
 
     const commit_tags_trash = try layout.commitTagsTrashPath(std.testing.allocator, &id);
     defer std.testing.allocator.free(commit_tags_trash);
-    try std.testing.expect(std.mem.startsWith(u8, commit_tags_trash, "data/commit-tags/.trash/aa/"));
+    try std.testing.expectEqualStrings(
+        "data/commit-tags/.trash/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        commit_tags_trash,
+    );
 
     const objects_trash = try layout.objectsTrashPath(std.testing.allocator, &id);
     defer std.testing.allocator.free(objects_trash);
-    try std.testing.expect(std.mem.startsWith(u8, objects_trash, "objects/.trash/aa/"));
+    try std.testing.expectEqualStrings(
+        "objects/.trash/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        objects_trash,
+    );
 
     try std.testing.expectEqualStrings("tracked/.trash", layout.trackedTrashPath());
     try std.testing.expectEqualStrings("staged/entries/.trash", layout.stagedEntriesTrashPath());

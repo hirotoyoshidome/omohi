@@ -8,7 +8,7 @@ pub const StatusList = store_api.StatusList;
 
 /// Returns status entries for tracked files.
 pub fn status(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir) !StatusList {
-    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
+    try store_api.ensureStoreVersion(allocator, omohi_dir);
     return store_api.status(allocator, omohi_dir);
 }
 

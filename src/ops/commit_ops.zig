@@ -8,7 +8,7 @@ pub fn commit(
     omohi_dir: std.fs.Dir,
     message: []const u8,
 ) ![64]u8 {
-    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
+    try store_api.ensureStoreVersion(allocator, omohi_dir);
     const id = try store_api.commit(allocator, omohi_dir, message);
     return id.value;
 }
@@ -20,6 +20,16 @@ fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
         if (line.len <= key.len or line[key.len] != '=') continue;
         if (!std.mem.startsWith(u8, line, key)) continue;
         return line[key.len + 1 ..];
+    }
+    return null;
+}
+
+fn headValue(bytes: []const u8) ?[]const u8 {
+    var iter = std.mem.splitScalar(u8, bytes, '\n');
+    while (iter.next()) |raw| {
+        const line = std.mem.trim(u8, std.mem.trimRight(u8, raw, "\r"), " \t");
+        if (line.len == 0) continue;
+        return line;
     }
     return null;
 }
@@ -38,7 +48,7 @@ test "commit writes immutable data and cleans staged" {
     const allocator = std.testing.allocator;
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
-    try store_api.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
+    try store_api.initializeVersionForFirstTrack(allocator, omohi_dir);
 
     try omohi_dir.makePath("staged/entries");
     try omohi_dir.makePath("staged/objects");
@@ -70,7 +80,7 @@ test "commit writes immutable data and cleans staged" {
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
-    const head_value = propertyValue(head_bytes, "commitId");
+    const head_value = headValue(head_bytes);
     try std.testing.expect(head_value != null);
     const head_id = head_value.?;
     try std.testing.expectEqualSlices(u8, &commit_id, head_id);
@@ -92,16 +102,13 @@ test "commit writes immutable data and cleans staged" {
     defer allocator.free(snapshot_path);
     const snapshot_bytes = try omohi_dir.readFileAlloc(allocator, snapshot_path, 512);
     defer allocator.free(snapshot_bytes);
-    const expected_snapshot_path = try std.fmt.allocPrint(
+    const expected_snapshot_entry = try std.fmt.allocPrint(
         allocator,
-        "entry.0.path=/objects/{s}/{s}",
-        .{ content_hash[0..2], content_hash },
+        "entries=/objects/{s}/{s}:{s}",
+        .{ content_hash[0..2], content_hash, content_hash },
     );
-    defer allocator.free(expected_snapshot_path);
-    try std.testing.expect(std.mem.indexOf(u8, snapshot_bytes, expected_snapshot_path) != null);
-    const expected_hash_line = try std.fmt.allocPrint(allocator, "entry.0.contentHash={s}", .{content_hash});
-    defer allocator.free(expected_hash_line);
-    try std.testing.expect(std.mem.indexOf(u8, snapshot_bytes, expected_hash_line) != null);
+    defer allocator.free(expected_snapshot_entry);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot_bytes, expected_snapshot_entry) != null);
 
     const objects_path = try std.fmt.allocPrint(allocator, "objects/{s}/{s}", .{ content_hash[0..2], content_hash });
     defer allocator.free(objects_path);
@@ -120,7 +127,7 @@ test "commit without staged entries returns NothingToCommit and removes lock" {
 
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
-    try store_api.ensureStoreVersion(std.testing.allocator, omohi_dir, .{ .allow_bootstrap = true });
+    try store_api.initializeVersionForFirstTrack(std.testing.allocator, omohi_dir);
     try omohi_dir.makePath("staged/entries");
     try omohi_dir.makePath("staged/objects");
 

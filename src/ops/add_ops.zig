@@ -7,11 +7,10 @@ const commit_ops = @import("./commit_ops.zig");
 pub fn add(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
-    source_dir: std.fs.Dir,
-    source_path: []const u8,
+    absolute_path: []const u8,
 ) !void {
-    try add_store.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = false });
-    try add_store.add(allocator, omohi_dir, source_dir, source_path);
+    try add_store.ensureStoreVersion(allocator, omohi_dir);
+    try add_store.add(allocator, omohi_dir, absolute_path);
 }
 
 fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
@@ -47,6 +46,16 @@ fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
     return null;
 }
 
+fn headValue(bytes: []const u8) ?[]const u8 {
+    var iter = std.mem.splitScalar(u8, bytes, '\n');
+    while (iter.next()) |raw| {
+        const line = std.mem.trim(u8, std.mem.trimRight(u8, raw, "\r"), " \t");
+        if (line.len == 0) continue;
+        return line;
+    }
+    return null;
+}
+
 test "add writes staged entry and staged object using content hash" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -56,7 +65,7 @@ test "add writes staged entry and staged object using content hash" {
     defer source_dir.close();
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
-    try add_store.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
+    try add_store.initializeVersionForFirstTrack(allocator, omohi_dir);
 
     const source_path = "memo.txt";
     const payload = "hello add";
@@ -64,7 +73,11 @@ test "add writes staged entry and staged object using content hash" {
     try source_file.writeAll(payload);
     source_file.close();
 
-    try add(allocator, omohi_dir, source_dir, source_path);
+    const absolute_path = try source_dir.realpathAlloc(allocator, source_path);
+    defer allocator.free(absolute_path);
+    _ = try add_store.track(allocator, omohi_dir, absolute_path);
+
+    try add(allocator, omohi_dir, absolute_path);
 
     var staged_object_hash: [64]u8 = undefined;
     try onlyFileNameInDir(omohi_dir, "staged/objects", &staged_object_hash);
@@ -104,7 +117,7 @@ test "commit can read staged data created by add" {
     defer source_dir.close();
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
-    try add_store.ensureStoreVersion(allocator, omohi_dir, .{ .allow_bootstrap = true });
+    try add_store.initializeVersionForFirstTrack(allocator, omohi_dir);
 
     const source_path = "notes.txt";
     const payload = "flow-check";
@@ -112,12 +125,16 @@ test "commit can read staged data created by add" {
     try source_file.writeAll(payload);
     source_file.close();
 
-    try add(allocator, omohi_dir, source_dir, source_path);
+    const absolute_path = try source_dir.realpathAlloc(allocator, source_path);
+    defer allocator.free(absolute_path);
+    _ = try add_store.track(allocator, omohi_dir, absolute_path);
+
+    try add(allocator, omohi_dir, absolute_path);
     _ = try commit_ops.commit(allocator, omohi_dir, "via add");
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
-    const commit_id = propertyValue(head_bytes, "commitId") orelse return error.MissingCommitId;
+    const commit_id = headValue(head_bytes) orelse return error.MissingCommitId;
 
     const commit_path = try std.fmt.allocPrint(allocator, "commits/{s}/{s}", .{ commit_id[0..2], commit_id });
     defer allocator.free(commit_path);
@@ -129,7 +146,10 @@ test "commit can read staged data created by add" {
     defer allocator.free(snapshot_path);
     const snapshot_bytes = try omohi_dir.readFileAlloc(allocator, snapshot_path, 1024);
     defer allocator.free(snapshot_bytes);
-    const hash_value = propertyValue(snapshot_bytes, "entry.0.contentHash") orelse return error.MissingContentHash;
+    const entries_value = propertyValue(snapshot_bytes, "entries") orelse return error.MissingContentHash;
+    const separator = std.mem.lastIndexOfScalar(u8, entries_value, ':') orelse return error.MissingContentHash;
+    if (separator + 1 >= entries_value.len) return error.MissingContentHash;
+    const hash_value = entries_value[separator + 1 ..];
 
     const object_path = try std.fmt.allocPrint(allocator, "objects/{s}/{s}", .{ hash_value[0..2], hash_value });
     defer allocator.free(object_path);

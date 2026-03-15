@@ -9,12 +9,16 @@ const local_tags = @import("./local/tags.zig");
 const local_commit_tags = @import("./local/commit_tags.zig");
 const local_trash = @import("./local/trash.zig");
 const local_head = @import("./local/head.zig");
+const local_journal = @import("./local/journal.zig");
+const local_version = @import("./local/version.zig");
 const version_guard = @import("./storage/version_guard.zig");
 const ContentEntry = @import("./object/content_entry.zig").ContentEntry;
 const api_types = @import("./object/api_types.zig");
 const hash = @import("./object/hash.zig");
 const lock = @import("./storage/lock.zig");
 const utc = @import("./storage/time/utc.zig");
+const local_date = @import("./storage/time/local_date.zig");
+const local_timestamp = @import("./storage/time/local_timestamp.zig");
 const constrained_types = @import("./object/constrained_types.zig");
 
 const max_add_file_size = 64 * 1024 * 1024;
@@ -28,16 +32,56 @@ pub const TagList = api_types.TagList;
 pub const CommitDetails = api_types.CommitDetails;
 pub const TrackedEntry = local_tracked.TrackedEntry;
 pub const TrackedList = local_tracked.TrackedList;
-pub const StoreVersionOptions = version_guard.Options;
-pub const expected_store_version = version_guard.expected_store_version;
 
-/// Validates store VERSION and optionally bootstraps VERSION for empty store.
+/// Validates store VERSION.
 pub fn ensureStoreVersion(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
-    options: StoreVersionOptions,
 ) !void {
-    try version_guard.ensureStoreVersion(allocator, omohi_dir, options);
+    try version_guard.ensureStoreVersion(allocator, omohi_dir);
+}
+
+/// Initializes VERSION for first track only.
+pub fn initializeVersionForFirstTrack(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+) !void {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    var file = omohi_dir.openFile(persistence.versionPath(), .{}) catch |err| switch (err) {
+        error.FileNotFound => {
+            if (!try isStoreEmpty(omohi_dir)) return error.MissingStoreVersion;
+            try local_version.writeVersion(allocator, persistence, version_guard.expected_store_version);
+            return;
+        },
+        else => return err,
+    };
+    file.close();
+}
+
+/// Appends one successful command event into journal.
+pub fn appendJournal(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    command_type: []const u8,
+    payload_json: []const u8,
+) !void {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    const ts_millis = std.time.milliTimestamp();
+    const ts_utc = try utc.iso8601FromMillis(ts_millis);
+    const local_ts = try local_timestamp.iso8601FromMillisLocal(ts_millis);
+
+    try local_journal.appendRecord(allocator, persistence, .{
+        .ts_utc = ts_utc,
+        .local_ts = local_ts,
+        .command_type = command_type,
+        .payload_json = payload_json,
+    });
+}
+
+fn isStoreEmpty(omohi_dir: std.fs.Dir) !bool {
+    var it = omohi_dir.iterate();
+    while (try it.next()) |_| return false;
+    return true;
 }
 
 /// Store facade API for ops layer.
@@ -54,12 +98,11 @@ pub fn ensureStoreVersion(
 ///
 /// Adds a file into staging and writes both entry and staged object.
 /// Memory: borrowed (allocator is only used for temporary allocations)
-/// Errors: lock/I/O errors, error{FileTooLarge}, and constrained type errors.
+/// Errors: lock/I/O errors, error{TrackedFileNotFound, FileTooLarge}, and constrained type errors.
 pub fn add(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
-    source_dir: std.fs.Dir,
-    source_path: []const u8,
+    absolute_path: []const u8,
 ) !void {
     try lock.acquireLock(omohi_dir);
     defer lock.releaseLock(omohi_dir);
@@ -68,7 +111,17 @@ pub fn add(
     try omohi_dir.makePath(persistence.stagedEntriesPath());
     try omohi_dir.makePath(persistence.stagedObjectsPath());
 
-    const content_hash = try contentHashFromFile(allocator, source_dir, source_path);
+    _ = try constrained_types.TrackedFilePath.init(absolute_path);
+    try ensureTrackedPathExists(allocator, persistence, absolute_path);
+
+    const source_parent = std.fs.path.dirname(absolute_path) orelse return error.InvalidPath;
+    const source_name = std.fs.path.basename(absolute_path);
+    if (source_name.len == 0) return error.InvalidPath;
+
+    var source_dir = try std.fs.openDirAbsolute(source_parent, .{});
+    defer source_dir.close();
+
+    const content_hash = try contentHashFromFile(allocator, source_dir, source_name);
     const entry_path = try std.fmt.allocPrint(
         allocator,
         "/objects/{s}/{s}",
@@ -80,30 +133,39 @@ pub fn add(
         .path = try constrained_types.ContentPath.init(entry_path),
         .content_hash = try constrained_types.ContentHash.init(&content_hash),
     };
-    const staged_file_id = hash.stagedFileIdFrom(source_path, &content_hash);
+    const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
 
     try local_staged.writeStagedEntry(allocator, persistence, &staged_file_id, entry);
-    try local_staged.copyFileToStagedObject(allocator, persistence, source_dir, source_path, &content_hash);
+    try local_staged.copyFileToStagedObject(allocator, persistence, source_dir, source_name, &content_hash);
 }
 
 /// Removes a staged entry/object pair by file path.
 /// Memory: borrowed
-/// Errors: error{NotFound} plus lock/I/O and constrained type errors.
+/// Errors: error{TrackedFileNotFound, StagedFileNotFound} plus lock/I/O and constrained type errors.
 pub fn rm(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
-    source_dir: std.fs.Dir,
-    source_path: []const u8,
+    absolute_path: []const u8,
 ) !void {
     try lock.acquireLock(omohi_dir);
     defer lock.releaseLock(omohi_dir);
 
     const persistence = PersistenceLayout.init(omohi_dir);
-    const content_hash = try contentHashFromFile(allocator, source_dir, source_path);
-    const staged_file_id = hash.stagedFileIdFrom(source_path, &content_hash);
+    _ = try constrained_types.TrackedFilePath.init(absolute_path);
+    try ensureTrackedPathExists(allocator, persistence, absolute_path);
+
+    const source_parent = std.fs.path.dirname(absolute_path) orelse return error.InvalidPath;
+    const source_name = std.fs.path.basename(absolute_path);
+    if (source_name.len == 0) return error.InvalidPath;
+
+    var source_dir = try std.fs.openDirAbsolute(source_parent, .{});
+    defer source_dir.close();
+
+    const content_hash = try contentHashFromFile(allocator, source_dir, source_name);
+    const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
 
     local_trash.moveStagedEntryToTrash(allocator, persistence, &staged_file_id) catch |err| switch (err) {
-        error.FileNotFound => return error.NotFound,
+        error.FileNotFound => return error.StagedFileNotFound,
         else => return err,
     };
 
@@ -268,12 +330,12 @@ pub fn freeStatusList(allocator: std.mem.Allocator, list: *StatusList) void {
 }
 
 /// Finds commits with optional tag and date filters.
-/// Date format is YYYY-MM-DD and compared with createdAt prefix.
+/// Date format is YYYY-MM-DD and compared against createdAt in local timezone.
 pub fn find(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     tag_name: ?[]const u8,
-    date_prefix: ?[]const u8,
+    date_ymd: ?[]const u8,
 ) !CommitSummaryList {
     var out = CommitSummaryList.init(allocator);
     errdefer freeCommitSummaryList(allocator, &out);
@@ -282,12 +344,22 @@ pub fn find(
     var commit_ids = try listCommitIds(allocator, persistence);
     defer commit_ids.deinit();
 
+    var matches = std.array_list.Managed(FindCandidate).init(allocator);
+    defer freeFindCandidates(allocator, &matches);
+
     for (commit_ids.items) |commit_id_buf| {
         const parsed = try readCommitFile(allocator, persistence, commit_id_buf[0..]);
         errdefer freeParsedCommit(allocator, &parsed);
 
-        if (date_prefix) |prefix| {
-            if (!std.mem.startsWith(u8, parsed.created_at, prefix)) {
+        const created_at_millis = local_date.parseUtcIso8601Millis(parsed.created_at) catch |err| switch (err) {
+            error.InvalidTimestamp, error.TimestampBeforeEpoch, error.TimestampOutOfRange => return error.InvalidCommit,
+        };
+
+        if (date_ymd) |target_date| {
+            const local_ymd = local_date.utcIso8601ToLocalYmd(parsed.created_at) catch |err| switch (err) {
+                error.InvalidTimestamp, error.TimestampBeforeEpoch, error.TimestampOutOfRange, error.LocaltimeFailed => return error.InvalidCommit,
+            };
+            if (!std.mem.eql(u8, local_ymd[0..], target_date)) {
                 freeParsedCommit(allocator, &parsed);
                 continue;
             }
@@ -300,10 +372,23 @@ pub fn find(
             }
         }
 
+        try matches.append(.{
+            .parsed = parsed,
+            .created_at_millis = created_at_millis,
+        });
+    }
+
+    std.mem.sort(FindCandidate, matches.items, {}, isFindCandidateDescLessThan);
+
+    const max_results: usize = 10;
+    const keep_count = @min(matches.items.len, max_results);
+    var idx: usize = 0;
+    while (idx < keep_count) : (idx += 1) {
+        const candidate = matches.items[idx];
         try out.append(.{
-            .commit_id = parsed.commit_id,
-            .message = parsed.message,
-            .created_at = parsed.created_at,
+            .commit_id = candidate.parsed.commit_id,
+            .message = try allocator.dupe(u8, candidate.parsed.message),
+            .created_at = try allocator.dupe(u8, candidate.parsed.created_at),
         });
     }
 
@@ -325,7 +410,10 @@ pub fn show(
     commit_id: []const u8,
 ) !CommitDetails {
     const persistence = PersistenceLayout.init(omohi_dir);
-    const parsed = try readCommitFile(allocator, persistence, commit_id);
+    const parsed = readCommitFile(allocator, persistence, commit_id) catch |err| switch (err) {
+        error.FileNotFound => return error.CommitNotFound,
+        else => return err,
+    };
     errdefer freeParsedCommit(allocator, &parsed);
 
     var entries = try readSnapshotEntries(allocator, persistence, parsed.snapshot_id.asSlice());
@@ -370,12 +458,13 @@ pub fn tagList(
     commit_id: []const u8,
 ) !TagList {
     const persistence = PersistenceLayout.init(omohi_dir);
-    _ = try constrained_types.CommitId.init(commit_id);
+    const id = try constrained_types.CommitId.init(commit_id);
+    try ensureCommitExists(allocator, persistence, id.asSlice());
 
     var tags = TagList.init(allocator);
     errdefer freeTagList(allocator, &tags);
 
-    const record = local_commit_tags.readCommitTags(allocator, persistence, commit_id) catch |err| switch (err) {
+    const record = local_commit_tags.readCommitTags(allocator, persistence, id.asSlice()) catch |err| switch (err) {
         error.FileNotFound => return tags,
         else => return err,
     };
@@ -530,7 +619,7 @@ pub fn commit(
 
     std.mem.sort(ContentEntry, entries.items, {}, isPathLessThan);
 
-    const snapshot_id = hash.snapshotIdFrom(entries.items);
+    const snapshot_id = try hash.snapshotIdFrom(allocator, entries.items);
     const commit_id = hash.commitIdFrom(snapshot_id[0..], message);
 
     try local_snapshot.writeSnapshot(allocator, persistence, snapshot_id[0..], entries.items);
@@ -551,6 +640,11 @@ const ParsedCommit = struct {
     snapshot_id: constrained_types.SnapshotId,
     message: []u8,
     created_at: []u8,
+};
+
+const FindCandidate = struct {
+    parsed: ParsedCommit,
+    created_at_millis: i64,
 };
 
 fn readCommitFile(
@@ -583,6 +677,11 @@ fn freeParsedCommit(allocator: std.mem.Allocator, parsed: *const ParsedCommit) v
     allocator.free(parsed.created_at);
 }
 
+fn freeFindCandidates(allocator: std.mem.Allocator, candidates: *std.array_list.Managed(FindCandidate)) void {
+    for (candidates.items) |candidate| freeParsedCommit(allocator, &candidate.parsed);
+    candidates.deinit();
+}
+
 fn readSnapshotEntries(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -596,22 +695,23 @@ fn readSnapshotEntries(
     const bytes = try persistence.dir.readFileAlloc(allocator, path, 4 * 1024 * 1024);
     defer allocator.free(bytes);
 
-    const count_raw = propertyValue(bytes, "entries.count") orelse return error.InvalidSnapshot;
-    const count = try std.fmt.parseInt(usize, count_raw, 10);
-
     var out = std.array_list.Managed(ContentEntry).init(allocator);
     errdefer freeContentEntryList(allocator, &out);
 
-    var index: usize = 0;
-    while (index < count) : (index += 1) {
-        const key_path = try std.fmt.allocPrint(allocator, "entry.{d}.path", .{index});
-        defer allocator.free(key_path);
-        const key_hash = try std.fmt.allocPrint(allocator, "entry.{d}.contentHash", .{index});
-        defer allocator.free(key_hash);
+    const entries_raw = propertyValue(bytes, "entries") orelse return error.InvalidSnapshot;
+    const entries_value = std.mem.trim(u8, entries_raw, " \t");
+    if (entries_value.len == 0) return out;
 
-        const raw_path = propertyValue(bytes, key_path) orelse return error.InvalidSnapshot;
-        const raw_hash = propertyValue(bytes, key_hash) orelse return error.InvalidSnapshot;
+    var pair_iter = std.mem.splitScalar(u8, entries_value, ',');
+    while (pair_iter.next()) |pair_raw| {
+        const pair = std.mem.trim(u8, pair_raw, " \t");
+        if (pair.len == 0) return error.InvalidSnapshot;
 
+        const separator = std.mem.lastIndexOfScalar(u8, pair, ':') orelse return error.InvalidSnapshot;
+        if (separator == 0 or separator + 1 >= pair.len) return error.InvalidSnapshot;
+
+        const raw_path = pair[0..separator];
+        const raw_hash = pair[separator + 1 ..];
         const path_owned = try allocator.dupe(u8, raw_path);
         errdefer allocator.free(path_owned);
 
@@ -633,9 +733,11 @@ fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
     var iter = std.mem.splitScalar(u8, bytes, '\n');
     while (iter.next()) |raw| {
         const line = std.mem.trim(u8, std.mem.trimRight(u8, raw, "\r"), " \t");
-        if (line.len <= key.len or line[key.len] != '=') continue;
-        if (!std.mem.startsWith(u8, line, key)) continue;
-        return line[key.len + 1 ..];
+        if (line.len == 0 or line[0] == '#' or line[0] == '!') continue;
+
+        const eq_idx = std.mem.indexOfScalar(u8, line, '=') orelse continue;
+        if (!std.mem.eql(u8, line[0..eq_idx], key)) continue;
+        return line[eq_idx + 1 ..];
     }
     return null;
 }
@@ -676,6 +778,11 @@ fn listCommitIds(
 
 fn isCommitIdDescLessThan(_: void, lhs: [64]u8, rhs: [64]u8) bool {
     return std.mem.order(u8, &lhs, &rhs) == .gt;
+}
+
+fn isFindCandidateDescLessThan(_: void, lhs: FindCandidate, rhs: FindCandidate) bool {
+    if (lhs.created_at_millis != rhs.created_at_millis) return lhs.created_at_millis > rhs.created_at_millis;
+    return std.mem.order(u8, lhs.parsed.commit_id.asSlice(), rhs.parsed.commit_id.asSlice()) == .gt;
 }
 
 fn isTwoHex(input: []const u8) bool {
@@ -744,8 +851,19 @@ fn headCommitId(
     };
     defer allocator.free(bytes);
 
-    const commit_id = propertyValue(bytes, "commitId") orelse return error.InvalidHead;
-    return try constrained_types.CommitId.init(commit_id);
+    return try constrained_types.CommitId.init(parseHeadCommitId(bytes) orelse return error.InvalidHead);
+}
+
+fn parseHeadCommitId(bytes: []const u8) ?[]const u8 {
+    var iter = std.mem.splitScalar(u8, bytes, '\n');
+    while (iter.next()) |raw| {
+        const line = std.mem.trim(u8, std.mem.trimRight(u8, raw, "\r"), " \t");
+        if (line.len == 0 or line[0] == '#' or line[0] == '!') continue;
+        if (std.mem.startsWith(u8, line, "commitId=")) return line["commitId=".len..];
+        if (std.mem.indexOfScalar(u8, line, '=') != null) return null;
+        return line;
+    }
+    return null;
 }
 
 fn hasStagedEntry(
@@ -787,7 +905,29 @@ fn contentHashFromOpenedFile(
     const bytes = try source_file.readToEndAlloc(allocator, max_bytes);
     defer allocator.free(bytes);
 
-    return hash.sha256Hex(bytes);
+    const encoded_len = std.base64.standard.Encoder.calcSize(bytes.len);
+    const encoded = try allocator.alloc(u8, encoded_len);
+    defer allocator.free(encoded);
+    _ = std.base64.standard.Encoder.encode(encoded, bytes);
+
+    return hash.sha256Hex(encoded);
+}
+
+fn ensureTrackedPathExists(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    absolute_path: []const u8,
+) !void {
+    var tracked = try loadTrackedOrEmpty(allocator, persistence);
+    defer if (tracked) |*list| local_tracked.freeTrackedList(allocator, list);
+
+    if (tracked) |*list| {
+        for (list.items) |entry| {
+            if (std.mem.eql(u8, entry.path.asSlice(), absolute_path)) return;
+        }
+    }
+
+    return error.TrackedFileNotFound;
 }
 
 fn loadTrackedOrEmpty(
@@ -798,6 +938,93 @@ fn loadTrackedOrEmpty(
         error.MissingTracked => null,
         else => return err,
     };
+}
+
+fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
+    var target = try dir.openDir(path, .{ .iterate = true });
+    defer target.close();
+
+    var it = target.iterate();
+    const first = (try it.next()) orelse return error.MissingFile;
+    if (first.kind != .file) return error.InvalidEntry;
+    if ((try it.next()) != null) return error.TooManyFiles;
+    if (first.name.len != out.len) return error.InvalidHashLength;
+    @memcpy(out, first.name);
+}
+
+fn filledHexId(ch: u8) [64]u8 {
+    var value: [64]u8 = undefined;
+    @memset(&value, ch);
+    return value;
+}
+
+fn writeFindFixtureCommit(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    commit_id: []const u8,
+    message: []const u8,
+    created_at: []const u8,
+) !void {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    const path = try persistence.commitsPath(allocator, commit_id);
+    defer allocator.free(path);
+
+    const snapshot_id = filledHexId('a');
+    const content = try std.fmt.allocPrint(
+        allocator,
+        "snapshotId={s}\nmessage={s}\ncreatedAt={s}\n",
+        .{ snapshot_id[0..], message, created_at },
+    );
+    defer allocator.free(content);
+
+    const parent = std.fs.path.dirname(path) orelse return error.InvalidPath;
+    try omohi_dir.makePath(parent);
+
+    var file = try omohi_dir.createFile(path, .{ .truncate = true });
+    defer file.close();
+    try file.writeAll(content);
+}
+
+fn writeFindFixtureTags(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    commit_id: []const u8,
+    tag_names: []const []const u8,
+) !void {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    try local_commit_tags.writeCommitTags(
+        allocator,
+        persistence,
+        commit_id,
+        tag_names,
+        "2026-03-11T00:00:00.000Z",
+        "2026-03-11T00:00:00.000Z",
+    );
+}
+
+test "propertyValue ignores java properties comment lines" {
+    const bytes =
+        "#Tue Mar 10 16:00:00 UTC 2026\n" ++
+        "!generated by java.util.Properties\n" ++
+        "entries=/objects/aa/hash:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n";
+    const actual = propertyValue(bytes, "entries");
+    try std.testing.expect(actual != null);
+    try std.testing.expectEqualStrings(
+        "/objects/aa/hash:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        actual.?,
+    );
+}
+
+test "parseHeadCommitId supports plain id and rejects unrelated key-value" {
+    const plain = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n";
+    const plain_id = parseHeadCommitId(plain);
+    try std.testing.expect(plain_id != null);
+    try std.testing.expectEqualStrings(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        plain_id.?,
+    );
+
+    try std.testing.expect(parseHeadCommitId("snapshotId=abc\n") == null);
 }
 
 test "track writes tracked entry and tracklist returns it" {
@@ -873,4 +1100,267 @@ test "tracklist returns empty when tracked directory does not exist" {
     var list = try tracklist(allocator, omohi_dir);
     defer freeTracklist(allocator, &list);
     try std.testing.expectEqual(@as(usize, 0), list.items.len);
+}
+
+test "initializeVersionForFirstTrack writes VERSION for empty store" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    const persistence = PersistenceLayout.init(omohi_dir);
+    const actual = try local_version.readVersion(allocator, persistence);
+    try std.testing.expectEqual(version_guard.expected_store_version, actual);
+}
+
+test "initializeVersionForFirstTrack rejects non-empty store without VERSION" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    var marker = try omohi_dir.createFile("HEAD", .{});
+    defer marker.close();
+    try marker.writeAll("dummy\n");
+
+    try std.testing.expectError(
+        error.MissingStoreVersion,
+        initializeVersionForFirstTrack(allocator, omohi_dir),
+    );
+}
+
+test "content hash uses sha256 of base64-encoded file bytes" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+
+    var source_file = try source_dir.createFile("memo.txt", .{});
+    try source_file.writeAll("hello add");
+    source_file.close();
+
+    const content_hash = try contentHashFromFile(allocator, source_dir, "memo.txt");
+    const expected = hash.sha256Hex("aGVsbG8gYWRk");
+    try std.testing.expectEqualSlices(u8, expected[0..], content_hash[0..]);
+}
+
+test "add requires tracked absolute path" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    var source_file = try source_dir.createFile("untracked.txt", .{});
+    try source_file.writeAll("payload");
+    source_file.close();
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, "untracked.txt");
+    defer allocator.free(absolute_path);
+
+    try std.testing.expectError(error.TrackedFileNotFound, add(allocator, omohi_dir, absolute_path));
+}
+
+test "rm distinguishes tracked-not-found and staged-not-found" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    var source_file = try source_dir.createFile("memo.txt", .{});
+    try source_file.writeAll("payload");
+    source_file.close();
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, "memo.txt");
+    defer allocator.free(absolute_path);
+
+    try std.testing.expectError(error.TrackedFileNotFound, rm(allocator, omohi_dir, absolute_path));
+    _ = try track(allocator, omohi_dir, absolute_path);
+    try std.testing.expectError(error.StagedFileNotFound, rm(allocator, omohi_dir, absolute_path));
+}
+
+test "add uses absolute path when generating staged file id" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    var source_file = try source_dir.createFile("memo.txt", .{});
+    try source_file.writeAll("hello add");
+    source_file.close();
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, "memo.txt");
+    defer allocator.free(absolute_path);
+    _ = try track(allocator, omohi_dir, absolute_path);
+    try add(allocator, omohi_dir, absolute_path);
+
+    const content_hash = try contentHashFromFile(allocator, source_dir, "memo.txt");
+    const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
+
+    var staged_entry_id: [64]u8 = undefined;
+    try onlyFileNameInDir(omohi_dir, "staged/entries", &staged_entry_id);
+    try std.testing.expectEqualSlices(u8, staged_file_id[0..], staged_entry_id[0..]);
+}
+
+test "find sorts by createdAt desc and limits to ten commits" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const id_chars = [_]u8{ 'f', 'e', 'd', 'c', 'b', 'a', '9', '8', '7', '6', '0' };
+    for (id_chars, 0..) |id_ch, idx| {
+        const commit_id = filledHexId(id_ch);
+        const created_at = try std.fmt.allocPrint(
+            allocator,
+            "2026-03-{d:0>2}T00:00:00.000Z",
+            .{idx + 1},
+        );
+        defer allocator.free(created_at);
+        const message = try std.fmt.allocPrint(allocator, "msg-{d}", .{idx + 1});
+        defer allocator.free(message);
+
+        try writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], message, created_at);
+    }
+
+    var list = try find(allocator, omohi_dir, null, null);
+    defer freeCommitSummaryList(allocator, &list);
+
+    try std.testing.expectEqual(@as(usize, 10), list.items.len);
+    try std.testing.expectEqualStrings("msg-11", list.items[0].message);
+    try std.testing.expectEqualStrings("msg-2", list.items[9].message);
+    try std.testing.expectEqualSlices(u8, filledHexId('0')[0..], list.items[0].commit_id.asSlice());
+}
+
+test "find applies tag and date filters as intersection" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const commit_a = filledHexId('a');
+    const commit_b = filledHexId('b');
+
+    try writeFindFixtureCommit(allocator, omohi_dir, commit_a[0..], "release-a", "2026-03-10T18:00:00.000Z");
+    try writeFindFixtureCommit(allocator, omohi_dir, commit_b[0..], "prod-b", "2026-03-07T01:00:00.000Z");
+
+    const release_tags = [_][]const u8{"release"};
+    const prod_tags = [_][]const u8{"prod"};
+    try writeFindFixtureTags(allocator, omohi_dir, commit_a[0..], &release_tags);
+    try writeFindFixtureTags(allocator, omohi_dir, commit_b[0..], &prod_tags);
+
+    var by_tag = try find(allocator, omohi_dir, "release", null);
+    defer freeCommitSummaryList(allocator, &by_tag);
+    try std.testing.expectEqual(@as(usize, 1), by_tag.items.len);
+    try std.testing.expectEqualStrings("release-a", by_tag.items[0].message);
+
+    const date_a = try local_date.utcIso8601ToLocalYmd("2026-03-10T18:00:00.000Z");
+    var by_date = try find(allocator, omohi_dir, null, date_a[0..]);
+    defer freeCommitSummaryList(allocator, &by_date);
+    try std.testing.expectEqual(@as(usize, 1), by_date.items.len);
+    try std.testing.expectEqualStrings("release-a", by_date.items[0].message);
+
+    var by_tag_and_date = try find(allocator, omohi_dir, "release", date_a[0..]);
+    defer freeCommitSummaryList(allocator, &by_tag_and_date);
+    try std.testing.expectEqual(@as(usize, 1), by_tag_and_date.items.len);
+    try std.testing.expectEqualStrings("release-a", by_tag_and_date.items[0].message);
+
+    var no_intersection = try find(allocator, omohi_dir, "prod", date_a[0..]);
+    defer freeCommitSummaryList(allocator, &no_intersection);
+    try std.testing.expectEqual(@as(usize, 0), no_intersection.items.len);
+}
+
+test "tagList returns CommitNotFound when commit does not exist" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const missing_commit = filledHexId('a');
+    try std.testing.expectError(error.CommitNotFound, tagList(allocator, omohi_dir, missing_commit[0..]));
+}
+
+test "show returns CommitNotFound when commit does not exist" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const missing_commit = filledHexId('c');
+    try std.testing.expectError(error.CommitNotFound, show(allocator, omohi_dir, missing_commit[0..]));
+}
+
+test "tagList returns empty when commit exists and has no tags" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const existing_commit = filledHexId('b');
+    try writeFindFixtureCommit(
+        allocator,
+        omohi_dir,
+        existing_commit[0..],
+        "fixture-message",
+        "2026-03-12T00:00:00.000Z",
+    );
+
+    var tags = try tagList(allocator, omohi_dir, existing_commit[0..]);
+    defer freeTagList(allocator, &tags);
+    try std.testing.expectEqual(@as(usize, 0), tags.items.len);
+}
+
+test "appendJournal writes one line into UTC daily file" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    try appendJournal(allocator, omohi_dir, "track", "{\"path\":\"/tmp/sample\"}");
+
+    var journal_dir = try omohi_dir.openDir("journal", .{ .iterate = true });
+    defer journal_dir.close();
+
+    var it = journal_dir.iterate();
+    const entry = (try it.next()) orelse return error.ExpectedJournalFile;
+    try std.testing.expectEqual(std.fs.File.Kind.file, entry.kind);
+
+    const journal_path = try std.fmt.allocPrint(allocator, "journal/{s}", .{entry.name});
+    defer allocator.free(journal_path);
+    const bytes = try omohi_dir.readFileAlloc(allocator, journal_path, 4096);
+    defer allocator.free(bytes);
+
+    try std.testing.expect(std.mem.indexOf(u8, bytes, " track 1 ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "{\"path\":\"/tmp/sample\"}") != null);
 }
