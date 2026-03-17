@@ -11,6 +11,7 @@ pub const all = [_]CommandSpec{
     .{ .name = "commit", .usage = "commit -m <message> [-t <tag>] [--dry-run]" },
     .{ .name = "status", .usage = "status" },
     .{ .name = "tracklist", .usage = "tracklist" },
+    .{ .name = "version", .usage = "version" },
     .{ .name = "find", .usage = "find [--tag <tag>] [--date YYYY-MM-DD]" },
     .{ .name = "show", .usage = "show <commitId>" },
     .{ .name = "tag ls", .usage = "tag ls <commitId>" },
