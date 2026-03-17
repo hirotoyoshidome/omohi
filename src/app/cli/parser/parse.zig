@@ -9,6 +9,10 @@ pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.
         return try parseHelp(argv[1..]);
     }
 
+    if (equalsIgnoreAsciiCase(argv[0], "-v") or equalsIgnoreAsciiCase(argv[0], "--version")) {
+        return try parseNoArgsCommand(.version, argv[1..]);
+    }
+
     if (equalsIgnoreAsciiCase(argv[0], "help")) {
         return try parseHelp(argv[1..]);
     }
@@ -27,6 +31,7 @@ pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.
     if (std.mem.eql(u8, argv[0], "commit")) return try parseCommit(allocator, argv[1..]);
     if (std.mem.eql(u8, argv[0], "status")) return try parseNoArgsCommand(.status, argv[1..]);
     if (std.mem.eql(u8, argv[0], "tracklist")) return try parseNoArgsCommand(.tracklist, argv[1..]);
+    if (std.mem.eql(u8, argv[0], "version")) return try parseNoArgsCommand(.version, argv[1..]);
     if (std.mem.eql(u8, argv[0], "find")) return try parseFind(argv[1..]);
     if (std.mem.eql(u8, argv[0], "show")) return try parseShow(argv[1..]);
 
@@ -338,6 +343,57 @@ test "parser rejects help with too many topics" {
     const allocator = std.testing.allocator;
     const argv = [_][]const u8{ "help", "commit", "extra" };
     try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &argv));
+}
+
+test "parser resolves version from command and aliases" {
+    const allocator = std.testing.allocator;
+
+    {
+        const argv = [_][]const u8{"version"};
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+        switch (parsed) {
+            .version => {},
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        const argv = [_][]const u8{"-v"};
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+        switch (parsed) {
+            .version => {},
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        const argv = [_][]const u8{"--version"};
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+        switch (parsed) {
+            .version => {},
+            else => return error.UnexpectedResult,
+        }
+    }
+}
+
+test "parser rejects extra arguments for version" {
+    const allocator = std.testing.allocator;
+
+    {
+        const argv = [_][]const u8{ "version", "extra" };
+        try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &argv));
+    }
+    {
+        const argv = [_][]const u8{ "-v", "extra" };
+        try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &argv));
+    }
+    {
+        const argv = [_][]const u8{ "--version", "extra" };
+        try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &argv));
+    }
 }
 
 test "parser normalizes option keys for commit" {

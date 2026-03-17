@@ -8,15 +8,22 @@ pub fn build(b: *std.Build) void {
 
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const app_version = resolveAppVersion(b);
+
+    const build_options = b.addOptions();
+    build_options.addOption([]const u8, "app_version", app_version);
+
+    const exe_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    exe_module.addOptions("build_options", build_options);
 
     const exe = b.addExecutable(.{
         .name = "omohi",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
+        .root_module = exe_module,
     });
     b.installArtifact(exe);
 
@@ -28,16 +35,49 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     // zig build test
+    const test_module = b.createModule(.{
+        .root_source_file = b.path("src/tests.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    test_module.addOptions("build_options", build_options);
+
     const unit_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/tests.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
+        .root_module = test_module,
     });
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
+}
+
+fn resolveAppVersion(b: *std.Build) []const u8 {
+    const fallback = "0.0.0-dev";
+
+    const result = std.process.Child.run(.{
+        .allocator = b.allocator,
+        .argv = &.{ "git", "tag", "--sort=-version:refname" },
+        .cwd_dir = b.build_root.handle,
+    }) catch return fallback;
+    defer b.allocator.free(result.stdout);
+    defer b.allocator.free(result.stderr);
+
+    switch (result.term) {
+        .Exited => |code| if (code != 0) return fallback,
+        else => return fallback,
+    }
+
+    var lines = std.mem.splitScalar(u8, result.stdout, '\n');
+    const first_line = lines.next() orelse return fallback;
+    const trimmed = std.mem.trim(u8, std.mem.trimRight(u8, first_line, "\r\n"), " \t");
+    if (trimmed.len == 0) return fallback;
+
+    const normalized = if (trimmed[0] == 'v' and trimmed.len > 1)
+        trimmed[1..]
+    else
+        trimmed;
+    if (normalized.len == 0) return fallback;
+
+    return b.dupe(normalized);
 }
