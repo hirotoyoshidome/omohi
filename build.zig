@@ -34,6 +34,21 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the application");
     run_step.dependOn(&run_cmd.step);
 
+    // zig build docs-cli
+    const docs_module = b.createModule(.{
+        .root_source_file = b.path("src/app/cli/generate_cli_docs.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const docs_exe = b.addExecutable(.{
+        .name = "generate-cli-docs",
+        .root_module = docs_module,
+    });
+    const run_docs = b.addRunArtifact(docs_exe);
+    const docs_step = b.step("docs-cli", "Generate CLI markdown documentation");
+    docs_step.dependOn(&run_docs.step);
+
     // zig build test
     const test_module = b.createModule(.{
         .root_source_file = b.path("src/tests.zig"),
