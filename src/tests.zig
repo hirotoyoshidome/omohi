@@ -40,6 +40,7 @@ const _app_cli_parser = @import("app/cli/parser/parse.zig");
 const _app_cli_dispatch = @import("app/cli/runtime/dispatch.zig");
 const _app_cli_journal_adapter = @import("app/cli/runtime/journal_adapter.zig");
 const _app_cli_output = @import("app/cli/presenter/output.zig");
+const _app_cli_version = @import("app/cli/command/version.zig");
 
 test "load modules" {
     _ = _store_persistence_layout;
@@ -76,4 +77,5 @@ test "load modules" {
     _ = _app_cli_dispatch;
     _ = _app_cli_journal_adapter;
     _ = _app_cli_output;
+    _ = _app_cli_version;
 }
