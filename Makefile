@@ -6,7 +6,7 @@ FMT ?= $(ZIG) fmt
 #   make test OPTIMIZE=ReleaseSafe
 OPTIMIZE ?= Debug
 
-.PHONY: help test fmt fmt-check lint build check clean
+.PHONY: help test fmt fmt-check lint build docs docs-check check clean
 
 help:
 	@echo "Targets:"
@@ -15,7 +15,9 @@ help:
 	@echo "  make fmt-check  - check formatting (zig fmt --check .)"
 	@echo "  make lint       - lightweight lint (fmt-check + compile)"
 	@echo "  make build      - compile (zig build)"
-	@echo "  make check      - fmt-check + lint + test"
+	@echo "  make docs       - generate CLI docs (zig build docs-cli)"
+	@echo "  make docs-check - fail if generated CLI docs are dirty"
+	@echo "  make check      - fmt-check + lint + test + docs-check"
 	@echo "  make clean      - clean build artifacts"
 
 test:
@@ -34,7 +36,13 @@ lint: fmt-check build
 build:
 	$(BUILD) -Doptimize=$(OPTIMIZE)
 
-check: fmt-check lint test
+docs:
+	$(BUILD) docs-cli -Doptimize=$(OPTIMIZE)
+
+docs-check: docs
+	git diff --exit-code docs/cli.md
+
+check: fmt-check lint test docs-check
 
 clean:
 	rm -rf zig-cache .zig-cache zig-out

@@ -24,3 +24,6 @@ jobs:
 
       - name: Run tests
         run: zig build test --summary all
+
+      - name: Check generated CLI docs
+        run: make docs-check
