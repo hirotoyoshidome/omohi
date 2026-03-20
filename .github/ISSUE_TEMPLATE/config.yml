@@ -1,1 +1,5 @@
 blank_issues_enabled: true
+contact_links:
+  - name: Code of Conduct
+    url: https://github.com/hirotoyoshidome/omohi/blob/main/CODE_OF_CONDUCT.md
+    about: Review expected behavior and reporting guidance before posting.
