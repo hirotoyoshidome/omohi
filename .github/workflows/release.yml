@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate tag format
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Invalid tag format: $TAG"
+            echo "Expected: vMAJOR.MINOR.PATCH (e.g. v0.0.1)"
+            exit 1
+          fi
+
+  build:
+    needs: validate-tag
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-linux-gnu
+            target_os: linux
+            target_arch: x86_64
+          - os: ubuntu-latest
+            target: aarch64-linux-gnu
+            target_os: linux
+            target_arch: arm64
+          - os: macos-latest
+            target: x86_64-macos
+            target_os: macos
+            target_arch: x86_64
+          - os: macos-latest
+            target: aarch64-macos
+            target_os: macos
+            target_arch: arm64
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Run tests
+        run: zig build test --summary all
+
+      - name: Build release binary
+        run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }}
+
+      - name: Package artifact
+        env:
+          TAG: ${{ github.ref_name }}
+          TARGET_OS: ${{ matrix.target_os }}
+          TARGET_ARCH: ${{ matrix.target_arch }}
+        run: |
+          set -eu
+          NAME="omohi-${TAG}-${TARGET_OS}-${TARGET_ARCH}"
+          mkdir -p dist
+          cp zig-out/bin/omohi "dist/omohi"
+          tar -C dist -czf "dist/${NAME}.tar.gz" omohi
+          rm -f dist/omohi
+
+      - name: Generate checksum
+        env:
+          TAG: ${{ github.ref_name }}
+          TARGET_OS: ${{ matrix.target_os }}
+          TARGET_ARCH: ${{ matrix.target_arch }}
+        run: |
+          set -eu
+          NAME="omohi-${TAG}-${TARGET_OS}-${TARGET_ARCH}.tar.gz"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "dist/${NAME}" > "dist/${NAME}.sha256"
+          else
+            shasum -a 256 "dist/${NAME}" > "dist/${NAME}.sha256"
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target_os }}-${{ matrix.target_arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: dist/*

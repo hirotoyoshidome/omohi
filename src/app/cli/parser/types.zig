@@ -55,6 +55,7 @@ pub const ParsedRequest = union(enum) {
     commit: CommitArgs,
     status,
     tracklist,
+    version,
     find: FindArgs,
     show: ShowArgs,
     tag_ls: TagLsArgs,

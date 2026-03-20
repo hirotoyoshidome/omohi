@@ -8,6 +8,7 @@ const rm = @import("../command/rm.zig");
 const commit = @import("../command/commit.zig");
 const status = @import("../command/status.zig");
 const tracklist = @import("../command/tracklist.zig");
+const version = @import("../command/version.zig");
 const find = @import("../command/find.zig");
 const show = @import("../command/show.zig");
 const tag_ls = @import("../command/tag_ls.zig");
@@ -24,6 +25,7 @@ pub fn dispatch(allocator: std.mem.Allocator, parsed: parser_types.ParsedRequest
         .commit => |args| try commit.run(allocator, args),
         .status => try status.run(allocator),
         .tracklist => try tracklist.run(allocator),
+        .version => try version.run(allocator),
         .find => |args| try find.run(allocator, args),
         .show => |args| try show.run(allocator, args),
         .tag_ls => |args| try tag_ls.run(allocator, args),

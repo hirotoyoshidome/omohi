@@ -1,7 +1,7 @@
 const std = @import("std");
 const command_types = @import("../runtime/types.zig");
 const exit_code = @import("../error/exit_code.zig");
-const catalog = @import("help/catalog.zig");
+const catalog = @import("../command_catalog.zig");
 const parser_types = @import("../parser/types.zig");
 
 pub fn run(allocator: std.mem.Allocator, args: parser_types.HelpArgs) !command_types.CommandResult {
@@ -25,5 +25,17 @@ test "help includes all public commands" {
 
     try std.testing.expect(std.mem.indexOf(u8, result.output, "track <path>") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "tag rm <commitId> <tagNames...>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "version") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "help") != null);
+}
+
+test "help output stays aligned with command catalog usages" {
+    var result = try run(std.testing.allocator, .{ .topic = null });
+    defer result.deinit(std.testing.allocator);
+
+    for (catalog.all) |spec| {
+        const line = try std.fmt.allocPrint(std.testing.allocator, "  {s}\n", .{spec.usage});
+        defer std.testing.allocator.free(line);
+        try std.testing.expect(std.mem.indexOf(u8, result.output, line) != null);
+    }
 }
