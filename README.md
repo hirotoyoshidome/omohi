@@ -126,6 +126,7 @@ Contributions are welcome, including bug reports, feature ideas, and documentati
 Use GitHub Issues for proposals and reports, and check the contribution guide first.
 
 - Contribution guide: [CONTRIBUTING.md](./CONTRIBUTING.md)
+- Code of Conduct: [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
 - Issue templates: [`.github/ISSUE_TEMPLATE`](./.github/ISSUE_TEMPLATE)
 
 ## License

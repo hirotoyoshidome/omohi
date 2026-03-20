@@ -3,6 +3,10 @@
 Thanks for your interest in contributing.
 Bug reports, feature ideas, and documentation improvements are all welcome.
 
+## Code of Conduct
+
+Please review [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) before participating.
+
 ## How to Contribute
 
 - Open a GitHub Issue for bugs, proposals, or questions.
