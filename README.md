@@ -124,6 +124,8 @@ so long-span decision context remains usable, not forgotten.
 
 Contributions are welcome, including bug reports, feature ideas, and documentation improvements.
 Use GitHub Issues for proposals and reports, and check the contribution guide first.
+Pull requests should be opened from topic branches based on `main`, and should target `main`.
+Releases are created by tagging a commit on `main` with `vMAJOR.MINOR.PATCH`.
 
 - Contribution guide: [CONTRIBUTING.md](./CONTRIBUTING.md)
 - Code of Conduct: [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
