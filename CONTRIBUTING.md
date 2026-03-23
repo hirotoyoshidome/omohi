@@ -45,6 +45,21 @@ Please review [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) before participating.
 - If user-facing behavior changes, update related docs.
 - Keep changes aligned with project constraints and boundaries.
 
+## Branch Strategy
+
+- `main` is the default branch and the primary integration branch.
+- Create topic branches from `main`.
+- Open pull requests against `main`.
+- Prefer branch names such as `feature/<name>`, `fix/<name>`, or `docs/<name>`.
+- Keep pull requests small so they are easier to review and merge.
+
+## Release Flow
+
+- Releases are cut from commits already merged into `main`.
+- Create a Git tag in `vMAJOR.MINOR.PATCH` format for the commit you want to release.
+- Pushing that tag triggers the GitHub release workflow.
+- Treat tags as the release boundary. `main` may move ahead of the latest released tag.
+
 ## Project Principles to Respect
 
 - Local-first design.
