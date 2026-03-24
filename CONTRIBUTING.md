@@ -42,7 +42,7 @@ Please review [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) before participating.
 
 - Prefer small, focused changes.
 - If behavior changes, include or update tests when applicable.
-- If user-facing behavior changes, update related docs.
+- If user-facing behavior changes, update related docs, including generated CLI markdown and man page outputs when applicable.
 - Keep changes aligned with project constraints and boundaries.
 
 ## Branch Strategy
