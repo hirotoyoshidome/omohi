@@ -1,5 +1,9 @@
 # omohi
 
+[![CI](https://github.com/hirotoyoshidome/omohi/actions/workflows/ci.yml/badge.svg)](https://github.com/hirotoyoshidome/omohi/actions/workflows/ci.yml)
+[![Main Smoke](https://github.com/hirotoyoshidome/omohi/actions/workflows/main-smoke.yml/badge.svg)](https://github.com/hirotoyoshidome/omohi/actions/workflows/main-smoke.yml)
+[![Release](https://github.com/hirotoyoshidome/omohi/actions/workflows/release.yml/badge.svg)](https://github.com/hirotoyoshidome/omohi/actions/workflows/release.yml)
+
 Build knowledge from the process, not just the result.
 
 [日本語](./README.ja.md)

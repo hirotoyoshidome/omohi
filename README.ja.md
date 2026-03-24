@@ -1,5 +1,9 @@
 # omohi
 
+[![CI](https://github.com/hirotoyoshidome/omohi/actions/workflows/ci.yml/badge.svg)](https://github.com/hirotoyoshidome/omohi/actions/workflows/ci.yml)
+[![Main Smoke](https://github.com/hirotoyoshidome/omohi/actions/workflows/main-smoke.yml/badge.svg)](https://github.com/hirotoyoshidome/omohi/actions/workflows/main-smoke.yml)
+[![Release](https://github.com/hirotoyoshidome/omohi/actions/workflows/release.yml/badge.svg)](https://github.com/hirotoyoshidome/omohi/actions/workflows/release.yml)
+
 結果だけでなく、過程から知識を積み上げる。
 
 [English](./README.md)
