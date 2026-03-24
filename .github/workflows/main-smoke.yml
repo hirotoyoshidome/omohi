@@ -1,0 +1,43 @@
+name: Main Smoke
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-linux-gnu
+            run_smoke: true
+          - os: ubuntu-latest
+            target: aarch64-linux-gnu
+            run_smoke: false
+          - os: macos-latest
+            target: x86_64-macos
+            run_smoke: false
+          - os: macos-latest
+            target: aarch64-macos
+            run_smoke: true
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build release binary
+        run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }}
+
+      - name: Smoke test CLI
+        if: matrix.run_smoke
+        run: ./.github/scripts/omohi_smoke.sh ./zig-out/bin/omohi
