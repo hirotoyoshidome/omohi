@@ -68,7 +68,9 @@ CLI-first design makes it easier to embed in everyday workflows and automation.
 ```sh
 tar -xzf omohi-<tag>-<os>-<arch>.tar.gz
 mkdir -p ~/.local/bin
+mkdir -p ~/.local/share/man/man1
 mv omohi ~/.local/bin/omohi
+mv share/man/man1/omohi.1 ~/.local/share/man/man1/omohi.1
 chmod 755 ~/.local/bin/omohi
 ```
 
@@ -76,6 +78,7 @@ chmod 755 ~/.local/bin/omohi
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
+export MANPATH="$HOME/.local/share/man:${MANPATH:-}"
 ```
 
 Each release also provides a matching `.sha256` file if you want to verify the downloaded archive.
@@ -95,6 +98,7 @@ Each release also provides a matching `.sha256` file if you want to verify the d
 ```
 
 Use the source install flow when you want to build from the current repository checkout or try unreleased changes on `main`.
+It also installs `omohi(1)` under `PREFIX/share/man/man1`.
 
 ## Build and Test
 
@@ -105,7 +109,7 @@ make test
 
 ## Quick Command Basics
 
-Use `docs/cli.md` as the full command reference.
+Use `man omohi` or `docs/cli.md` as the full command reference.
 Below is the minimal day-to-day flow:
 Relative and absolute paths are accepted. Relative paths are resolved from your current working directory.
 
@@ -148,6 +152,7 @@ so long-span decision context remains usable, not forgotten.
 ## Documentation
 
 - CLI reference: [docs/cli.md](./docs/cli.md)
+- Man page: [`docs/man/omohi.1`](./docs/man/omohi.1)
 - Japanese README: [README.ja.md](./README.ja.md)
 
 ## Contributing

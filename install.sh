@@ -70,12 +70,19 @@ zig build -Doptimize="${OPTIMIZE}"
 
 bindir="${PREFIX}/bin"
 dst="${bindir}/omohi"
+mandir="${PREFIX}/share/man/man1"
+mandst="${mandir}/omohi.1"
 
 mkdir -p "${bindir}"
 cp -f zig-out/bin/omohi "${dst}"
 chmod 755 "${dst}"
 
+mkdir -p "${mandir}"
+cp -f docs/man/omohi.1 "${mandst}"
+chmod 644 "${mandst}"
+
 echo "Installed: ${dst}"
+echo "Installed: ${mandst}"
 
 case ":${PATH}:" in
   *":${bindir}:"*)
@@ -85,3 +92,8 @@ case ":${PATH}:" in
     echo "  export PATH=\"${bindir}:\$PATH\""
     ;;
 esac
+
+if [[ -d "${PREFIX}/share/man" ]]; then
+  echo "If needed, add this to your shell profile for man lookup:"
+  echo "  export MANPATH=\"${PREFIX}/share/man:\${MANPATH:-}\""
+fi

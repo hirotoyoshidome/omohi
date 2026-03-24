@@ -43,6 +43,7 @@ const _app_cli_output = @import("app/cli/presenter/output.zig");
 const _app_cli_version = @import("app/cli/command/version.zig");
 const _app_cli_command_catalog = @import("app/cli/command_catalog.zig");
 const _app_cli_docs_render_markdown = @import("app/cli/docs/render_markdown.zig");
+const _app_cli_docs_render_man = @import("app/cli/docs/render_man.zig");
 
 test "load modules" {
     _ = _store_persistence_layout;
@@ -82,4 +83,5 @@ test "load modules" {
     _ = _app_cli_version;
     _ = _app_cli_command_catalog;
     _ = _app_cli_docs_render_markdown;
+    _ = _app_cli_docs_render_man;
 }

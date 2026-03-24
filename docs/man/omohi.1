@@ -1,0 +1,364 @@
+.TH OMOHI 1 "" "omohi" "omohi Manual"
+.SH NAME
+omohi \- local-first CLI for process logging
+.SH SYNOPSIS
+.B omohi
+.RI command " [arguments]"
+.SH DESCRIPTION
+omohi separates tracking, recording, and referencing so process history remains durable local data.
+.PP
+This page is generated from src/app/cli/command_catalog.zig. Do not edit manually.
+.SH COMMANDS
+.SS track
+.TP
+.B Summary
+Register one absolute path as a tracked target.
+.TP
+.B Usage
+.nf
+omohi track <path>
+.fi
+.TP
+.B Positionals
+.RS 4
+.B path
+required: Path to the file to track.
+.RE
+.TP
+.B Examples
+.nf
+omohi track /tmp/note.txt
+.fi
+.TP
+.B Notes
+.RS 4
+The store is auto\-created on the first successful track.
+.RE
+.SS untrack
+.TP
+.B Summary
+Remove a tracked target by tracked file ID.
+.TP
+.B Usage
+.nf
+omohi untrack <trackedFileId>
+.fi
+.TP
+.B Positionals
+.RS 4
+.B trackedFileId
+required: Tracked file ID from `omohi tracklist`.
+.RE
+.TP
+.B Examples
+.nf
+omohi untrack 6b2f0b7309d442f6be405d9dd80e4ad8
+.fi
+.TP
+.B Notes
+.RS 4
+Use `omohi tracklist` to resolve IDs before untrack.
+.RE
+.SS add
+.TP
+.B Summary
+Stage one tracked file path for the next commit.
+.TP
+.B Usage
+.nf
+omohi add <path>
+.fi
+.TP
+.B Positionals
+.RS 4
+.B path
+required: Path to stage.
+.RE
+.TP
+.B Examples
+.nf
+omohi add /tmp/note.txt
+.fi
+.TP
+.B Notes
+.RS 4
+The path must already be tracked.
+.RE
+.SS rm
+.TP
+.B Summary
+Remove one staged file path from staging.
+.TP
+.B Usage
+.nf
+omohi rm <path>
+.fi
+.TP
+.B Positionals
+.RS 4
+.B path
+required: Path to unstage.
+.RE
+.TP
+.B Examples
+.nf
+omohi rm /tmp/note.txt
+.fi
+.TP
+.B Notes
+.RS 4
+The path must be tracked and currently staged.
+.RE
+.SS commit
+.TP
+.B Summary
+Create a commit from staged entries.
+.TP
+.B Usage
+.nf
+omohi commit \-m <message> [\-t <tag>] [\-\-dry\-run]
+.fi
+.TP
+.B Options
+.RS 4
+.B \-m, \-\-message <message>
+required: Commit message text.
+.RE
+.RS 4
+.B \-t, \-\-tag <tag>
+optional, repeatable: Tag name to attach. Can be repeated.
+.RE
+.RS 4
+.B \-\-dry\-run
+optional: Show commit result preview without writing commit data.
+.RE
+.TP
+.B Examples
+.nf
+omohi commit \-m "initial"
+omohi commit \-m "release" \-\-tag release \-t prod
+omohi commit \-m "check" \-\-dry\-run
+.fi
+.TP
+.B Notes
+.RS 4
+`\-m` or `\-\-message` is required.
+.RE
+.SS status
+.TP
+.B Summary
+Show tracked and staged state overview.
+.TP
+.B Usage
+.nf
+omohi status
+.fi
+.TP
+.B Examples
+.nf
+omohi status
+.fi
+.SS tracklist
+.TP
+.B Summary
+List tracked targets with tracked file IDs.
+.TP
+.B Usage
+.nf
+omohi tracklist
+.fi
+.TP
+.B Examples
+.nf
+omohi tracklist
+.fi
+.SS version
+.TP
+.B Summary
+Print application version and build target.
+.TP
+.B Usage
+.nf
+omohi version
+.fi
+.TP
+.B Examples
+.nf
+omohi version
+.fi
+.TP
+.B Notes
+.RS 4
+`\-v` and `\-\-version` aliases are also supported.
+.RE
+.SS find
+.TP
+.B Summary
+Search commits by optional tag and date filters.
+.TP
+.B Usage
+.nf
+omohi find [\-\-tag <tag>] [\-\-date YYYY\-MM\-DD]
+.fi
+.TP
+.B Options
+.RS 4
+.B \-t, \-\-tag <tag>
+optional: Filter commits by tag name.
+.RE
+.RS 4
+.B \-d, \-\-date <YYYY\-MM\-DD>
+optional: Filter commits by local date prefix.
+.RE
+.TP
+.B Examples
+.nf
+omohi find
+omohi find \-\-tag release
+omohi find \-\-date 2026\-03\-17
+omohi find \-\-tag release \-\-date 2026\-03\-17
+.fi
+.TP
+.B Notes
+.RS 4
+When both filters are set, intersection is returned.
+.RE
+.SS show
+.TP
+.B Summary
+Show one commit details payload.
+.TP
+.B Usage
+.nf
+omohi show <commitId>
+.fi
+.TP
+.B Positionals
+.RS 4
+.B commitId
+required: 64\-char commit ID.
+.RE
+.TP
+.B Examples
+.nf
+omohi show aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+.fi
+.SS tag ls
+.TP
+.B Summary
+List tags for one commit.
+.TP
+.B Usage
+.nf
+omohi tag ls <commitId>
+.fi
+.TP
+.B Positionals
+.RS 4
+.B commitId
+required: 64\-char commit ID.
+.RE
+.TP
+.B Examples
+.nf
+omohi tag ls aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+.fi
+.SS tag add
+.TP
+.B Summary
+Attach one or more tags to a commit.
+.TP
+.B Usage
+.nf
+omohi tag add <commitId> <tagNames...>
+.fi
+.TP
+.B Positionals
+.RS 4
+.B commitId
+required: 64\-char commit ID.
+.RE
+.RS 4
+.B tagNames
+required, repeatable: One or more tag names to add.
+.RE
+.TP
+.B Examples
+.nf
+omohi tag add aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa release prod
+.fi
+.SS tag rm
+.TP
+.B Summary
+Remove one or more tags from a commit.
+.TP
+.B Usage
+.nf
+omohi tag rm <commitId> <tagNames...>
+.fi
+.TP
+.B Positionals
+.RS 4
+.B commitId
+required: 64\-char commit ID.
+.RE
+.RS 4
+.B tagNames
+required, repeatable: One or more tag names to remove.
+.RE
+.TP
+.B Examples
+.nf
+omohi tag rm aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa prod
+.fi
+.SS help
+.TP
+.B Summary
+Print command usages.
+.TP
+.B Usage
+.nf
+omohi help
+.fi
+.TP
+.B Positionals
+.RS 4
+.B topic
+optional: Optional topic name.
+.RE
+.TP
+.B Examples
+.nf
+omohi help
+omohi help commit
+.fi
+.TP
+.B Notes
+.RS 4
+`\-h` and `\-\-help` aliases are also supported.
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+success
+.TP
+.B 2
+CLI usage error
+.TP
+.B 3
+domain error
+.TP
+.B 4
+use\-case error
+.TP
+.B 10
+system error
+.TP
+.B 11
+data destroyed (reserved)
+.SH FILES
+.TP
+.I ~/.omohi
+Single-user local store root.
+.SH SEE ALSO
+.BR omohi (1)

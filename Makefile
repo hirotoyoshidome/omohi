@@ -15,7 +15,7 @@ help:
 	@echo "  make fmt-check  - check formatting (zig fmt --check .)"
 	@echo "  make lint       - lightweight lint (fmt-check + compile)"
 	@echo "  make build      - compile (zig build)"
-	@echo "  make docs       - generate CLI docs (zig build docs-cli)"
+	@echo "  make docs       - generate CLI markdown and man docs (zig build docs)"
 	@echo "  make docs-check - fail if generated CLI docs are dirty"
 	@echo "  make check      - fmt-check + lint + test + docs-check"
 	@echo "  make clean      - clean build artifacts"
@@ -37,10 +37,10 @@ build:
 	$(BUILD) -Doptimize=$(OPTIMIZE)
 
 docs:
-	$(BUILD) docs-cli -Doptimize=$(OPTIMIZE)
+	$(BUILD) docs -Doptimize=$(OPTIMIZE)
 
 docs-check: docs
-	git diff --exit-code docs/cli.md
+	git diff --exit-code -- docs/cli.md docs/man/omohi.1
 
 check: fmt-check lint test docs-check
 
