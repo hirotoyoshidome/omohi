@@ -68,7 +68,9 @@ CLI を先に設計することで、日常の workflow や自動化へ組み込
 ```sh
 tar -xzf omohi-<tag>-<os>-<arch>.tar.gz
 mkdir -p ~/.local/bin
+mkdir -p ~/.local/share/man/man1
 mv omohi ~/.local/bin/omohi
+mv share/man/man1/omohi.1 ~/.local/share/man/man1/omohi.1
 chmod 755 ~/.local/bin/omohi
 ```
 
@@ -76,6 +78,7 @@ chmod 755 ~/.local/bin/omohi
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
+export MANPATH="$HOME/.local/share/man:${MANPATH:-}"
 ```
 
 各リリースには対応する `.sha256` ファイルも含まれているため、必要ならダウンロードしたアーカイブを検証できます。
@@ -95,6 +98,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ```
 
 未リリースの `main` を試したい場合や、手元の checkout からそのままビルドしたい場合はこの方法を使ってください。
+この方法でも `PREFIX/share/man/man1` に `omohi(1)` を配置します。
 
 ## ビルドとテスト
 
@@ -105,7 +109,7 @@ make test
 
 ## 基本コマンド
 
-コマンドの詳細仕様は `docs/cli.md` を参照してください。
+コマンドの詳細仕様は `man omohi` または `docs/cli.md` を参照してください。
 ここでは最小の運用フローのみ示します。
 相対パス・絶対パスのどちらでも指定できます。相対パスは実行時のカレントディレクトリを基準に解決されます。
 
@@ -147,6 +151,7 @@ omohi show <commitId>
 ## ドキュメント
 
 - CLI リファレンス: [docs/cli.md](./docs/cli.md)
+- man ページ: [`docs/man/omohi.1`](./docs/man/omohi.1)
 - English README: [README.md](./README.md)
 
 ## コントリビューション
