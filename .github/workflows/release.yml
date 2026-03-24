@@ -57,6 +57,9 @@ jobs:
       - name: Run tests
         run: zig build test --summary all
 
+      - name: Verify generated docs
+        run: make docs-check OPTIMIZE=ReleaseSafe
+
       - name: Build release binary
         run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }}
 
@@ -68,10 +71,12 @@ jobs:
         run: |
           set -eu
           NAME="omohi-${TAG}-${TARGET_OS}-${TARGET_ARCH}"
-          mkdir -p dist
+          mkdir -p dist/share/man/man1
           cp zig-out/bin/omohi "dist/omohi"
-          tar -C dist -czf "dist/${NAME}.tar.gz" omohi
+          cp docs/man/omohi.1 "dist/share/man/man1/omohi.1"
+          tar -C dist -czf "dist/${NAME}.tar.gz" omohi share
           rm -f dist/omohi
+          rm -rf dist/share
 
       - name: Generate checksum
         env:
