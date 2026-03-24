@@ -49,6 +49,25 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs-cli", "Generate CLI markdown documentation");
     docs_step.dependOn(&run_docs.step);
 
+    // zig build docs-man
+    const man_module = b.createModule(.{
+        .root_source_file = b.path("src/app/cli/generate_cli_man.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const man_exe = b.addExecutable(.{
+        .name = "generate-cli-man",
+        .root_module = man_module,
+    });
+    const run_man = b.addRunArtifact(man_exe);
+    const man_step = b.step("docs-man", "Generate CLI man page");
+    man_step.dependOn(&run_man.step);
+
+    const all_docs_step = b.step("docs", "Generate CLI markdown and man documentation");
+    all_docs_step.dependOn(&run_docs.step);
+    all_docs_step.dependOn(&run_man.step);
+
     // zig build test
     const test_module = b.createModule(.{
         .root_source_file = b.path("src/tests.zig"),
