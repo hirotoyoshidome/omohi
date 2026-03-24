@@ -24,5 +24,14 @@ jobs:
       - name: Run tests
         run: zig build test --summary all
 
+      - name: Build CLI binary
+        run: zig build
+
+      - name: Run CLI contract checks
+        run: ./.github/scripts/omohi_contract.sh ./zig-out/bin/omohi
+
+      - name: Run CLI reliability checks
+        run: ./.github/scripts/omohi_reliability.sh ./zig-out/bin/omohi
+
       - name: Check generated CLI docs
         run: make docs-check
