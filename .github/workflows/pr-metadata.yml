@@ -1,0 +1,103 @@
+name: PR Metadata
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - edited
+      - synchronize
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  apply-metadata:
+    if: github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Apply labels and milestone
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const managedLabels = ["enhancement", "bug", "documentation"];
+            const branch = context.payload.pull_request.head.ref;
+            const issueNumber = context.issue.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            let desiredLabel = null;
+            let shouldAssignLatestOpenMilestone = false;
+
+            if (branch.startsWith("feature/")) {
+              desiredLabel = "enhancement";
+              shouldAssignLatestOpenMilestone = true;
+            } else if (branch.startsWith("fix/")) {
+              desiredLabel = "bug";
+            } else if (branch.startsWith("docs/")) {
+              desiredLabel = "documentation";
+              shouldAssignLatestOpenMilestone = true;
+            }
+
+            const currentIssue = await github.rest.issues.get({
+              owner,
+              repo,
+              issue_number: issueNumber,
+            });
+
+            const currentLabels = currentIssue.data.labels
+              .map((label) => (typeof label === "string" ? label : label.name))
+              .filter(Boolean);
+            const preservedLabels = currentLabels.filter(
+              (label) => !managedLabels.includes(label),
+            );
+            const nextLabels = desiredLabel
+              ? [...preservedLabels, desiredLabel]
+              : preservedLabels;
+
+            await github.rest.issues.setLabels({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              labels: nextLabels,
+            });
+
+            let milestone = null;
+
+            if (shouldAssignLatestOpenMilestone) {
+              try {
+                const milestones = await github.paginate(
+                  github.rest.issues.listMilestones,
+                  {
+                    owner,
+                    repo,
+                    state: "open",
+                    per_page: 100,
+                  },
+                );
+
+                if (milestones.length > 0) {
+                  milestone = milestones.reduce((latest, current) =>
+                    current.number > latest.number ? current : latest,
+                  ).number;
+                }
+              } catch (error) {
+                core.warning(
+                  `Failed to determine latest open milestone: ${error.message}`,
+                );
+              }
+            }
+
+            await github.rest.issues.update({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              milestone,
+            });
+
+            core.info(
+              `Applied metadata for ${branch}: label=${desiredLabel ?? "none"}, milestone=${milestone ?? "none"}`,
+            );
