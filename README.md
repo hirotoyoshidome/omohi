@@ -54,6 +54,34 @@ CLI-first design makes it easier to embed in everyday workflows and automation.
 
 ## Install
 
+### Set up from the latest GitHub Release
+
+1. Open the latest release page:
+   [github.com/hirotoyoshidome/omohi/releases/latest](https://github.com/hirotoyoshidome/omohi/releases/latest)
+2. Download the archive that matches your OS and architecture:
+   - Linux x86_64: `omohi-<tag>-linux-x86_64.tar.gz`
+   - Linux arm64: `omohi-<tag>-linux-arm64.tar.gz`
+   - macOS x86_64: `omohi-<tag>-macos-x86_64.tar.gz`
+   - macOS arm64: `omohi-<tag>-macos-arm64.tar.gz`
+3. Extract the archive and place `omohi` in a directory on your `PATH`, for example `~/.local/bin`.
+
+```sh
+tar -xzf omohi-<tag>-<os>-<arch>.tar.gz
+mkdir -p ~/.local/bin
+mv omohi ~/.local/bin/omohi
+chmod 755 ~/.local/bin/omohi
+```
+
+4. If needed, add the install directory to your shell profile:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Each release also provides a matching `.sha256` file if you want to verify the downloaded archive.
+
+### Build from source
+
 ```sh
 ./install.sh
 ```
@@ -65,6 +93,8 @@ CLI-first design makes it easier to embed in everyday workflows and automation.
 ```sh
 ./install.sh --skip-tests
 ```
+
+Use the source install flow when you want to build from the current repository checkout or try unreleased changes on `main`.
 
 ## Build and Test
 

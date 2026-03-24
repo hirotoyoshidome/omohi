@@ -54,6 +54,34 @@ CLI を先に設計することで、日常の workflow や自動化へ組み込
 
 ## インストール
 
+### 最新の GitHub Release からセットアップする
+
+1. 最新リリースページを開きます:
+   [github.com/hirotoyoshidome/omohi/releases/latest](https://github.com/hirotoyoshidome/omohi/releases/latest)
+2. 利用する OS / architecture に合うアーカイブを選んでダウンロードします:
+   - Linux x86_64: `omohi-<tag>-linux-x86_64.tar.gz`
+   - Linux arm64: `omohi-<tag>-linux-arm64.tar.gz`
+   - macOS x86_64: `omohi-<tag>-macos-x86_64.tar.gz`
+   - macOS arm64: `omohi-<tag>-macos-arm64.tar.gz`
+3. アーカイブを展開し、`omohi` バイナリを `PATH` の通ったディレクトリに配置します。例: `~/.local/bin`
+
+```sh
+tar -xzf omohi-<tag>-<os>-<arch>.tar.gz
+mkdir -p ~/.local/bin
+mv omohi ~/.local/bin/omohi
+chmod 755 ~/.local/bin/omohi
+```
+
+4. 必要であれば、シェルの設定ファイルにインストール先を追加します:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+各リリースには対応する `.sha256` ファイルも含まれているため、必要ならダウンロードしたアーカイブを検証できます。
+
+### ソースコードからビルドする
+
 ```sh
 ./install.sh
 ```
@@ -65,6 +93,8 @@ CLI を先に設計することで、日常の workflow や自動化へ組み込
 ```sh
 ./install.sh --skip-tests
 ```
+
+未リリースの `main` を試したい場合や、手元の checkout からそのままビルドしたい場合はこの方法を使ってください。
 
 ## ビルドとテスト
 
