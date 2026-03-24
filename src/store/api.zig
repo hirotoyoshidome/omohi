@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const PersistenceLayout = @import("./object/persistence_layout.zig").PersistenceLayout;
 const local_tracked = @import("./local/tracked.zig");
@@ -22,6 +23,17 @@ const local_timestamp = @import("./storage/time/local_timestamp.zig");
 const constrained_types = @import("./object/constrained_types.zig");
 
 const max_add_file_size = 64 * 1024 * 1024;
+
+const CommitFailurePoint = enum {
+    none,
+    before_write_snapshot,
+    before_write_commit,
+    before_move_objects,
+    before_write_head,
+    before_reset_staged,
+};
+
+var commit_failure_point: CommitFailurePoint = .none;
 
 pub const StatusKind = api_types.StatusKind;
 pub const StatusEntry = api_types.StatusEntry;
@@ -618,17 +630,28 @@ pub fn commit(
     if (entries.items.len == 0) return error.NothingToCommit;
 
     std.mem.sort(ContentEntry, entries.items, {}, isPathLessThan);
+    try local_staged.ensureObjectsExistForEntries(allocator, persistence, entries.items);
 
     const snapshot_id = try hash.snapshotIdFrom(allocator, entries.items);
     const commit_id = hash.commitIdFrom(snapshot_id[0..], message);
 
+    try maybeFailCommitAt(.before_write_snapshot);
     try local_snapshot.writeSnapshot(allocator, persistence, snapshot_id[0..], entries.items);
+    try maybeFailCommitAt(.before_write_commit);
     try local_commit.writeCommit(allocator, persistence, commit_id[0..], snapshot_id[0..], message);
 
+    try maybeFailCommitAt(.before_move_objects);
     try local_staged.moveObjectsFromStage(allocator, persistence);
+    try maybeFailCommitAt(.before_write_head);
     try local_head.writeHead(allocator, persistence, commit_id[0..]);
+    try maybeFailCommitAt(.before_reset_staged);
     try local_staged.resetStaged(persistence);
     return try constrained_types.CommitId.init(commit_id[0..]);
+}
+
+fn maybeFailCommitAt(point: CommitFailurePoint) !void {
+    if (!builtin.is_test) return;
+    if (commit_failure_point == point) return error.TestInjectedFailure;
 }
 
 fn isPathLessThan(_: void, lhs: ContentEntry, rhs: ContentEntry) bool {
@@ -1002,6 +1025,60 @@ fn writeFindFixtureTags(
     );
 }
 
+fn setCommitFailurePoint(point: CommitFailurePoint) void {
+    if (!builtin.is_test) return;
+    commit_failure_point = point;
+}
+
+fn clearCommitFailurePoint() void {
+    if (!builtin.is_test) return;
+    commit_failure_point = .none;
+}
+
+fn expectDirEmpty(dir: std.fs.Dir, path: []const u8) !void {
+    var target = try dir.openDir(path, .{ .iterate = true });
+    defer target.close();
+
+    var it = target.iterate();
+    try std.testing.expect((try it.next()) == null);
+}
+
+fn writeCommitFixtureStage(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    path_suffix: []const u8,
+    content_hash_ch: u8,
+    payload: []const u8,
+) !void {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    try omohi_dir.makePath(persistence.stagedEntriesPath());
+    try omohi_dir.makePath(persistence.stagedObjectsPath());
+
+    const content_hash = filledHexId(content_hash_ch);
+    const entry_text = try std.fmt.allocPrint(
+        allocator,
+        "path=/objects/{s}/{s}\ncontentHash={s}\n",
+        .{ content_hash[0..2], content_hash[0..], content_hash[0..] },
+    );
+    defer allocator.free(entry_text);
+
+    const entry_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ persistence.stagedEntriesPath(), path_suffix });
+    defer allocator.free(entry_path);
+    var entry_file = try omohi_dir.createFile(entry_path, .{});
+    defer entry_file.close();
+    try entry_file.writeAll(entry_text);
+
+    const object_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}/{s}",
+        .{ persistence.stagedObjectsPath(), content_hash[0..] },
+    );
+    defer allocator.free(object_path);
+    var object_file = try omohi_dir.createFile(object_path, .{});
+    defer object_file.close();
+    try object_file.writeAll(payload);
+}
+
 test "propertyValue ignores java properties comment lines" {
     const bytes =
         "#Tue Mar 10 16:00:00 UTC 2026\n" ++
@@ -1363,4 +1440,88 @@ test "appendJournal writes one line into UTC daily file" {
 
     try std.testing.expect(std.mem.indexOf(u8, bytes, " track 1 ") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "{\"path\":\"/tmp/sample\"}") != null);
+}
+
+test "commit rejects staged entry when corresponding object is missing" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    try writeCommitFixtureStage(allocator, omohi_dir, "dangling-entry", 'a', "payload");
+    try omohi_dir.deleteFile("staged/objects/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+    try std.testing.expectError(error.StagedObjectMissing, commit(allocator, omohi_dir, "msg"));
+    try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("LOCK", .{}));
+    try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("HEAD", .{}));
+}
+
+test "commit releases lock and keeps retryable state when failing before HEAD write" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+    try writeCommitFixtureStage(allocator, omohi_dir, "retry-entry", 'b', "payload");
+
+    setCommitFailurePoint(.before_write_head);
+    defer clearCommitFailurePoint();
+
+    try std.testing.expectError(error.TestInjectedFailure, commit(allocator, omohi_dir, "msg"));
+    try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("LOCK", .{}));
+    try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("HEAD", .{}));
+
+    const object_path = "objects/bb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const stored_object = try omohi_dir.readFileAlloc(allocator, object_path, 1024);
+    defer allocator.free(stored_object);
+    try std.testing.expectEqualStrings("payload", stored_object);
+
+    clearCommitFailurePoint();
+
+    _ = try commit(allocator, omohi_dir, "msg");
+
+    const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
+    defer allocator.free(head_bytes);
+    try std.testing.expect(parseHeadCommitId(head_bytes) != null);
+    try expectDirEmpty(omohi_dir, "staged/entries");
+    try expectDirEmpty(omohi_dir, "staged/objects");
+}
+
+test "commit can recover after failure between HEAD write and staged reset" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+    try writeCommitFixtureStage(allocator, omohi_dir, "recover-entry", 'c', "payload");
+
+    setCommitFailurePoint(.before_reset_staged);
+    defer clearCommitFailurePoint();
+
+    try std.testing.expectError(error.TestInjectedFailure, commit(allocator, omohi_dir, "msg"));
+    try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("LOCK", .{}));
+
+    const head_bytes_before_retry = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
+    defer allocator.free(head_bytes_before_retry);
+    const head_before_retry = parseHeadCommitId(head_bytes_before_retry) orelse return error.InvalidHead;
+    try std.testing.expectEqual(@as(usize, 64), head_before_retry.len);
+
+    clearCommitFailurePoint();
+
+    const retried_commit_id = try commit(allocator, omohi_dir, "msg");
+    try std.testing.expectEqualSlices(u8, head_before_retry, retried_commit_id.asSlice());
+
+    const head_bytes_after_retry = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
+    defer allocator.free(head_bytes_after_retry);
+    const head_after_retry = parseHeadCommitId(head_bytes_after_retry) orelse return error.InvalidHead;
+    try std.testing.expectEqualSlices(u8, retried_commit_id.asSlice(), head_after_retry);
+    try expectDirEmpty(omohi_dir, "staged/entries");
+    try expectDirEmpty(omohi_dir, "staged/objects");
 }
