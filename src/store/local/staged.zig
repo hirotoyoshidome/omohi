@@ -94,6 +94,36 @@ pub fn freeEntries(allocator: std.mem.Allocator, entries: *EntryList) void {
     entries.deinit();
 }
 
+pub fn ensureObjectsExistForEntries(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    entries: []const ContentEntry,
+) !void {
+    for (entries) |entry| {
+        const hash_value = entry.content_hash.asSlice();
+
+        const staged_path = try std.fmt.allocPrint(
+            allocator,
+            "{s}/{s}",
+            .{ persistence.stagedObjectsPath(), hash_value },
+        );
+        defer allocator.free(staged_path);
+
+        persistence.dir.access(staged_path, .{}) catch |staged_err| switch (staged_err) {
+            error.FileNotFound => {
+                const object_path = try persistence.objectsPath(allocator, hash_value);
+                defer allocator.free(object_path);
+
+                persistence.dir.access(object_path, .{}) catch |object_err| switch (object_err) {
+                    error.FileNotFound => return error.StagedObjectMissing,
+                    else => return object_err,
+                };
+            },
+            else => return staged_err,
+        };
+    }
+}
+
 pub fn moveObjectsFromStage(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -341,6 +371,55 @@ test "moveObjectsFromStage relocates staged object files" {
     defer allocator.free(stored);
     try std.testing.expectEqualStrings("payload", stored);
     try std.testing.expectError(error.FileNotFound, omohi_dir.openFile(staged_path, .{}));
+}
+
+test "ensureObjectsExistForEntries accepts staged or committed objects and rejects missing ones" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    var persistence = PersistenceLayout.init(omohi_dir);
+    try omohi_dir.makePath(persistence.stagedEntriesPath());
+    try omohi_dir.makePath(persistence.stagedObjectsPath());
+
+    const staged_hash = [_]u8{'a'} ** 64;
+    const committed_hash = [_]u8{'b'} ** 64;
+    const missing_hash = [_]u8{'c'} ** 64;
+
+    const staged_entry = ContentEntry{
+        .path = try constrained_types.ContentPath.init("/objects/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        .content_hash = try constrained_types.ContentHash.init(staged_hash[0..]),
+    };
+    const committed_entry = ContentEntry{
+        .path = try constrained_types.ContentPath.init("/objects/bb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        .content_hash = try constrained_types.ContentHash.init(committed_hash[0..]),
+    };
+    const missing_entry = ContentEntry{
+        .path = try constrained_types.ContentPath.init("/objects/cc/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
+        .content_hash = try constrained_types.ContentHash.init(missing_hash[0..]),
+    };
+
+    const staged_object_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ persistence.stagedObjectsPath(), staged_hash });
+    defer allocator.free(staged_object_path);
+    var staged_file = try omohi_dir.createFile(staged_object_path, .{});
+    defer staged_file.close();
+    try staged_file.writeAll("staged");
+
+    const committed_object_path = try persistence.objectsPath(allocator, committed_hash[0..]);
+    defer allocator.free(committed_object_path);
+    try ensureParentDirs(omohi_dir, committed_object_path);
+    var committed_file = try omohi_dir.createFile(committed_object_path, .{});
+    defer committed_file.close();
+    try committed_file.writeAll("committed");
+
+    try ensureObjectsExistForEntries(allocator, persistence, &.{ staged_entry, committed_entry });
+    try std.testing.expectError(
+        error.StagedObjectMissing,
+        ensureObjectsExistForEntries(allocator, persistence, &.{ staged_entry, committed_entry, missing_entry }),
+    );
 }
 
 test "resetStaged recreates staged directories" {

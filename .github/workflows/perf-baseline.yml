@@ -1,0 +1,32 @@
+name: Performance Baseline
+
+on:
+  schedule:
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+
+jobs:
+  perf-baseline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build CLI binary
+        run: zig build -Doptimize=ReleaseSafe
+
+      - name: Run performance baseline scenarios
+        run: ./.github/scripts/omohi_perf_baseline.sh ./zig-out/bin/omohi
+
+      - name: Upload performance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-baseline-report
+          path: /tmp/omohi-perf.*/perf-baseline.txt
+          if-no-files-found: error
