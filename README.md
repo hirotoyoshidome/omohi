@@ -73,8 +73,10 @@ CLI-first design makes it easier to embed in everyday workflows and automation.
 tar -xzf omohi-<tag>-<os>-<arch>.tar.gz
 mkdir -p ~/.local/bin
 mkdir -p ~/.local/share/man/man1
+mkdir -p ~/.local/share/bash-completion/completions
 mv omohi ~/.local/bin/omohi
 mv share/man/man1/omohi.1 ~/.local/share/man/man1/omohi.1
+mv share/bash-completion/completions/omohi ~/.local/share/bash-completion/completions/omohi
 chmod 755 ~/.local/bin/omohi
 ```
 
@@ -83,6 +85,17 @@ chmod 755 ~/.local/bin/omohi
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
 export MANPATH="$HOME/.local/share/man:${MANPATH:-}"
+```
+
+To enable shell completion when it is not auto-loaded:
+
+```sh
+# bash
+source "$HOME/.local/share/bash-completion/completions/omohi"
+
+# zsh
+autoload -Uz bashcompinit && bashcompinit
+source "$HOME/.local/share/bash-completion/completions/omohi"
 ```
 
 Each release also provides a matching `.sha256` file if you want to verify the downloaded archive.
@@ -102,7 +115,7 @@ Each release also provides a matching `.sha256` file if you want to verify the d
 ```
 
 Use the source install flow when you want to build from the current repository checkout or try unreleased changes on `main`.
-It also installs `omohi(1)` under `PREFIX/share/man/man1`.
+It also installs `omohi(1)` under `PREFIX/share/man/man1` and the completion file under `PREFIX/share/bash-completion/completions/omohi`.
 
 ## Build and Test
 

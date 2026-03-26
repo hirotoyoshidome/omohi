@@ -73,8 +73,10 @@ CLI を先に設計することで、日常の workflow や自動化へ組み込
 tar -xzf omohi-<tag>-<os>-<arch>.tar.gz
 mkdir -p ~/.local/bin
 mkdir -p ~/.local/share/man/man1
+mkdir -p ~/.local/share/bash-completion/completions
 mv omohi ~/.local/bin/omohi
 mv share/man/man1/omohi.1 ~/.local/share/man/man1/omohi.1
+mv share/bash-completion/completions/omohi ~/.local/share/bash-completion/completions/omohi
 chmod 755 ~/.local/bin/omohi
 ```
 
@@ -83,6 +85,17 @@ chmod 755 ~/.local/bin/omohi
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
 export MANPATH="$HOME/.local/share/man:${MANPATH:-}"
+```
+
+補完が自動で読み込まれない場合は、次を shell 設定へ追加してください。
+
+```sh
+# bash
+source "$HOME/.local/share/bash-completion/completions/omohi"
+
+# zsh
+autoload -Uz bashcompinit && bashcompinit
+source "$HOME/.local/share/bash-completion/completions/omohi"
 ```
 
 各リリースには対応する `.sha256` ファイルも含まれているため、必要ならダウンロードしたアーカイブを検証できます。
@@ -102,7 +115,7 @@ export MANPATH="$HOME/.local/share/man:${MANPATH:-}"
 ```
 
 未リリースの `main` を試したい場合や、手元の checkout からそのままビルドしたい場合はこの方法を使ってください。
-この方法でも `PREFIX/share/man/man1` に `omohi(1)` を配置します。
+この方法でも `PREFIX/share/man/man1` に `omohi(1)` を配置し、`PREFIX/share/bash-completion/completions/omohi` に補完ファイルを配置します。
 
 ## ビルドとテスト
 
