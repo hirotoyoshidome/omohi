@@ -72,6 +72,8 @@ bindir="${PREFIX}/bin"
 dst="${bindir}/omohi"
 mandir="${PREFIX}/share/man/man1"
 mandst="${mandir}/omohi.1"
+completiondir="${PREFIX}/share/bash-completion/completions"
+completiondst="${completiondir}/omohi"
 
 mkdir -p "${bindir}"
 cp -f zig-out/bin/omohi "${dst}"
@@ -81,8 +83,13 @@ mkdir -p "${mandir}"
 cp -f docs/man/omohi.1 "${mandst}"
 chmod 644 "${mandst}"
 
+mkdir -p "${completiondir}"
+cp -f completions/omohi.bash "${completiondst}"
+chmod 644 "${completiondst}"
+
 echo "Installed: ${dst}"
 echo "Installed: ${mandst}"
+echo "Installed: ${completiondst}"
 
 case ":${PATH}:" in
   *":${bindir}:"*)
@@ -97,3 +104,8 @@ if [[ -d "${PREFIX}/share/man" ]]; then
   echo "If needed, add this to your shell profile for man lookup:"
   echo "  export MANPATH=\"${PREFIX}/share/man:\${MANPATH:-}\""
 fi
+
+echo "If shell completion is not auto-loaded, add one of these to your shell profile:"
+echo "  bash: [[ -r \"${completiondst}\" ]] && source \"${completiondst}\""
+echo "  zsh: autoload -Uz bashcompinit && bashcompinit"
+echo "       [[ -r \"${completiondst}\" ]] && source \"${completiondst}\""
