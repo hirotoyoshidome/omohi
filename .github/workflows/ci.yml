@@ -33,5 +33,8 @@ jobs:
       - name: Run CLI reliability checks
         run: ./.github/scripts/omohi_reliability.sh ./zig-out/bin/omohi
 
+      - name: Run shell completion checks
+        run: ./.github/scripts/omohi_completion.sh
+
       - name: Check generated CLI docs
         run: make docs-check

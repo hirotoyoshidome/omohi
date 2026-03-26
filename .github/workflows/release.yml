@@ -72,8 +72,10 @@ jobs:
           set -eu
           NAME="omohi-${TAG}-${TARGET_OS}-${TARGET_ARCH}"
           mkdir -p dist/share/man/man1
+          mkdir -p dist/share/bash-completion/completions
           cp zig-out/bin/omohi "dist/omohi"
           cp docs/man/omohi.1 "dist/share/man/man1/omohi.1"
+          cp completions/omohi.bash "dist/share/bash-completion/completions/omohi"
           tar -C dist -czf "dist/${NAME}.tar.gz" omohi share
           rm -f dist/omohi
           rm -rf dist/share

@@ -6,13 +6,14 @@ FMT ?= $(ZIG) fmt
 #   make test OPTIMIZE=ReleaseSafe
 OPTIMIZE ?= Debug
 
-.PHONY: help test test-contract test-reliability perf-baseline fmt fmt-check lint build docs docs-check check clean
+.PHONY: help test test-contract test-reliability test-completion perf-baseline fmt fmt-check lint build docs docs-check check clean
 
 help:
 	@echo "Targets:"
 	@echo "  make test       - run tests (zig build test)"
 	@echo "  make test-contract - run CLI exit-code and parser contract checks"
 	@echo "  make test-reliability - run CLI reliability checks for LOCK and staged corruption"
+	@echo "  make test-completion - run shell completion checks"
 	@echo "  make perf-baseline - run scheduled-size performance baseline scenarios"
 	@echo "  make fmt        - format source files (zig fmt .)"
 	@echo "  make fmt-check  - check formatting (zig fmt --check .)"
@@ -31,6 +32,9 @@ test-contract: build
 
 test-reliability: build
 	./.github/scripts/omohi_reliability.sh ./zig-out/bin/omohi
+
+test-completion:
+	./.github/scripts/omohi_completion.sh
 
 perf-baseline: build
 	./.github/scripts/omohi_perf_baseline.sh ./zig-out/bin/omohi
@@ -54,7 +58,7 @@ docs:
 docs-check: docs
 	git diff --exit-code -- docs/cli.md docs/man/omohi.1
 
-check: fmt-check lint test test-contract test-reliability docs-check
+check: fmt-check lint test test-contract test-reliability test-completion docs-check
 
 clean:
 	rm -rf zig-cache .zig-cache zig-out
