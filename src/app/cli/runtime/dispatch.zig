@@ -15,6 +15,7 @@ const tag_ls = @import("../command/tag_ls.zig");
 const tag_add = @import("../command/tag_add.zig");
 const tag_rm = @import("../command/tag_rm.zig");
 const help = @import("../command/help.zig");
+const complete = @import("../command/complete.zig");
 
 pub fn dispatch(allocator: std.mem.Allocator, parsed: parser_types.ParsedRequest) !command_types.CommandResult {
     return switch (parsed) {
@@ -32,5 +33,6 @@ pub fn dispatch(allocator: std.mem.Allocator, parsed: parser_types.ParsedRequest
         .tag_add => |args| try tag_add.run(allocator, args),
         .tag_rm => |args| try tag_rm.run(allocator, args),
         .help => |args| try help.run(allocator, args),
+        .complete => |args| try complete.run(allocator, args),
     };
 }

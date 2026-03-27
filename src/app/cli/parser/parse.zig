@@ -17,6 +17,10 @@ pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.
         return try parseHelp(argv[1..]);
     }
 
+    if (std.mem.eql(u8, argv[0], "__complete")) {
+        return try parseComplete(argv[1..]);
+    }
+
     if (argv.len >= 2 and std.mem.eql(u8, argv[0], "tag")) {
         if (std.mem.eql(u8, argv[1], "ls")) return try parseTagLs(argv[2..]);
         if (std.mem.eql(u8, argv[1], "add")) return try parseTagAdd(argv[2..]);
@@ -42,6 +46,50 @@ fn parseHelp(args: []const []const u8) !types.ParsedRequest {
     if (args.len == 0) return .{ .help = .{ .topic = null } };
     if (args.len == 1) return .{ .help = .{ .topic = args[0] } };
     return error.UnexpectedArgument;
+}
+
+fn parseComplete(args: []const []const u8) !types.ParsedRequest {
+    var index: ?usize = null;
+    var stop_option = false;
+    var idx: usize = 0;
+    while (idx < args.len) : (idx += 1) {
+        const token = args[idx];
+
+        if (!stop_option and std.mem.eql(u8, token, "--")) {
+            stop_option = true;
+            idx += 1;
+            break;
+        }
+
+        if (!stop_option) {
+            if (parseLongOption(token)) |opt| {
+                if (equalsIgnoreAsciiCase(opt.key, "index")) {
+                    const value = opt.value orelse blk: {
+                        idx += 1;
+                        if (idx >= args.len) return error.MissingValue;
+                        break :blk args[idx];
+                    };
+                    index = std.fmt.parseInt(usize, value, 10) catch return error.InvalidArgument;
+                    continue;
+                }
+                return error.UnknownOption;
+            }
+        }
+
+        return error.UnexpectedArgument;
+    }
+
+    if (!stop_option) return error.MissingArgument;
+
+    const words = args[idx..];
+    const index_value = index orelse return error.MissingArgument;
+    if (words.len == 0) return error.MissingArgument;
+    if (index_value >= words.len) return error.InvalidArgument;
+
+    return .{ .complete = .{
+        .index = index_value,
+        .words = words,
+    } };
 }
 
 fn parseNoArgsCommand(comptime tag: anytype, args: []const []const u8) !types.ParsedRequest {
@@ -343,6 +391,30 @@ test "parser rejects help with too many topics" {
     const allocator = std.testing.allocator;
     const argv = [_][]const u8{ "help", "commit", "extra" };
     try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &argv));
+}
+
+test "parser accepts internal complete command with index and words" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{ "__complete", "--index", "2", "--", "omohi", "show", "" };
+    var parsed = try parseArgs(allocator, &argv);
+    defer types.deinitParsedRequest(allocator, &parsed);
+
+    switch (parsed) {
+        .complete => |args| {
+            try std.testing.expectEqual(@as(usize, 2), args.index);
+            try std.testing.expectEqual(@as(usize, 3), args.words.len);
+            try std.testing.expectEqualStrings("omohi", args.words[0]);
+            try std.testing.expectEqualStrings("show", args.words[1]);
+            try std.testing.expectEqualStrings("", args.words[2]);
+        },
+        else => return error.UnexpectedResult,
+    }
+}
+
+test "parser rejects internal complete command when index is outside words" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{ "__complete", "--index=3", "--", "omohi", "show", "" };
+    try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &argv));
 }
 
 test "parser resolves version from command and aliases" {

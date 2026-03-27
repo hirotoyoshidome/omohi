@@ -223,9 +223,9 @@ test "command catalog includes every public parser command" {
     try std.testing.expect(hasCommandName("tag add"));
     try std.testing.expect(hasCommandName("tag rm"));
     try std.testing.expect(hasCommandName("help"));
+    try std.testing.expectEqual(@as(usize, 14), all.len);
 
-    // Keep this test tied to parser union to detect command surface drift.
+    // Internal parser-only commands may exist, but they must not leak into the public catalog.
     const parsed_field_count = std.meta.fields(parser_types.ParsedRequest).len;
-    try std.testing.expectEqual(@as(usize, 14), parsed_field_count);
-    try std.testing.expectEqual(parsed_field_count, all.len);
+    try std.testing.expect(parsed_field_count >= all.len);
 }

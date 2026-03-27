@@ -47,6 +47,11 @@ pub const HelpArgs = struct {
     topic: ?[]const u8,
 };
 
+pub const CompleteArgs = struct {
+    index: usize,
+    words: []const []const u8,
+};
+
 pub const ParsedRequest = union(enum) {
     track: TrackArgs,
     untrack: UntrackArgs,
@@ -62,6 +67,7 @@ pub const ParsedRequest = union(enum) {
     tag_add: TagAddArgs,
     tag_rm: TagRmArgs,
     help: HelpArgs,
+    complete: CompleteArgs,
 };
 
 pub fn deinitParsedRequest(allocator: anytype, parsed: *ParsedRequest) void {

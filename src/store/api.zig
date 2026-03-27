@@ -40,6 +40,7 @@ pub const StatusEntry = api_types.StatusEntry;
 pub const StatusList = api_types.StatusList;
 pub const CommitSummary = api_types.CommitSummary;
 pub const CommitSummaryList = api_types.CommitSummaryList;
+pub const StringList = api_types.StringList;
 pub const TagList = api_types.TagList;
 pub const CommitDetails = api_types.CommitDetails;
 pub const TrackedEntry = local_tracked.TrackedEntry;
@@ -496,6 +497,11 @@ pub fn freeTagList(allocator: std.mem.Allocator, tags: *TagList) void {
     tags.deinit();
 }
 
+pub fn freeStringList(allocator: std.mem.Allocator, list: *StringList) void {
+    for (list.items) |item| allocator.free(item);
+    list.deinit();
+}
+
 pub fn tagAdd(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -560,6 +566,61 @@ pub fn tagAdd(
         created_at,
         now[0..],
     );
+}
+
+/// Lists commit IDs sorted descending.
+/// Memory: owned
+/// Lifetime: valid until caller frees with freeStringList
+/// Errors: I/O and validation errors
+pub fn commitIdList(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+) !StringList {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    var ids = try listCommitIds(allocator, persistence);
+    defer ids.deinit();
+
+    var out = StringList.init(allocator);
+    errdefer freeStringList(allocator, &out);
+
+    for (ids.items) |id| {
+        try out.append(try allocator.dupe(u8, &id));
+    }
+    return out;
+}
+
+/// Lists global tag names sorted ascending.
+/// Memory: owned
+/// Lifetime: valid until caller frees with freeStringList
+/// Errors: I/O and validation errors
+pub fn tagNameList(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+) !StringList {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    return try loadTagNameList(allocator, persistence);
+}
+
+/// Lists staged paths sorted ascending.
+/// Memory: owned
+/// Lifetime: valid until caller frees with freeStringList
+/// Errors: I/O and validation errors
+pub fn stagedPathList(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+) !StringList {
+    var statuses = try status(allocator, omohi_dir);
+    defer freeStatusList(allocator, &statuses);
+
+    var out = StringList.init(allocator);
+    errdefer freeStringList(allocator, &out);
+
+    for (statuses.items) |entry| {
+        if (entry.status != .staged) continue;
+        try out.append(try allocator.dupe(u8, entry.path));
+    }
+    std.mem.sort([]u8, out.items, {}, isStringAscLessThan);
+    return out;
 }
 
 pub fn tagRemove(
@@ -799,6 +860,31 @@ fn listCommitIds(
     return list;
 }
 
+fn loadTagNameList(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+) !StringList {
+    var list = StringList.init(allocator);
+    errdefer freeStringList(allocator, &list);
+
+    var dir = persistence.dir.openDir(persistence.dataTagsPath(), .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return list,
+        else => return err,
+    };
+    defer dir.close();
+
+    var it = dir.iterate();
+    while (try it.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (std.mem.eql(u8, entry.name, ".trash")) continue;
+        _ = constrained_types.TagName.init(entry.name) catch continue;
+        try list.append(try allocator.dupe(u8, entry.name));
+    }
+
+    std.mem.sort([]u8, list.items, {}, isStringAscLessThan);
+    return list;
+}
+
 fn isCommitIdDescLessThan(_: void, lhs: [64]u8, rhs: [64]u8) bool {
     return std.mem.order(u8, &lhs, &rhs) == .gt;
 }
@@ -862,6 +948,10 @@ fn containsTag(list: []const []const u8, target: []const u8) bool {
         if (std.mem.eql(u8, item, target)) return true;
     }
     return false;
+}
+
+fn isStringAscLessThan(_: void, lhs: []u8, rhs: []u8) bool {
+    return std.mem.order(u8, lhs, rhs) == .lt;
 }
 
 fn headCommitId(
@@ -979,6 +1069,91 @@ fn filledHexId(ch: u8) [64]u8 {
     var value: [64]u8 = undefined;
     @memset(&value, ch);
     return value;
+}
+
+test "commitIdList returns commit ids in descending order" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+    const tracked_path = try addTestFileForCommit(tmp.dir, allocator, "a.txt", "one");
+    defer allocator.free(tracked_path);
+    _ = try track(allocator, omohi_dir, tracked_path);
+    try add(allocator, omohi_dir, tracked_path);
+    _ = try commit(allocator, omohi_dir, "first");
+
+    allocator.free(try addTestFileForCommit(tmp.dir, allocator, "a.txt", "two"));
+    try add(allocator, omohi_dir, tracked_path);
+    const newer = try commit(allocator, omohi_dir, "second");
+
+    var ids = try commitIdList(allocator, omohi_dir);
+    defer freeStringList(allocator, &ids);
+
+    try std.testing.expect(ids.items.len >= 2);
+    try std.testing.expectEqualStrings(newer.asSlice(), ids.items[0]);
+}
+
+test "tagNameList returns tag names sorted ascending" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    const persistence = PersistenceLayout.init(omohi_dir);
+
+    try omohi_dir.makePath(persistence.dataTagsPath());
+    try local_tags.writeTag(allocator, persistence, "prod", "2026-03-27T00:00:00.000Z");
+    try local_tags.writeTag(allocator, persistence, "alpha", "2026-03-27T00:00:01.000Z");
+
+    var tags = try tagNameList(allocator, omohi_dir);
+    defer freeStringList(allocator, &tags);
+
+    try std.testing.expectEqual(@as(usize, 2), tags.items.len);
+    try std.testing.expectEqualStrings("alpha", tags.items[0]);
+    try std.testing.expectEqualStrings("prod", tags.items[1]);
+}
+
+test "stagedPathList returns staged paths sorted ascending" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+    const b_path = try addTestFileForCommit(tmp.dir, allocator, "b.txt", "b");
+    defer allocator.free(b_path);
+    const a_path = try addTestFileForCommit(tmp.dir, allocator, "a.txt", "a");
+    defer allocator.free(a_path);
+    _ = try track(allocator, omohi_dir, b_path);
+    _ = try track(allocator, omohi_dir, a_path);
+    try add(allocator, omohi_dir, b_path);
+    try add(allocator, omohi_dir, a_path);
+
+    var paths = try stagedPathList(allocator, omohi_dir);
+    defer freeStringList(allocator, &paths);
+
+    try std.testing.expectEqual(@as(usize, 2), paths.items.len);
+    try std.testing.expectEqualStrings(a_path, paths.items[0]);
+    try std.testing.expectEqualStrings(b_path, paths.items[1]);
+}
+
+fn addTestFileForCommit(
+    root: std.fs.Dir,
+    allocator: std.mem.Allocator,
+    name: []const u8,
+    contents: []const u8,
+) ![]u8 {
+    var file = try root.createFile(name, .{ .truncate = true });
+    defer file.close();
+    try file.writeAll(contents);
+    return try root.realpathAlloc(allocator, name);
 }
 
 fn writeFindFixtureCommit(
