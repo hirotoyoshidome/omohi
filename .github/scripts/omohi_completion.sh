@@ -14,6 +14,66 @@ set -euo pipefail
 
 ROOT_DIR="${ROOT_DIR:-}"
 COMPLETION_FILE="${COMPLETION_FILE:-}"
+TEST_BIN_DIR="$(mktemp -d)"
+trap 'rm -rf "${TEST_BIN_DIR}"' EXIT
+FAKE_OMOHI="${TEST_BIN_DIR}/omohi"
+cat > "${FAKE_OMOHI}" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1-}" != "__complete" ]]; then
+  exit 1
+fi
+
+shift
+if [[ "${1-}" != "--index" ]]; then
+  exit 1
+fi
+index="${2-}"
+shift 2
+if [[ "${1-}" != "--" ]]; then
+  exit 1
+fi
+shift
+
+case "$*" in
+  "omohi " )
+    printf '%s\n' track untrack add rm commit status tracklist version find show tag help -h --help -v --version
+    ;;
+  "omohi tag " )
+    printf '%s\n' ls add rm
+    ;;
+  "omohi commit " )
+    printf '%s\n' -m --message -t --tag --dry-run
+    ;;
+  "omohi commit --m" )
+    printf '%s\n' --message
+    ;;
+  "omohi find " )
+    printf '%s\n' -t --tag -d --date
+    ;;
+  "omohi find --d" )
+    printf '%s\n' --date
+    ;;
+  "omohi untrack " )
+    printf '%s\n' 11111111111111111111111111111111 22222222222222222222222222222222
+    ;;
+  "omohi show " )
+    printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    ;;
+  "omohi tag add aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa " )
+    printf '%s\n' prod release
+    ;;
+  "omohi tag rm aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa " )
+    printf '%s\n' prod release
+    ;;
+  "omohi find --tag " )
+    printf '%s\n' prod release
+    ;;
+esac
+SCRIPT
+chmod +x "${FAKE_OMOHI}"
+export OMOHI_COMPLETION_COMMAND="${FAKE_OMOHI}"
 source "${COMPLETION_FILE}"
 
 assert_reply() {
@@ -43,6 +103,10 @@ assert_reply "--message" omohi commit --m
 assert_reply "-t --tag -d --date" omohi find ""
 assert_reply "--date" omohi find --d
 assert_reply "" omohi status ""
-assert_reply "" omohi show ""
+assert_reply "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" omohi show ""
 assert_reply "" omohi commit --message ""
+assert_reply "11111111111111111111111111111111 22222222222222222222222222222222" omohi untrack ""
+assert_reply "prod release" omohi tag add aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ""
+assert_reply "prod release" omohi tag rm aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ""
+assert_reply "prod release" omohi find --tag ""
 EOF
