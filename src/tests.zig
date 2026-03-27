@@ -30,6 +30,7 @@ const _ops_status = @import("ops/status_ops.zig");
 const _ops_find = @import("ops/find_ops.zig");
 const _ops_show = @import("ops/show_ops.zig");
 const _ops_tag = @import("ops/tag_ops.zig");
+const _ops_completion = @import("ops/completion_ops.zig");
 const _ops_journal_append = @import("ops/journal/append.zig");
 
 // app/cli tests
@@ -72,6 +73,7 @@ test "load modules" {
     _ = _ops_find;
     _ = _ops_show;
     _ = _ops_tag;
+    _ = _ops_completion;
     _ = _ops_journal_append;
     _ = _app_cli_run;
     _ = _app_cli_error_map;
