@@ -27,7 +27,8 @@ pub const CommitSummary = struct {
 
 pub const CommitSummaryList = std.array_list.Managed(CommitSummary);
 
-pub const TagList = std.array_list.Managed([]u8);
+pub const StringList = std.array_list.Managed([]u8);
+pub const TagList = StringList;
 
 pub const CommitDetails = struct {
     commit_id: constrained_types.CommitId,
