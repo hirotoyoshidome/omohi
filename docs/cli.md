@@ -6,7 +6,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 
 | Command | Usage | Summary |
 | --- | --- | --- |
-| `track` | `track <path>` | Register one absolute path as a tracked target. |
+| `track` | `track <path>` | Register one file or recursively track files under a directory. |
 | `untrack` | `untrack <trackedFileId>` | Remove a tracked target by tracked file ID. |
 | `add` | `add <path>` | Stage one tracked file path for the next commit. |
 | `rm` | `rm <path>` | Remove one staged file path from staging. |
@@ -26,15 +26,17 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 ### track
 
 - Usage: `omohi track <path>`
-- Summary: Register one absolute path as a tracked target.
+- Summary: Register one file or recursively track files under a directory.
 - Positionals:
-  - `path` (required): Path to the file to track.
+  - `path` (required): Path to the file or directory to track.
 - Options:
   - None
 - Examples:
   - `omohi track /tmp/note.txt`
+  - `omohi track .`
 - Notes:
   - The store is auto-created on the first successful track.
+  - Directories are expanded recursively into tracked files. Non-regular entries are skipped.
 
 ### untrack
 
