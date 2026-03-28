@@ -29,6 +29,7 @@ pub fn forRuntimeError(err: anyerror) []const u8 {
         error.CommitNotFound => "Commit not found. Check the commit ID with `omohi find`.",
         error.NotFound => "Target not found. Check the ID/path and try again.",
         error.AlreadyTracked => "The file is already tracked.",
+        error.InvalidTrackedTarget => "Track target must be a file path or a directory expanded by the CLI.",
         error.FileTooLarge => "File is too large to stage.",
         else => "Operation failed due to an unexpected system error.",
     };

@@ -15,8 +15,30 @@ pub fn message(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
     return allocator.dupe(u8, text);
 }
 
-pub fn trackResult(allocator: std.mem.Allocator, absolute_path: []const u8) ![]u8 {
-    return std.fmt.allocPrint(allocator, "Tracked: {s}\n", .{absolute_path});
+pub fn trackResult(
+    allocator: std.mem.Allocator,
+    absolute_path: []const u8,
+    outcome: *const track_ops.TrackOutcome,
+) ![]u8 {
+    if (outcome.tracked_paths.items.len == 1 and outcome.skipped_paths == 0 and
+        std.mem.eql(u8, outcome.tracked_paths.items[0], absolute_path))
+    {
+        return std.fmt.allocPrint(allocator, "Tracked: {s}\n", .{absolute_path});
+    }
+
+    var out = std.array_list.Managed(u8).init(allocator);
+    errdefer out.deinit();
+    const writer = out.writer();
+
+    try writer.print("Tracked {d} file(s) under {s}\n", .{ outcome.tracked_paths.items.len, absolute_path });
+    for (outcome.tracked_paths.items) |path| {
+        try writer.print("- {s}\n", .{path});
+    }
+    if (outcome.skipped_paths != 0) {
+        try writer.print("Skipped already tracked file(s): {d}\n", .{outcome.skipped_paths});
+    }
+
+    return out.toOwnedSlice();
 }
 
 pub fn untrackResult(allocator: std.mem.Allocator, absolute_path: []const u8) ![]u8 {
@@ -237,10 +259,33 @@ fn filled64(ch: u8) [64]u8 {
 }
 
 test "trackResult follows migration contract" {
-    const output = try trackResult(std.testing.allocator, "/tmp/a.txt");
+    var outcome = track_ops.TrackOutcome.init(std.testing.allocator);
+    defer track_ops.freeTrackOutcome(std.testing.allocator, &outcome);
+    try outcome.tracked_paths.append(try std.testing.allocator.dupe(u8, "/tmp/a.txt"));
+
+    const output = try trackResult(std.testing.allocator, "/tmp/a.txt", &outcome);
     defer std.testing.allocator.free(output);
 
     try std.testing.expectEqualStrings("Tracked: /tmp/a.txt\n", output);
+}
+
+test "trackResult renders directory expansion summary" {
+    var outcome = track_ops.TrackOutcome.init(std.testing.allocator);
+    defer track_ops.freeTrackOutcome(std.testing.allocator, &outcome);
+    try outcome.tracked_paths.append(try std.testing.allocator.dupe(u8, "/tmp/root/a.txt"));
+    try outcome.tracked_paths.append(try std.testing.allocator.dupe(u8, "/tmp/root/sub/b.txt"));
+    outcome.skipped_paths = 1;
+
+    const output = try trackResult(std.testing.allocator, "/tmp/root", &outcome);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Tracked 2 file(s) under /tmp/root\n" ++
+            "- /tmp/root/a.txt\n" ++
+            "- /tmp/root/sub/b.txt\n" ++
+            "Skipped already tracked file(s): 1\n",
+        output,
+    );
 }
 
 test "untrackResult follows migration contract" {
