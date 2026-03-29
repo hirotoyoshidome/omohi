@@ -14,12 +14,14 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.RmArgs) !command_typ
     const absolute_path = try path_resolver.resolveAbsolutePath(allocator, args.path);
     defer allocator.free(absolute_path);
 
-    rm_ops.rm(allocator, omohi.dir, absolute_path) catch |err| switch (err) {
+    var outcome = rm_ops.rm(allocator, omohi.dir, absolute_path) catch |err| switch (err) {
         error.TrackedFileNotFound => return trackedNotFoundResult(allocator, absolute_path),
         error.StagedFileNotFound => return stagedNotFoundResult(allocator, absolute_path),
         else => return err,
     };
-    const output = try presenter.rmResult(allocator, absolute_path);
+    defer rm_ops.freeRmOutcome(allocator, &outcome);
+
+    const output = try presenter.rmResult(allocator, absolute_path, &outcome);
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
 }
 

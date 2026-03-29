@@ -1,4 +1,6 @@
 const std = @import("std");
+const add_ops = @import("../../../ops/add_ops.zig");
+const rm_ops = @import("../../../ops/rm_ops.zig");
 const track_ops = @import("../../../ops/track_ops.zig");
 const status_ops = @import("../../../ops/status_ops.zig");
 const find_ops = @import("../../../ops/find_ops.zig");
@@ -45,12 +47,74 @@ pub fn untrackResult(allocator: std.mem.Allocator, absolute_path: []const u8) ![
     return std.fmt.allocPrint(allocator, "Untracked: {s}\n", .{absolute_path});
 }
 
-pub fn addResult(allocator: std.mem.Allocator, absolute_path: []const u8) ![]u8 {
-    return std.fmt.allocPrint(allocator, "Staged: {s}\n", .{absolute_path});
+pub fn addResult(
+    allocator: std.mem.Allocator,
+    absolute_path: []const u8,
+    outcome: *const add_ops.AddOutcome,
+) ![]u8 {
+    if (outcome.staged_paths.items.len == 1 and
+        outcome.skipped_untracked == 0 and
+        outcome.skipped_non_regular == 0 and
+        outcome.skipped_already_staged == 0 and
+        std.mem.eql(u8, outcome.staged_paths.items[0], absolute_path))
+    {
+        return std.fmt.allocPrint(allocator, "Staged: {s}\n", .{absolute_path});
+    }
+
+    var out = std.array_list.Managed(u8).init(allocator);
+    errdefer out.deinit();
+    const writer = out.writer();
+
+    try writer.print("Staged {d} file(s) under {s}\n", .{ outcome.staged_paths.items.len, absolute_path });
+    for (outcome.staged_paths.items) |path| {
+        try writer.print("- {s}\n", .{path});
+    }
+    if (outcome.skipped_untracked != 0) {
+        try writer.print("Skipped untracked file(s): {d}\n", .{outcome.skipped_untracked});
+    }
+    if (outcome.skipped_already_staged != 0) {
+        try writer.print("Skipped already staged file(s): {d}\n", .{outcome.skipped_already_staged});
+    }
+    if (outcome.skipped_non_regular != 0) {
+        try writer.print("Skipped non-regular entry(s): {d}\n", .{outcome.skipped_non_regular});
+    }
+
+    return out.toOwnedSlice();
 }
 
-pub fn rmResult(allocator: std.mem.Allocator, absolute_path: []const u8) ![]u8 {
-    return std.fmt.allocPrint(allocator, "Unstaged: {s}\n", .{absolute_path});
+pub fn rmResult(
+    allocator: std.mem.Allocator,
+    absolute_path: []const u8,
+    outcome: *const rm_ops.RmOutcome,
+) ![]u8 {
+    if (outcome.unstaged_paths.items.len == 1 and
+        outcome.skipped_untracked == 0 and
+        outcome.skipped_not_staged == 0 and
+        outcome.skipped_non_regular == 0 and
+        std.mem.eql(u8, outcome.unstaged_paths.items[0], absolute_path))
+    {
+        return std.fmt.allocPrint(allocator, "Unstaged: {s}\n", .{absolute_path});
+    }
+
+    var out = std.array_list.Managed(u8).init(allocator);
+    errdefer out.deinit();
+    const writer = out.writer();
+
+    try writer.print("Unstaged {d} file(s) under {s}\n", .{ outcome.unstaged_paths.items.len, absolute_path });
+    for (outcome.unstaged_paths.items) |path| {
+        try writer.print("- {s}\n", .{path});
+    }
+    if (outcome.skipped_untracked != 0) {
+        try writer.print("Skipped untracked file(s): {d}\n", .{outcome.skipped_untracked});
+    }
+    if (outcome.skipped_not_staged != 0) {
+        try writer.print("Skipped non-staged file(s): {d}\n", .{outcome.skipped_not_staged});
+    }
+    if (outcome.skipped_non_regular != 0) {
+        try writer.print("Skipped non-regular entry(s): {d}\n", .{outcome.skipped_non_regular});
+    }
+
+    return out.toOwnedSlice();
 }
 
 pub fn commitResult(allocator: std.mem.Allocator, commit_id: [64]u8) ![]u8 {
@@ -296,17 +360,63 @@ test "untrackResult follows migration contract" {
 }
 
 test "addResult follows migration contract" {
-    const output = try addResult(std.testing.allocator, "/tmp/a.txt");
+    var outcome = add_ops.AddOutcome.init(std.testing.allocator);
+    defer add_ops.freeAddOutcome(std.testing.allocator, &outcome);
+    try outcome.staged_paths.append(try std.testing.allocator.dupe(u8, "/tmp/a.txt"));
+
+    const output = try addResult(std.testing.allocator, "/tmp/a.txt", &outcome);
     defer std.testing.allocator.free(output);
 
     try std.testing.expectEqualStrings("Staged: /tmp/a.txt\n", output);
 }
 
 test "rmResult follows migration contract" {
-    const output = try rmResult(std.testing.allocator, "/tmp/a.txt");
+    var outcome = rm_ops.RmOutcome.init(std.testing.allocator);
+    defer rm_ops.freeRmOutcome(std.testing.allocator, &outcome);
+    try outcome.unstaged_paths.append(try std.testing.allocator.dupe(u8, "/tmp/a.txt"));
+
+    const output = try rmResult(std.testing.allocator, "/tmp/a.txt", &outcome);
     defer std.testing.allocator.free(output);
 
     try std.testing.expectEqualStrings("Unstaged: /tmp/a.txt\n", output);
+}
+
+test "addResult renders directory summary" {
+    var outcome = add_ops.AddOutcome.init(std.testing.allocator);
+    defer add_ops.freeAddOutcome(std.testing.allocator, &outcome);
+    try outcome.staged_paths.append(try std.testing.allocator.dupe(u8, "/tmp/root/a.txt"));
+    outcome.skipped_untracked = 2;
+    outcome.skipped_already_staged = 1;
+
+    const output = try addResult(std.testing.allocator, "/tmp/root", &outcome);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Staged 1 file(s) under /tmp/root\n" ++
+            "- /tmp/root/a.txt\n" ++
+            "Skipped untracked file(s): 2\n" ++
+            "Skipped already staged file(s): 1\n",
+        output,
+    );
+}
+
+test "rmResult renders directory summary" {
+    var outcome = rm_ops.RmOutcome.init(std.testing.allocator);
+    defer rm_ops.freeRmOutcome(std.testing.allocator, &outcome);
+    try outcome.unstaged_paths.append(try std.testing.allocator.dupe(u8, "/tmp/root/a.txt"));
+    outcome.skipped_not_staged = 1;
+    outcome.skipped_untracked = 2;
+
+    const output = try rmResult(std.testing.allocator, "/tmp/root", &outcome);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Unstaged 1 file(s) under /tmp/root\n" ++
+            "- /tmp/root/a.txt\n" ++
+            "Skipped untracked file(s): 2\n" ++
+            "Skipped non-staged file(s): 1\n",
+        output,
+    );
 }
 
 test "commitResult follows migration contract" {
