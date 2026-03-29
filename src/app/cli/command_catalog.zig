@@ -31,13 +31,16 @@ pub const all = [_]CommandSpec{
     .{
         .name = "track",
         .usage = "track <path>",
-        .summary = "Register one absolute path as a tracked target.",
+        .summary = "Register one file or recursively track files under a directory.",
         .positionals = &.{
-            .{ .name = "path", .required = true, .repeatable = false, .description = "Path to the file to track." },
+            .{ .name = "path", .required = true, .repeatable = false, .description = "Path to the file or directory to track." },
         },
         .options = &.{},
-        .examples = &.{"omohi track /tmp/note.txt"},
-        .notes = &.{"The store is auto-created on the first successful track."},
+        .examples = &.{ "omohi track /tmp/note.txt", "omohi track ." },
+        .notes = &.{
+            "The store is auto-created on the first successful track.",
+            "Directories are expanded recursively into tracked files. Non-regular entries are skipped.",
+        },
     },
     .{
         .name = "untrack",

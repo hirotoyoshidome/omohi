@@ -12,7 +12,7 @@ This page is generated from src/app/cli/command_catalog.zig. Do not edit manuall
 .SS track
 .TP
 .B Summary
-Register one absolute path as a tracked target.
+Register one file or recursively track files under a directory.
 .TP
 .B Usage
 .nf
@@ -22,17 +22,21 @@ omohi track <path>
 .B Positionals
 .RS 4
 .B path
-required: Path to the file to track.
+required: Path to the file or directory to track.
 .RE
 .TP
 .B Examples
 .nf
 omohi track /tmp/note.txt
+omohi track .
 .fi
 .TP
 .B Notes
 .RS 4
 The store is auto\-created on the first successful track.
+.RE
+.RS 4
+Directories are expanded recursively into tracked files. Non\-regular entries are skipped.
 .RE
 .SS untrack
 .TP

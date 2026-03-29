@@ -131,8 +131,9 @@ Below is the minimal day-to-day flow:
 Relative and absolute paths are accepted. Relative paths are resolved from your current working directory.
 
 ```sh
-# 1) Start tracking a file
+# 1) Start tracking a file or directory
 omohi track ./note.md
+omohi track .
 
 # 2) Stage current content
 omohi add ./note.md

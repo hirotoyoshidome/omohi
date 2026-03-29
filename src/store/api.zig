@@ -222,6 +222,7 @@ pub fn track(
     try omohi_dir.makePath(persistence.trackedTrashPath());
 
     _ = try constrained_types.TrackedFilePath.init(absolute_path);
+    try ensureTrackTargetIsNotDirectory(absolute_path);
 
     var existing = try loadTrackedOrEmpty(allocator, persistence);
     defer if (existing) |*list| local_tracked.freeTrackedList(allocator, list);
@@ -316,14 +317,19 @@ pub fn status(
             var mutable_file = tracked_file;
             defer mutable_file.close();
 
-            const current_hash = try contentHashFromOpenedFile(allocator, mutable_file);
-            const staged_id = hash.stagedFileIdFrom(tracked_entry.path.asSlice(), &current_hash);
-            if (try hasStagedEntry(allocator, persistence, &staged_id)) {
-                kind = .staged;
-            } else if (committed_hashes.contains(current_hash)) {
-                kind = .committed;
-            } else if (committed_hashes.count() != 0) {
-                kind = .changed;
+            const stat = mutable_file.stat() catch null;
+            if (stat) |file_stat| {
+                if (file_stat.kind == .file) {
+                    const current_hash = try contentHashFromOpenedFile(allocator, mutable_file);
+                    const staged_id = hash.stagedFileIdFrom(tracked_entry.path.asSlice(), &current_hash);
+                    if (try hasStagedEntry(allocator, persistence, &staged_id)) {
+                        kind = .staged;
+                    } else if (committed_hashes.contains(current_hash)) {
+                        kind = .committed;
+                    } else if (committed_hashes.count() != 0) {
+                        kind = .changed;
+                    }
+                }
             }
         }
 
@@ -1006,6 +1012,18 @@ fn contentHashFromFile(
     return contentHashFromOpenedFile(allocator, source_file);
 }
 
+fn ensureTrackTargetIsNotDirectory(absolute_path: []const u8) !void {
+    var file = std.fs.openFileAbsolute(absolute_path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return,
+        error.IsDir => return error.InvalidTrackedTarget,
+        else => return err,
+    };
+    defer file.close();
+
+    const stat = try file.stat();
+    if (stat.kind == .directory) return error.InvalidTrackedTarget;
+}
+
 fn contentHashFromOpenedFile(
     allocator: std.mem.Allocator,
     source_file: std.fs.File,
@@ -1316,6 +1334,22 @@ test "track rejects duplicate absolute path and releases lock" {
     try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("LOCK", .{}));
 }
 
+test "track rejects directory targets" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, ".");
+    defer allocator.free(absolute_path);
+
+    try std.testing.expectError(error.InvalidTrackedTarget, track(allocator, omohi_dir, absolute_path));
+}
+
 test "untrack moves tracked file into trash and missing id returns NotFound" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1471,6 +1505,35 @@ test "add uses absolute path when generating staged file id" {
     var staged_entry_id: [64]u8 = undefined;
     try onlyFileNameInDir(omohi_dir, "staged/entries", &staged_entry_id);
     try std.testing.expectEqualSlices(u8, staged_file_id[0..], staged_entry_id[0..]);
+}
+
+test "status tolerates invalid tracked directory entry" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    const persistence = PersistenceLayout.init(omohi_dir);
+
+    try omohi_dir.makePath(persistence.trackedPath());
+    try omohi_dir.makePath(persistence.trackedTrashPath());
+
+    const directory_path = try source_dir.realpathAlloc(allocator, ".");
+    defer allocator.free(directory_path);
+
+    var tracked_id: [32]u8 = undefined;
+    @memset(&tracked_id, 'd');
+    try local_tracked.writeTracked(allocator, persistence, &tracked_id, directory_path);
+
+    var statuses = try status(allocator, omohi_dir);
+    defer freeStatusList(allocator, &statuses);
+
+    try std.testing.expectEqual(@as(usize, 1), statuses.items.len);
+    try std.testing.expectEqual(.tracked, statuses.items[0].status);
+    try std.testing.expectEqualStrings(directory_path, statuses.items[0].path);
 }
 
 test "find sorts by createdAt desc and limits to ten commits" {
