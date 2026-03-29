@@ -66,7 +66,7 @@ Use `omohi tracklist` to resolve IDs before untrack.
 .SS add
 .TP
 .B Summary
-Stage one tracked file path for the next commit.
+Stage one tracked file or recursively stage tracked files under a directory.
 .TP
 .B Usage
 .nf
@@ -76,22 +76,26 @@ omohi add <path>
 .B Positionals
 .RS 4
 .B path
-required: Path to stage.
+required: Path to the tracked file or directory to stage.
 .RE
 .TP
 .B Examples
 .nf
 omohi add /tmp/note.txt
+omohi add .
 .fi
 .TP
 .B Notes
 .RS 4
-The path must already be tracked.
+When a directory is given, tracked files under it are staged recursively.
+.RE
+.RS 4
+Untracked and non\-regular entries are skipped.
 .RE
 .SS rm
 .TP
 .B Summary
-Remove one staged file path from staging.
+Remove one staged file or recursively unstage staged files under a directory.
 .TP
 .B Usage
 .nf
@@ -101,17 +105,21 @@ omohi rm <path>
 .B Positionals
 .RS 4
 .B path
-required: Path to unstage.
+required: Path to the staged file or directory to unstage.
 .RE
 .TP
 .B Examples
 .nf
 omohi rm /tmp/note.txt
+omohi rm .
 .fi
 .TP
 .B Notes
 .RS 4
-The path must be tracked and currently staged.
+When a directory is given, staged files under it are unstaged recursively.
+.RE
+.RS 4
+Untracked, non\-staged, and non\-regular entries are skipped.
 .RE
 .SS commit
 .TP
