@@ -2,15 +2,134 @@ const std = @import("std");
 
 const add_store = @import("../store/api.zig");
 const commit_ops = @import("./commit_ops.zig");
+const status_ops = @import("./status_ops.zig");
+
+pub const AddOutcome = struct {
+    staged_paths: std.array_list.Managed([]u8),
+    skipped_untracked: usize,
+    skipped_non_regular: usize,
+    skipped_already_staged: usize,
+
+    pub fn init(allocator: std.mem.Allocator) AddOutcome {
+        return .{
+            .staged_paths = std.array_list.Managed([]u8).init(allocator),
+            .skipped_untracked = 0,
+            .skipped_non_regular = 0,
+            .skipped_already_staged = 0,
+        };
+    }
+};
 
 /// Stages a file by writing staged entry/object data.
 pub fn add(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     absolute_path: []const u8,
-) !void {
+) !AddOutcome {
     try add_store.ensureStoreVersion(allocator, omohi_dir);
+
+    var dir = std.fs.openDirAbsolute(absolute_path, .{ .iterate = true, .access_sub_paths = true }) catch |err| switch (err) {
+        error.FileNotFound, error.NotDir => return addSingleFile(allocator, omohi_dir, absolute_path),
+        else => return err,
+    };
+    defer dir.close();
+
+    return addDirectory(allocator, omohi_dir, absolute_path);
+}
+
+pub fn freeAddOutcome(allocator: std.mem.Allocator, outcome: *AddOutcome) void {
+    for (outcome.staged_paths.items) |path| allocator.free(path);
+    outcome.staged_paths.deinit();
+}
+
+fn addSingleFile(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    absolute_path: []const u8,
+) !AddOutcome {
     try add_store.add(allocator, omohi_dir, absolute_path);
+
+    var outcome = AddOutcome.init(allocator);
+    errdefer freeAddOutcome(allocator, &outcome);
+    try outcome.staged_paths.append(try allocator.dupe(u8, absolute_path));
+    return outcome;
+}
+
+fn addDirectory(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    absolute_path: []const u8,
+) !AddOutcome {
+    var outcome = AddOutcome.init(allocator);
+    errdefer freeAddOutcome(allocator, &outcome);
+
+    var tracked_statuses = try status_ops.status(allocator, omohi_dir);
+    defer status_ops.freeStatusList(allocator, &tracked_statuses);
+
+    var staged_now = std.StringHashMap(void).init(allocator);
+    defer staged_now.deinit();
+    for (tracked_statuses.items) |entry| {
+        if (entry.status == .staged) try staged_now.put(entry.path, {});
+    }
+
+    var collected = std.array_list.Managed([]u8).init(allocator);
+    defer {
+        for (collected.items) |path| allocator.free(path);
+        collected.deinit();
+    }
+    try collectRegularFiles(allocator, absolute_path, &collected, &outcome.skipped_non_regular);
+    std.mem.sort([]u8, collected.items, {}, lessThanPath);
+
+    for (collected.items) |path| {
+        if (staged_now.contains(path)) {
+            outcome.skipped_already_staged += 1;
+            continue;
+        }
+
+        add_store.add(allocator, omohi_dir, path) catch |err| switch (err) {
+            error.TrackedFileNotFound => {
+                outcome.skipped_untracked += 1;
+                continue;
+            },
+            else => return err,
+        };
+
+        try outcome.staged_paths.append(try allocator.dupe(u8, path));
+    }
+
+    return outcome;
+}
+
+fn collectRegularFiles(
+    allocator: std.mem.Allocator,
+    absolute_dir_path: []const u8,
+    collected: *std.array_list.Managed([]u8),
+    skipped_non_regular: *usize,
+) !void {
+    var dir = try std.fs.openDirAbsolute(absolute_dir_path, .{ .iterate = true, .access_sub_paths = true });
+    defer dir.close();
+
+    var it = dir.iterate();
+    while (try it.next()) |entry| {
+        const child_path = try std.fs.path.resolve(allocator, &.{ absolute_dir_path, entry.name });
+        errdefer allocator.free(child_path);
+
+        switch (entry.kind) {
+            .file => try collected.append(child_path),
+            .directory => {
+                try collectRegularFiles(allocator, child_path, collected, skipped_non_regular);
+                allocator.free(child_path);
+            },
+            else => {
+                skipped_non_regular.* += 1;
+                allocator.free(child_path);
+            },
+        }
+    }
+}
+
+fn lessThanPath(_: void, lhs: []u8, rhs: []u8) bool {
+    return std.mem.lessThan(u8, lhs, rhs);
 }
 
 fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
@@ -77,7 +196,8 @@ test "add writes staged entry and staged object using content hash" {
     defer allocator.free(absolute_path);
     _ = try add_store.track(allocator, omohi_dir, absolute_path);
 
-    try add(allocator, omohi_dir, absolute_path);
+    var outcome = try add(allocator, omohi_dir, absolute_path);
+    defer freeAddOutcome(allocator, &outcome);
 
     var staged_object_hash: [64]u8 = undefined;
     try onlyFileNameInDir(omohi_dir, "staged/objects", &staged_object_hash);
@@ -129,7 +249,8 @@ test "commit can read staged data created by add" {
     defer allocator.free(absolute_path);
     _ = try add_store.track(allocator, omohi_dir, absolute_path);
 
-    try add(allocator, omohi_dir, absolute_path);
+    var outcome = try add(allocator, omohi_dir, absolute_path);
+    defer freeAddOutcome(allocator, &outcome);
     _ = try commit_ops.commit(allocator, omohi_dir, "via add");
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
@@ -156,4 +277,92 @@ test "commit can read staged data created by add" {
     const object_bytes = try omohi_dir.readFileAlloc(allocator, object_path, 512);
     defer allocator.free(object_bytes);
     try std.testing.expectEqualStrings(payload, object_bytes);
+}
+
+test "add stages tracked files recursively and skips untracked files under directory" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try add_store.initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    try source_dir.makePath("nested");
+    {
+        var file = try source_dir.createFile("a.txt", .{});
+        defer file.close();
+        try file.writeAll("a");
+    }
+    {
+        var file = try source_dir.createFile("nested/b.txt", .{});
+        defer file.close();
+        try file.writeAll("b");
+    }
+    {
+        var file = try source_dir.createFile("nested/c.txt", .{});
+        defer file.close();
+        try file.writeAll("c");
+    }
+
+    const a_path = try source_dir.realpathAlloc(allocator, "a.txt");
+    defer allocator.free(a_path);
+    const b_path = try source_dir.realpathAlloc(allocator, "nested/b.txt");
+    defer allocator.free(b_path);
+    const root_path = try source_dir.realpathAlloc(allocator, ".");
+    defer allocator.free(root_path);
+
+    _ = try add_store.track(allocator, omohi_dir, a_path);
+    _ = try add_store.track(allocator, omohi_dir, b_path);
+
+    var outcome = try add(allocator, omohi_dir, root_path);
+    defer freeAddOutcome(allocator, &outcome);
+
+    try std.testing.expectEqual(@as(usize, 2), outcome.staged_paths.items.len);
+    try std.testing.expectEqual(@as(usize, 1), outcome.skipped_untracked);
+    try std.testing.expectEqual(@as(usize, 0), outcome.skipped_already_staged);
+}
+
+test "add skips files already staged with current content when directory is given" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try add_store.initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    try source_dir.makePath("nested");
+    {
+        var file = try source_dir.createFile("a.txt", .{});
+        defer file.close();
+        try file.writeAll("a");
+    }
+    {
+        var file = try source_dir.createFile("nested/b.txt", .{});
+        defer file.close();
+        try file.writeAll("b");
+    }
+
+    const a_path = try source_dir.realpathAlloc(allocator, "a.txt");
+    defer allocator.free(a_path);
+    const b_path = try source_dir.realpathAlloc(allocator, "nested/b.txt");
+    defer allocator.free(b_path);
+    const root_path = try source_dir.realpathAlloc(allocator, ".");
+    defer allocator.free(root_path);
+
+    _ = try add_store.track(allocator, omohi_dir, a_path);
+    _ = try add_store.track(allocator, omohi_dir, b_path);
+
+    try add_store.add(allocator, omohi_dir, a_path);
+
+    var outcome = try add(allocator, omohi_dir, root_path);
+    defer freeAddOutcome(allocator, &outcome);
+
+    try std.testing.expectEqual(@as(usize, 1), outcome.staged_paths.items.len);
+    try std.testing.expectEqual(@as(usize, 1), outcome.skipped_already_staged);
 }
