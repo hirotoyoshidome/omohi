@@ -56,24 +56,30 @@ pub const all = [_]CommandSpec{
     .{
         .name = "add",
         .usage = "add <path>",
-        .summary = "Stage one tracked file path for the next commit.",
+        .summary = "Stage one tracked file or recursively stage tracked files under a directory.",
         .positionals = &.{
-            .{ .name = "path", .required = true, .repeatable = false, .description = "Path to stage." },
+            .{ .name = "path", .required = true, .repeatable = false, .description = "Path to the tracked file or directory to stage." },
         },
         .options = &.{},
-        .examples = &.{"omohi add /tmp/note.txt"},
-        .notes = &.{"The path must already be tracked."},
+        .examples = &.{ "omohi add /tmp/note.txt", "omohi add ." },
+        .notes = &.{
+            "When a directory is given, tracked files under it are staged recursively.",
+            "Untracked and non-regular entries are skipped.",
+        },
     },
     .{
         .name = "rm",
         .usage = "rm <path>",
-        .summary = "Remove one staged file path from staging.",
+        .summary = "Remove one staged file or recursively unstage staged files under a directory.",
         .positionals = &.{
-            .{ .name = "path", .required = true, .repeatable = false, .description = "Path to unstage." },
+            .{ .name = "path", .required = true, .repeatable = false, .description = "Path to the staged file or directory to unstage." },
         },
         .options = &.{},
-        .examples = &.{"omohi rm /tmp/note.txt"},
-        .notes = &.{"The path must be tracked and currently staged."},
+        .examples = &.{ "omohi rm /tmp/note.txt", "omohi rm ." },
+        .notes = &.{
+            "When a directory is given, staged files under it are unstaged recursively.",
+            "Untracked, non-staged, and non-regular entries are skipped.",
+        },
     },
     .{
         .name = "commit",

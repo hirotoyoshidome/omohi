@@ -8,8 +8,8 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 | --- | --- | --- |
 | `track` | `track <path>` | Register one file or recursively track files under a directory. |
 | `untrack` | `untrack <trackedFileId>` | Remove a tracked target by tracked file ID. |
-| `add` | `add <path>` | Stage one tracked file path for the next commit. |
-| `rm` | `rm <path>` | Remove one staged file path from staging. |
+| `add` | `add <path>` | Stage one tracked file or recursively stage tracked files under a directory. |
+| `rm` | `rm <path>` | Remove one staged file or recursively unstage staged files under a directory. |
 | `commit` | `commit -m <message> [-t <tag>] [--dry-run]` | Create a commit from staged entries. |
 | `status` | `status` | Show tracked and staged state overview. |
 | `tracklist` | `tracklist` | List tracked targets with tracked file IDs. |
@@ -54,28 +54,32 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 ### add
 
 - Usage: `omohi add <path>`
-- Summary: Stage one tracked file path for the next commit.
+- Summary: Stage one tracked file or recursively stage tracked files under a directory.
 - Positionals:
-  - `path` (required): Path to stage.
+  - `path` (required): Path to the tracked file or directory to stage.
 - Options:
   - None
 - Examples:
   - `omohi add /tmp/note.txt`
+  - `omohi add .`
 - Notes:
-  - The path must already be tracked.
+  - When a directory is given, tracked files under it are staged recursively.
+  - Untracked and non-regular entries are skipped.
 
 ### rm
 
 - Usage: `omohi rm <path>`
-- Summary: Remove one staged file path from staging.
+- Summary: Remove one staged file or recursively unstage staged files under a directory.
 - Positionals:
-  - `path` (required): Path to unstage.
+  - `path` (required): Path to the staged file or directory to unstage.
 - Options:
   - None
 - Examples:
   - `omohi rm /tmp/note.txt`
+  - `omohi rm .`
 - Notes:
-  - The path must be tracked and currently staged.
+  - When a directory is given, staged files under it are unstaged recursively.
+  - Untracked, non-staged, and non-regular entries are skipped.
 
 ### commit
 
