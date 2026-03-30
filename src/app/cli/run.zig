@@ -3,6 +3,7 @@ const parser = @import("parser/parse.zig");
 const parser_types = @import("parser/types.zig");
 const dispatch = @import("runtime/dispatch.zig");
 const journal_adapter = @import("runtime/journal_adapter.zig");
+const pager = @import("runtime/pager.zig");
 const exit_code = @import("error/exit_code.zig");
 const error_map = @import("error/error_map.zig");
 const error_message = @import("error/error_message.zig");
@@ -50,7 +51,7 @@ pub fn run(allocator: std.mem.Allocator, argv: []const []const u8) u8 {
     if (result.to_stderr) {
         writeErr(result.output);
     } else {
-        writeOut(result.output);
+        pager.writeOutput(allocator, result.output, result.page_output) catch writeOut(result.output);
     }
 
     return result.exit_code;

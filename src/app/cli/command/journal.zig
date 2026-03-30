@@ -6,7 +6,7 @@ const presenter = @import("../presenter/output.zig");
 const exit_code = @import("../error/exit_code.zig");
 const journal_ops = @import("../../../ops/journal_ops.zig");
 
-const default_limit: usize = 20;
+const default_limit: usize = 500;
 
 pub fn run(allocator: std.mem.Allocator, args: parser_types.JournalArgs) !command_types.CommandResult {
     _ = args;
@@ -61,4 +61,8 @@ test "journalResult returns empty message when no entries exist" {
     defer std.testing.allocator.free(output);
 
     try std.testing.expectEqualStrings("no journal entries\n", output);
+}
+
+test "journal uses 500 item limit" {
+    try std.testing.expectEqual(@as(usize, 500), default_limit);
 }
