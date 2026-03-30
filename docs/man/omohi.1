@@ -255,6 +255,28 @@ required: 64\-char commit ID.
 .nf
 omohi show aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 .fi
+.SS journal
+.TP
+.B Summary
+Show recent journal logs in reverse chronological order.
+.TP
+.B Usage
+.nf
+omohi journal
+.fi
+.TP
+.B Examples
+.nf
+omohi journal
+.fi
+.TP
+.B Notes
+.RS 4
+Shows the latest 20 successful mutating command records.
+.RE
+.RS 4
+TTY output is paged with less when available.
+.RE
 .SS tag ls
 .TP
 .B Summary
