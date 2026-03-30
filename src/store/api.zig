@@ -508,6 +508,17 @@ pub fn freeStringList(allocator: std.mem.Allocator, list: *StringList) void {
     list.deinit();
 }
 
+/// Loads latest journal lines in reverse chronological order.
+/// Memory: owned list, free with freeStringList.
+pub fn journal(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    limit: usize,
+) !StringList {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    return local_journal.readLatestLines(allocator, persistence, limit);
+}
+
 pub fn tagAdd(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -1678,6 +1689,26 @@ test "appendJournal writes one line into UTC daily file" {
 
     try std.testing.expect(std.mem.indexOf(u8, bytes, " track 1 ") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "{\"path\":\"/tmp/sample\"}") != null);
+}
+
+test "journal returns latest lines in reverse chronological order" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    try appendJournal(allocator, omohi_dir, "track", "{\"path\":\"/tmp/one\"}");
+    std.Thread.sleep(1_000_000);
+    try appendJournal(allocator, omohi_dir, "add", "{\"path\":\"/tmp/two\"}");
+
+    var lines = try journal(allocator, omohi_dir, 2);
+    defer freeStringList(allocator, &lines);
+
+    try std.testing.expectEqual(@as(usize, 2), lines.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, lines.items[0], "\"/tmp/two\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, lines.items[1], "\"/tmp/one\"") != null);
 }
 
 test "commit rejects staged entry when corresponding object is missing" {
