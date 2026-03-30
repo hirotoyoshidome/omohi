@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const atomic_write = @import("../storage/atomic_write.zig");
+const StringList = @import("../object/api_types.zig").StringList;
 const PersistenceLayout = @import("../object/persistence_layout.zig").PersistenceLayout;
 
 const max_journal_file_size = 64 * 1024 * 1024;
@@ -47,6 +48,54 @@ pub fn appendRecord(
     try atomic_write.atomicWrite(allocator, persistence.dir, path, line);
 }
 
+/// Loads latest journal lines in reverse chronological order.
+pub fn readLatestLines(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    limit: usize,
+) !StringList {
+    var out = StringList.init(allocator);
+    errdefer freeStringList(allocator, &out);
+
+    if (limit == 0) return out;
+
+    var journal_dir = persistence.dir.openDir(persistence.journalPath(), .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return out,
+        else => return err,
+    };
+    defer journal_dir.close();
+
+    var names = StringList.init(allocator);
+    defer freeStringList(allocator, &names);
+
+    var it = journal_dir.iterate();
+    while (try it.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".log")) continue;
+        try names.append(try allocator.dupe(u8, entry.name));
+    }
+
+    std.mem.sort([]u8, names.items, {}, isNameDescLessThan);
+
+    for (names.items) |name| {
+        const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ persistence.journalPath(), name });
+        defer allocator.free(path);
+
+        const bytes = try persistence.dir.readFileAlloc(allocator, path, max_journal_file_size);
+        defer allocator.free(bytes);
+
+        try appendLatestLinesFromBytes(allocator, &out, bytes, limit);
+        if (out.items.len >= limit) break;
+    }
+
+    return out;
+}
+
+pub fn freeStringList(allocator: std.mem.Allocator, list: *StringList) void {
+    for (list.items) |item| allocator.free(item);
+    list.deinit();
+}
+
 fn isSupportedCommandType(command_type: []const u8) bool {
     return std.mem.eql(u8, command_type, "track") or
         std.mem.eql(u8, command_type, "untrack") or
@@ -66,6 +115,33 @@ fn journalDailyPath(
         persistence.journalPath(),
         utc_ymd,
     });
+}
+
+fn isNameDescLessThan(_: void, lhs: []u8, rhs: []u8) bool {
+    return std.mem.order(u8, lhs, rhs) == .gt;
+}
+
+fn appendLatestLinesFromBytes(
+    allocator: std.mem.Allocator,
+    out: *StringList,
+    bytes: []const u8,
+    limit: usize,
+) !void {
+    var end = bytes.len;
+    while (end > 0 and out.items.len < limit) {
+        var line_end = end;
+        if (bytes[line_end - 1] == '\n') line_end -= 1;
+
+        var start = line_end;
+        while (start > 0 and bytes[start - 1] != '\n') : (start -= 1) {}
+
+        if (line_end > start) {
+            try out.append(try allocator.dupe(u8, bytes[start..line_end]));
+        }
+
+        if (start == 0) break;
+        end = start;
+    }
 }
 
 test "appendRecord creates and appends daily journal file" {
@@ -114,4 +190,52 @@ test "appendRecord rejects unsupported command type" {
         .command_type = "status",
         .payload_json = "{}",
     }));
+}
+
+test "readLatestLines returns newest records across files" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const persistence = PersistenceLayout.init(omohi_dir);
+    try omohi_dir.makePath(persistence.journalPath());
+
+    try atomic_write.atomicWrite(
+        allocator,
+        omohi_dir,
+        "journal/2026-03-14.log",
+        "2026-03-14T00:00:00.000Z old-a track 1 {}\n2026-03-14T00:00:01.000Z old-b add 1 {}\n",
+    );
+    try atomic_write.atomicWrite(
+        allocator,
+        omohi_dir,
+        "journal/2026-03-15.log",
+        "2026-03-15T00:00:00.000Z new-a track 1 {}\n2026-03-15T00:00:01.000Z new-b add 1 {}\n",
+    );
+
+    var lines = try readLatestLines(allocator, persistence, 3);
+    defer freeStringList(allocator, &lines);
+
+    try std.testing.expectEqual(@as(usize, 3), lines.items.len);
+    try std.testing.expectEqualStrings("2026-03-15T00:00:01.000Z new-b add 1 {}", lines.items[0]);
+    try std.testing.expectEqualStrings("2026-03-15T00:00:00.000Z new-a track 1 {}", lines.items[1]);
+    try std.testing.expectEqualStrings("2026-03-14T00:00:01.000Z old-b add 1 {}", lines.items[2]);
+}
+
+test "readLatestLines returns empty when journal directory is missing" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const persistence = PersistenceLayout.init(omohi_dir);
+    var lines = try readLatestLines(allocator, persistence, 20);
+    defer freeStringList(allocator, &lines);
+
+    try std.testing.expectEqual(@as(usize, 0), lines.items.len);
 }
