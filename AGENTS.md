@@ -2,6 +2,7 @@
 
 This document defines execution guidelines for agents working on `omohi`.
 The scope is based on specification, implementation, and philosophy documents under `omohi/`.
+Agents should also refer to directories under `docs/` when they are relevant to the task.
 
 ## 0. Purpose
 - `omohi` is a **local-first infrastructure** for handling the process of thinking.
