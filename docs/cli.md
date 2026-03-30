@@ -179,7 +179,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 - Examples:
   - `omohi journal`
 - Notes:
-  - Shows the latest 20 successful mutating command records.
+  - Shows the latest 500 successful mutating command records.
   - TTY output is paged with less when available.
 
 ### tag ls

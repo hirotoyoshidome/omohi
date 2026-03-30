@@ -161,7 +161,7 @@ pub const all = [_]CommandSpec{
         .options = &.{},
         .examples = &.{"omohi journal"},
         .notes = &.{
-            "Shows the latest 20 successful mutating command records.",
+            "Shows the latest 500 successful mutating command records.",
             "TTY output is paged with less when available.",
         },
     },
