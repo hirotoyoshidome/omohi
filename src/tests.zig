@@ -32,6 +32,7 @@ const _ops_show = @import("ops/show_ops.zig");
 const _ops_tag = @import("ops/tag_ops.zig");
 const _ops_completion = @import("ops/completion_ops.zig");
 const _ops_journal_append = @import("ops/journal/append.zig");
+const _ops_journal = @import("ops/journal_ops.zig");
 
 // app/cli tests
 const _app_cli_run = @import("app/cli/run.zig");
@@ -40,8 +41,10 @@ const _app_cli_error_message = @import("app/cli/error/error_message.zig");
 const _app_cli_parser = @import("app/cli/parser/parse.zig");
 const _app_cli_dispatch = @import("app/cli/runtime/dispatch.zig");
 const _app_cli_journal_adapter = @import("app/cli/runtime/journal_adapter.zig");
+const _app_cli_pager = @import("app/cli/runtime/pager.zig");
 const _app_cli_output = @import("app/cli/presenter/output.zig");
 const _app_cli_version = @import("app/cli/command/version.zig");
+const _app_cli_journal = @import("app/cli/command/journal.zig");
 const _app_cli_command_catalog = @import("app/cli/command_catalog.zig");
 const _app_cli_docs_render_markdown = @import("app/cli/docs/render_markdown.zig");
 const _app_cli_docs_render_man = @import("app/cli/docs/render_man.zig");
@@ -75,14 +78,17 @@ test "load modules" {
     _ = _ops_tag;
     _ = _ops_completion;
     _ = _ops_journal_append;
+    _ = _ops_journal;
     _ = _app_cli_run;
     _ = _app_cli_error_map;
     _ = _app_cli_error_message;
     _ = _app_cli_parser;
     _ = _app_cli_dispatch;
     _ = _app_cli_journal_adapter;
+    _ = _app_cli_pager;
     _ = _app_cli_output;
     _ = _app_cli_version;
+    _ = _app_cli_journal;
     _ = _app_cli_command_catalog;
     _ = _app_cli_docs_render_markdown;
     _ = _app_cli_docs_render_man;
