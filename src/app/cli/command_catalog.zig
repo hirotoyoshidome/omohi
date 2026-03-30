@@ -154,6 +154,18 @@ pub const all = [_]CommandSpec{
         .notes = &.{},
     },
     .{
+        .name = "journal",
+        .usage = "journal",
+        .summary = "Show recent journal logs in reverse chronological order.",
+        .positionals = &.{},
+        .options = &.{},
+        .examples = &.{"omohi journal"},
+        .notes = &.{
+            "Shows the latest 20 successful mutating command records.",
+            "TTY output is paged with less when available.",
+        },
+    },
+    .{
         .name = "tag ls",
         .usage = "tag ls <commitId>",
         .summary = "List tags for one commit.",
@@ -228,11 +240,12 @@ test "command catalog includes every public parser command" {
     try std.testing.expect(hasCommandName("version"));
     try std.testing.expect(hasCommandName("find"));
     try std.testing.expect(hasCommandName("show"));
+    try std.testing.expect(hasCommandName("journal"));
     try std.testing.expect(hasCommandName("tag ls"));
     try std.testing.expect(hasCommandName("tag add"));
     try std.testing.expect(hasCommandName("tag rm"));
     try std.testing.expect(hasCommandName("help"));
-    try std.testing.expectEqual(@as(usize, 14), all.len);
+    try std.testing.expectEqual(@as(usize, 15), all.len);
 
     // Internal parser-only commands may exist, but they must not leak into the public catalog.
     const parsed_field_count = std.meta.fields(parser_types.ParsedRequest).len;

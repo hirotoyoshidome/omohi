@@ -35,6 +35,7 @@ pub fn fromParsedRequest(
             .commitId = args.commit_id,
             .tagNames = args.tag_names,
         }),
+        .journal => null,
         .complete => null,
         else => null,
     };

@@ -11,6 +11,7 @@ const tracklist = @import("../command/tracklist.zig");
 const version = @import("../command/version.zig");
 const find = @import("../command/find.zig");
 const show = @import("../command/show.zig");
+const journal = @import("../command/journal.zig");
 const tag_ls = @import("../command/tag_ls.zig");
 const tag_add = @import("../command/tag_add.zig");
 const tag_rm = @import("../command/tag_rm.zig");
@@ -29,6 +30,7 @@ pub fn dispatch(allocator: std.mem.Allocator, parsed: parser_types.ParsedRequest
         .version => try version.run(allocator),
         .find => |args| try find.run(allocator, args),
         .show => |args| try show.run(allocator, args),
+        .journal => |args| try journal.run(allocator, args),
         .tag_ls => |args| try tag_ls.run(allocator, args),
         .tag_add => |args| try tag_add.run(allocator, args),
         .tag_rm => |args| try tag_rm.run(allocator, args),
