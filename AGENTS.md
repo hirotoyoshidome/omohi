@@ -114,3 +114,15 @@ Agents should also refer to directories under `docs/` when they are relevant to 
 - Second, verify boundaries (`app/cli -> ops -> store`) are preserved.
 - Third, verify external contracts (CLI behavior, exit codes, persistence format) are preserved.
 - If uncertain, prioritize durability and explicit design.
+
+## 11. Change Verification Checklist
+- Confirm the change delivers the intended behavior.
+- Ensure all relevant tests pass. Use `make test` as the default baseline, and run broader checks when the change touches related contracts.
+- Ensure Bash Completion still works. Use `make test-completion` when commands, subcommands, or options may be affected.
+- If commands, subcommands, or options are added or changed, update completion behavior accordingly.
+- Avoid introducing significant performance regressions. When behavior may affect command cost or traversal size, verify that performance is not materially worse.
+- If commands, subcommands, or options are added or changed, update generated user-facing CLI docs:
+  - `docs/cli.md`
+  - `docs/man/omohi.1`
+- Ensure formatting is applied. Use `make fmt-check` at minimum.
+- Prefer `make check` when the change scope is broad enough to affect multiple quality gates.
