@@ -5,13 +5,13 @@ const store_api = @import("../store/api.zig");
 pub const CandidateList = std.array_list.Managed([]u8);
 
 const top_level_commands = [_][]const u8{
-    "track", "untrack", "add", "rm", "commit", "status", "tracklist", "version", "find", "show", "tag", "help",
+    "track", "untrack", "add", "rm", "commit", "status", "tracklist", "version", "find", "show", "journal", "tag", "help",
 };
 const top_level_aliases = [_][]const u8{ "-h", "--help", "-v", "--version" };
 const tag_commands = [_][]const u8{ "ls", "add", "rm" };
 const commit_options = [_][]const u8{ "-m", "--message", "-t", "--tag", "--dry-run" };
 const find_options = [_][]const u8{ "-t", "--tag", "-d", "--date" };
-const help_topics = [_][]const u8{ "track", "untrack", "add", "rm", "commit", "status", "tracklist", "version", "find", "show", "tag", "help" };
+const help_topics = [_][]const u8{ "track", "untrack", "add", "rm", "commit", "status", "tracklist", "version", "find", "show", "journal", "tag", "help" };
 
 pub fn requiresStore(words: []const []const u8, index: usize) bool {
     if (words.len == 0 or index >= words.len) return false;
@@ -347,6 +347,37 @@ test "complete returns staged paths for rm" {
     try std.testing.expectEqual(@as(usize, 2), list.items.len);
     try std.testing.expectEqualStrings(a_path, list.items[0]);
     try std.testing.expectEqualStrings(b_path, list.items[1]);
+}
+
+test "complete returns journal for top-level command and help topic" {
+    const allocator = std.testing.allocator;
+
+    {
+        const words = [_][]const u8{ "omohi", "jo" };
+        var list = try complete(allocator, null, &words, 1);
+        defer freeCandidateList(allocator, &list);
+
+        try std.testing.expectEqual(@as(usize, 1), list.items.len);
+        try std.testing.expectEqualStrings("journal", list.items[0]);
+    }
+
+    {
+        const words = [_][]const u8{ "omohi", "help", "jo" };
+        var list = try complete(allocator, null, &words, 2);
+        defer freeCandidateList(allocator, &list);
+
+        try std.testing.expectEqual(@as(usize, 1), list.items.len);
+        try std.testing.expectEqualStrings("journal", list.items[0]);
+    }
+}
+
+test "complete returns no candidates for journal arguments" {
+    const allocator = std.testing.allocator;
+    const words = [_][]const u8{ "omohi", "journal", "" };
+    var list = try complete(allocator, null, &words, 2);
+    defer freeCandidateList(allocator, &list);
+
+    try std.testing.expectEqual(@as(usize, 0), list.items.len);
 }
 
 fn createFileWithContentsAndResolve(

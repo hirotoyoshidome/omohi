@@ -38,6 +38,7 @@ pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.
     if (std.mem.eql(u8, argv[0], "version")) return try parseNoArgsCommand(.version, argv[1..]);
     if (std.mem.eql(u8, argv[0], "find")) return try parseFind(argv[1..]);
     if (std.mem.eql(u8, argv[0], "show")) return try parseShow(argv[1..]);
+    if (std.mem.eql(u8, argv[0], "journal")) return try parseJournal(argv[1..]);
 
     return error.InvalidCommand;
 }
@@ -139,6 +140,11 @@ fn parseRm(args: []const []const u8) !types.ParsedRequest {
 fn parseShow(args: []const []const u8) !types.ParsedRequest {
     if (args.len != 1) return error.MissingArgument;
     return .{ .show = .{ .commit_id = args[0] } };
+}
+
+fn parseJournal(args: []const []const u8) !types.ParsedRequest {
+    if (args.len != 0) return error.UnexpectedArgument;
+    return .{ .journal = .{} };
 }
 
 fn parseTagLs(args: []const []const u8) !types.ParsedRequest {
@@ -385,6 +391,24 @@ test "parser resolves help from help aliases and accepts topic" {
             else => return error.UnexpectedResult,
         }
     }
+}
+
+test "parser accepts journal with no args" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{"journal"};
+    var parsed = try parseArgs(allocator, &argv);
+    defer types.deinitParsedRequest(allocator, &parsed);
+
+    switch (parsed) {
+        .journal => {},
+        else => return error.UnexpectedResult,
+    }
+}
+
+test "parser rejects extra positional for journal" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{ "journal", "extra" };
+    try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &argv));
 }
 
 test "parser rejects help with too many topics" {

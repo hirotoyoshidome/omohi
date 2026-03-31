@@ -29,6 +29,8 @@ pub const ShowArgs = struct {
     commit_id: []const u8,
 };
 
+pub const JournalArgs = struct {};
+
 pub const TagLsArgs = struct {
     commit_id: []const u8,
 };
@@ -63,6 +65,7 @@ pub const ParsedRequest = union(enum) {
     version,
     find: FindArgs,
     show: ShowArgs,
+    journal: JournalArgs,
     tag_ls: TagLsArgs,
     tag_add: TagAddArgs,
     tag_rm: TagRmArgs,

@@ -16,6 +16,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 | `version` | `version` | Print application version and build target. |
 | `find` | `find [--tag <tag>] [--date YYYY-MM-DD]` | Search commits by optional tag and date filters. |
 | `show` | `show <commitId>` | Show one commit details payload. |
+| `journal` | `journal` | Show recent journal logs in reverse chronological order. |
 | `tag ls` | `tag ls <commitId>` | List tags for one commit. |
 | `tag add` | `tag add <commitId> <tagNames...>` | Attach one or more tags to a commit. |
 | `tag rm` | `tag rm <commitId> <tagNames...>` | Remove one or more tags from a commit. |
@@ -166,6 +167,20 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
   - `omohi show aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
 - Notes:
   - None
+
+### journal
+
+- Usage: `omohi journal`
+- Summary: Show recent journal logs in reverse chronological order.
+- Positionals:
+  - None
+- Options:
+  - None
+- Examples:
+  - `omohi journal`
+- Notes:
+  - Shows the latest 500 successful mutating command records.
+  - TTY output is paged with less when available.
 
 ### tag ls
 
