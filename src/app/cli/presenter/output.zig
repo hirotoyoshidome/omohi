@@ -213,7 +213,7 @@ pub fn findResult(
     }
 
     for (list.items) |entry| {
-        try writer.print("- {s}: {s}\n", .{ entry.commit_id.asSlice(), entry.message });
+        try writer.print("- {s} {s}: {s}\n", .{ entry.commit_id.asSlice(), entry.local_created_at, entry.message });
     }
     return out.toOwnedSlice();
 }
@@ -490,6 +490,7 @@ test "findResult renders migration heading and entries" {
         .commit_id = .{ .value = filled64('a') },
         .message = try std.testing.allocator.dupe(u8, "first"),
         .created_at = try std.testing.allocator.dupe(u8, "2026-03-10T00:00:00.000Z"),
+        .local_created_at = try std.testing.allocator.dupe(u8, "2026-03-10T09:00:00.000+09:00"),
     });
 
     const output = try findResult(std.testing.allocator, &list, "release", null);
@@ -497,7 +498,7 @@ test "findResult renders migration heading and entries" {
 
     try std.testing.expectEqualStrings(
         "Found 1 commit(s) for tag release.\n" ++
-            "- aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: first\n",
+            "- aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2026-03-10T09:00:00.000+09:00: first\n",
         output,
     );
 }

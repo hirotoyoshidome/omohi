@@ -30,6 +30,7 @@ pub const CommitSummary = struct {
     commit_id: constrained_types.CommitId,
     message: []u8,
     created_at: []u8,
+    local_created_at: []u8,
 };
 
 pub const CommitSummaryList = std.array_list.Managed(CommitSummary);
