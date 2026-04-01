@@ -4,8 +4,23 @@ const ContentEntry = @import("../object/content_entry.zig").ContentEntry;
 const PersistenceLayout = @import("../object/persistence_layout.zig").PersistenceLayout;
 const atomic_write = @import("../storage/atomic_write.zig");
 const constrained_types = @import("../object/constrained_types.zig");
+const hash = @import("../object/hash.zig");
 
-pub const EntryList = std.array_list.Managed(ContentEntry);
+pub const StagedEntry = struct {
+    path: constrained_types.TrackedFilePath,
+    tracked_file_id: constrained_types.TrackedFileId,
+    content_hash: constrained_types.ContentHash,
+};
+
+pub const EntryList = std.array_list.Managed(StagedEntry);
+
+pub const RawEntryInfo = struct {
+    file_name: []u8,
+    path: ?[]u8,
+    content_hash: ?constrained_types.ContentHash,
+};
+
+pub const RawEntryList = std.array_list.Managed(RawEntryInfo);
 
 const max_entry_file_size = 1024 * 1024;
 const max_staged_object_size = 64 * 1024 * 1024;
@@ -14,7 +29,7 @@ pub fn writeStagedEntry(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
     staged_file_id: []const u8,
-    entry: ContentEntry,
+    entry: StagedEntry,
 ) !void {
     _ = try constrained_types.StagedFileId.init(staged_file_id);
 
@@ -94,10 +109,66 @@ pub fn freeEntries(allocator: std.mem.Allocator, entries: *EntryList) void {
     entries.deinit();
 }
 
+pub fn listRawEntries(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+) !RawEntryList {
+    var entries_dir = persistence.dir.openDir(persistence.stagedEntriesPath(), .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return error.MissingStagedEntries,
+        else => return err,
+    };
+    defer entries_dir.close();
+
+    var entries = RawEntryList.init(allocator);
+    errdefer freeRawEntries(allocator, &entries);
+
+    var it = entries_dir.iterate();
+    while (try it.next()) |dir_entry| {
+        if (dir_entry.kind != .file) continue;
+
+        const file_name = try allocator.dupe(u8, dir_entry.name);
+        errdefer allocator.free(file_name);
+
+        const bytes = try entries_dir.readFileAlloc(allocator, dir_entry.name, max_entry_file_size);
+        defer allocator.free(bytes);
+
+        try entries.append(.{
+            .file_name = file_name,
+            .path = try extractPathValueOwned(allocator, bytes),
+            .content_hash = extractContentHashValue(bytes),
+        });
+    }
+
+    return entries;
+}
+
+pub fn freeRawEntries(allocator: std.mem.Allocator, entries: *RawEntryList) void {
+    for (entries.items) |entry| {
+        allocator.free(entry.file_name);
+        if (entry.path) |path| allocator.free(path);
+    }
+    entries.deinit();
+}
+
+pub fn findByPath(entries: []const StagedEntry, absolute_path: []const u8) ?StagedEntry {
+    for (entries) |entry| {
+        if (std.mem.eql(u8, entry.path.asSlice(), absolute_path)) return entry;
+    }
+    return null;
+}
+
+pub fn containsPath(entries: []const StagedEntry, absolute_path: []const u8) bool {
+    return findByPath(entries, absolute_path) != null;
+}
+
+pub fn stagedFileIdForEntry(entry: StagedEntry) [64]u8 {
+    return hash.stagedFileIdFrom(entry.path.asSlice(), entry.content_hash.asSlice());
+}
+
 pub fn ensureObjectsExistForEntries(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
-    entries: []const ContentEntry,
+    entries: []const StagedEntry,
 ) !void {
     for (entries) |entry| {
         const hash_value = entry.content_hash.asSlice();
@@ -169,8 +240,33 @@ pub fn resetStaged(persistence: PersistenceLayout) !void {
     try persistence.dir.makePath(persistence.stagedObjectsPath());
 }
 
-fn parseStagedEntry(allocator: std.mem.Allocator, bytes: []const u8) !ContentEntry {
+pub fn freeSnapshotEntries(allocator: std.mem.Allocator, entries: *std.array_list.Managed(ContentEntry)) void {
+    for (entries.items) |entry| allocator.free(@constCast(entry.path.asSlice()));
+    entries.deinit();
+}
+
+pub fn snapshotEntriesFromStaged(
+    allocator: std.mem.Allocator,
+    entries: []const StagedEntry,
+) !std.array_list.Managed(ContentEntry) {
+    var out = std.array_list.Managed(ContentEntry).init(allocator);
+    errdefer freeSnapshotEntries(allocator, &out);
+
+    for (entries) |entry| {
+        const owned_path = try allocator.dupe(u8, entry.path.asSlice());
+        errdefer allocator.free(owned_path);
+        try out.append(.{
+            .path = try constrained_types.TrackedFilePath.init(owned_path),
+            .content_hash = entry.content_hash,
+        });
+    }
+
+    return out;
+}
+
+fn parseStagedEntry(allocator: std.mem.Allocator, bytes: []const u8) !StagedEntry {
     var path_value: ?[]const u8 = null;
+    var tracked_file_id_value: ?[]const u8 = null;
     var hash_value: ?[]const u8 = null;
 
     var iter = std.mem.splitScalar(u8, bytes, '\n');
@@ -183,6 +279,8 @@ fn parseStagedEntry(allocator: std.mem.Allocator, bytes: []const u8) !ContentEnt
 
         if (std.mem.eql(u8, key, "path")) {
             path_value = value;
+        } else if (std.mem.eql(u8, key, "trackedFileId")) {
+            tracked_file_id_value = value;
         } else if (std.mem.eql(u8, key, "contentHash")) {
             hash_value = value;
         }
@@ -191,22 +289,55 @@ fn parseStagedEntry(allocator: std.mem.Allocator, bytes: []const u8) !ContentEnt
     const path = path_value orelse return error.InvalidStagedEntry;
     const stored_path = try allocator.dupe(u8, path);
     errdefer allocator.free(stored_path);
-    const content_path = constrained_types.ContentPath.init(stored_path) catch return error.InvalidStagedEntry;
+    const tracked_path = constrained_types.TrackedFilePath.init(stored_path) catch return error.InvalidStagedEntry;
+
+    const tracked_file_id_raw = tracked_file_id_value orelse return error.InvalidStagedEntry;
+    const tracked_file_id = constrained_types.TrackedFileId.init(tracked_file_id_raw) catch return error.InvalidStagedEntry;
 
     const hash_str = hash_value orelse return error.InvalidStagedEntry;
     const content_hash = constrained_types.ContentHash.init(hash_str) catch return error.InvalidStagedEntry;
 
-    return ContentEntry{
-        .path = content_path,
+    return StagedEntry{
+        .path = tracked_path,
+        .tracked_file_id = tracked_file_id,
         .content_hash = content_hash,
     };
 }
 
-fn formatStagedEntry(allocator: std.mem.Allocator, entry: ContentEntry) ![]u8 {
+fn extractPathValueOwned(allocator: std.mem.Allocator, bytes: []const u8) !?[]u8 {
+    const raw_path = propertyValue(bytes, "path") orelse return null;
+    const owned = try allocator.dupe(u8, raw_path);
+    errdefer allocator.free(owned);
+    _ = constrained_types.TrackedFilePath.init(owned) catch {
+        allocator.free(owned);
+        return null;
+    };
+    return owned;
+}
+
+fn extractContentHashValue(bytes: []const u8) ?constrained_types.ContentHash {
+    const raw_hash = propertyValue(bytes, "contentHash") orelse return null;
+    return constrained_types.ContentHash.init(raw_hash) catch null;
+}
+
+fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
+    var iter = std.mem.splitScalar(u8, bytes, '\n');
+    while (iter.next()) |line_raw| {
+        const line = std.mem.trim(u8, std.mem.trimRight(u8, line_raw, "\r"), " \t");
+        if (line.len == 0 or line[0] == '#') continue;
+        const idx = std.mem.indexOfScalar(u8, line, '=') orelse continue;
+        const candidate_key = std.mem.trimRight(u8, line[0..idx], " ");
+        if (!std.mem.eql(u8, candidate_key, key)) continue;
+        return std.mem.trim(u8, std.mem.trimRight(u8, line[idx + 1 ..], "\r"), " \t");
+    }
+    return null;
+}
+
+fn formatStagedEntry(allocator: std.mem.Allocator, entry: StagedEntry) ![]u8 {
     return std.fmt.allocPrint(
         allocator,
-        "path={s}\ncontentHash={s}\n",
-        .{ entry.path.asSlice(), entry.content_hash.asSlice() },
+        "path={s}\ntrackedFileId={s}\ncontentHash={s}\n",
+        .{ entry.path.asSlice(), entry.tracked_file_id.asSlice(), entry.content_hash.asSlice() },
     );
 }
 
@@ -260,26 +391,27 @@ test "loadStagedEntries parses entries and frees allocated paths" {
     const allocator = std.testing.allocator;
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
-
-    var persistence = PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
     try omohi_dir.makePath(persistence.stagedEntriesPath());
-    try omohi_dir.makePath(persistence.stagedObjectsPath());
 
-    var hash: [64]u8 = undefined;
-    @memset(&hash, 'a');
-
-    const entry_text = try std.fmt.allocPrint(allocator, "path=/objects/aa/{s}\ncontentHash={s}\n", .{ hash[0..], hash });
+    var hash_value: [64]u8 = undefined;
+    @memset(&hash_value, 'a');
+    const entry_text = try std.fmt.allocPrint(
+        allocator,
+        "path=/tmp/example.txt\ntrackedFileId=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ncontentHash={s}\n",
+        .{hash_value},
+    );
     defer allocator.free(entry_text);
 
-    try writeStageEntryFile(allocator, omohi_dir, persistence.stagedEntriesPath(), "entry-1", entry_text);
+    try writeStageEntryFile(allocator, omohi_dir, persistence.stagedEntriesPath(), "entry", entry_text);
 
     var entries = try loadStagedEntries(allocator, persistence);
     defer freeEntries(allocator, &entries);
+
     try std.testing.expectEqual(@as(usize, 1), entries.items.len);
-    const expected_path = try std.fmt.allocPrint(allocator, "/objects/aa/{s}", .{hash});
-    defer allocator.free(expected_path);
-    try std.testing.expectEqualStrings(expected_path, entries.items[0].path.asSlice());
-    try std.testing.expectEqualSlices(u8, &hash, entries.items[0].content_hash.asSlice());
+    try std.testing.expectEqualStrings("/tmp/example.txt", entries.items[0].path.asSlice());
+    try std.testing.expectEqualStrings("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", entries.items[0].tracked_file_id.asSlice());
+    try std.testing.expectEqualStrings(&hash_value, entries.items[0].content_hash.asSlice());
 }
 
 test "writeStagedEntry persists staged entry via atomic write format" {
@@ -289,162 +421,72 @@ test "writeStagedEntry persists staged entry via atomic write format" {
     const allocator = std.testing.allocator;
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
-
-    var persistence = PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
+    try omohi_dir.makePath(persistence.stagedEntriesPath());
 
     var staged_id: [64]u8 = undefined;
     @memset(&staged_id, '1');
-    var content_hash: [64]u8 = undefined;
-    @memset(&content_hash, '2');
 
-    const path_owned = try allocator.dupe(u8, "/objects/22/2222");
-    defer allocator.free(path_owned);
-    const entry = ContentEntry{
-        .path = try constrained_types.ContentPath.init(path_owned),
-        .content_hash = try constrained_types.ContentHash.init(&content_hash),
+    const entry = StagedEntry{
+        .path = try constrained_types.TrackedFilePath.init(try allocator.dupe(u8, "/tmp/file.txt")),
+        .tracked_file_id = try constrained_types.TrackedFileId.init("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        .content_hash = try constrained_types.ContentHash.init("2222222222222222222222222222222222222222222222222222222222222222"),
     };
+    defer allocator.free(@constCast(entry.path.asSlice()));
 
     try writeStagedEntry(allocator, persistence, &staged_id, entry);
 
-    const file_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ persistence.stagedEntriesPath(), &staged_id });
-    defer allocator.free(file_path);
-    const stored = try omohi_dir.readFileAlloc(allocator, file_path, 1024);
+    const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ persistence.stagedEntriesPath(), staged_id });
+    defer allocator.free(path);
+    const stored = try omohi_dir.readFileAlloc(allocator, path, 1024);
     defer allocator.free(stored);
-    try std.testing.expect(std.mem.indexOf(u8, stored, "path=/objects/22/2222") != null);
+
+    try std.testing.expect(std.mem.indexOf(u8, stored, "path=/tmp/file.txt") != null);
+    try std.testing.expect(std.mem.indexOf(u8, stored, "trackedFileId=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb") != null);
     try std.testing.expect(std.mem.indexOf(u8, stored, "contentHash=2222222222222222222222222222222222222222222222222222222222222222") != null);
 }
 
-test "copyFileToStagedObject copies source file content into staged objects" {
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-
-    const allocator = std.testing.allocator;
-    var src_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
-    defer src_dir.close();
-    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
-    defer omohi_dir.close();
-
-    var persistence = PersistenceLayout.init(omohi_dir);
-
-    var source = try src_dir.createFile("note.txt", .{});
-    try source.writeAll("hello-stage");
-    source.close();
-
-    var hash: [64]u8 = undefined;
-    @memset(&hash, '3');
-
-    try copyFileToStagedObject(allocator, persistence, src_dir, "note.txt", &hash);
-
-    const staged_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ persistence.stagedObjectsPath(), &hash });
-    defer allocator.free(staged_path);
-    const stored = try omohi_dir.readFileAlloc(allocator, staged_path, 1024);
-    defer allocator.free(stored);
-    try std.testing.expectEqualStrings("hello-stage", stored);
-}
-
-test "moveObjectsFromStage relocates staged object files" {
+test "ensureObjectsExistForEntries accepts staged or committed objects and rejects missing hashes" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
     const allocator = std.testing.allocator;
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
-
-    var persistence = PersistenceLayout.init(omohi_dir);
+    const persistence = PersistenceLayout.init(omohi_dir);
     try omohi_dir.makePath(persistence.stagedObjectsPath());
+    try omohi_dir.makePath("objects/bb");
 
-    var hash: [64]u8 = undefined;
-    @memset(&hash, 'b');
+    {
+        var staged_file = try omohi_dir.createFile("staged/objects/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", .{});
+        defer staged_file.close();
+        try staged_file.writeAll("stage");
+    }
+    {
+        var committed_file = try omohi_dir.createFile("objects/bb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", .{});
+        defer committed_file.close();
+        try committed_file.writeAll("committed");
+    }
 
-    const staged_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ persistence.stagedObjectsPath(), &hash });
-    defer allocator.free(staged_path);
-
-    var file = try omohi_dir.createFile(staged_path, .{});
-    try file.writeAll("payload");
-    file.close();
-
-    try moveObjectsFromStage(allocator, persistence);
-
-    const final_path = try persistence.objectsPath(allocator, &hash);
-    defer allocator.free(final_path);
-    const stored = try omohi_dir.readFileAlloc(allocator, final_path, 64);
-    defer allocator.free(stored);
-    try std.testing.expectEqualStrings("payload", stored);
-    try std.testing.expectError(error.FileNotFound, omohi_dir.openFile(staged_path, .{}));
-}
-
-test "ensureObjectsExistForEntries accepts staged or committed objects and rejects missing ones" {
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-
-    const allocator = std.testing.allocator;
-    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
-    defer omohi_dir.close();
-
-    var persistence = PersistenceLayout.init(omohi_dir);
-    try omohi_dir.makePath(persistence.stagedEntriesPath());
-    try omohi_dir.makePath(persistence.stagedObjectsPath());
-
-    const staged_hash = [_]u8{'a'} ** 64;
-    const committed_hash = [_]u8{'b'} ** 64;
-    const missing_hash = [_]u8{'c'} ** 64;
-
-    const staged_entry = ContentEntry{
-        .path = try constrained_types.ContentPath.init("/objects/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        .content_hash = try constrained_types.ContentHash.init(staged_hash[0..]),
+    const staged_entry = StagedEntry{
+        .path = try constrained_types.TrackedFilePath.init(try allocator.dupe(u8, "/tmp/a.txt")),
+        .tracked_file_id = try constrained_types.TrackedFileId.init("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        .content_hash = try constrained_types.ContentHash.init("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     };
-    const committed_entry = ContentEntry{
-        .path = try constrained_types.ContentPath.init("/objects/bb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-        .content_hash = try constrained_types.ContentHash.init(committed_hash[0..]),
+    const committed_entry = StagedEntry{
+        .path = try constrained_types.TrackedFilePath.init(try allocator.dupe(u8, "/tmp/b.txt")),
+        .tracked_file_id = try constrained_types.TrackedFileId.init("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        .content_hash = try constrained_types.ContentHash.init("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
     };
-    const missing_entry = ContentEntry{
-        .path = try constrained_types.ContentPath.init("/objects/cc/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
-        .content_hash = try constrained_types.ContentHash.init(missing_hash[0..]),
+    const missing_entry = StagedEntry{
+        .path = try constrained_types.TrackedFilePath.init(try allocator.dupe(u8, "/tmp/c.txt")),
+        .tracked_file_id = try constrained_types.TrackedFileId.init("cccccccccccccccccccccccccccccccc"),
+        .content_hash = try constrained_types.ContentHash.init("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
     };
-
-    const staged_object_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ persistence.stagedObjectsPath(), staged_hash });
-    defer allocator.free(staged_object_path);
-    var staged_file = try omohi_dir.createFile(staged_object_path, .{});
-    defer staged_file.close();
-    try staged_file.writeAll("staged");
-
-    const committed_object_path = try persistence.objectsPath(allocator, committed_hash[0..]);
-    defer allocator.free(committed_object_path);
-    try ensureParentDirs(omohi_dir, committed_object_path);
-    var committed_file = try omohi_dir.createFile(committed_object_path, .{});
-    defer committed_file.close();
-    try committed_file.writeAll("committed");
+    defer allocator.free(@constCast(staged_entry.path.asSlice()));
+    defer allocator.free(@constCast(committed_entry.path.asSlice()));
+    defer allocator.free(@constCast(missing_entry.path.asSlice()));
 
     try ensureObjectsExistForEntries(allocator, persistence, &.{ staged_entry, committed_entry });
-    try std.testing.expectError(
-        error.StagedObjectMissing,
-        ensureObjectsExistForEntries(allocator, persistence, &.{ staged_entry, committed_entry, missing_entry }),
-    );
-}
-
-test "resetStaged recreates staged directories" {
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-
-    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
-    defer omohi_dir.close();
-
-    var persistence = PersistenceLayout.init(omohi_dir);
-    try omohi_dir.makePath(persistence.stagedEntriesPath());
-    try omohi_dir.makePath(persistence.stagedObjectsPath());
-    const filler = try std.fmt.allocPrint(std.testing.allocator, "{s}/junk", .{persistence.stagedEntriesPath()});
-    defer std.testing.allocator.free(filler);
-    var file = try omohi_dir.createFile(filler, .{});
-    file.close();
-
-    try resetStaged(persistence);
-
-    try std.testing.expectError(
-        error.FileNotFound,
-        omohi_dir.openFile(filler, .{}),
-    );
-    var entries_dir = try omohi_dir.openDir(persistence.stagedEntriesPath(), .{});
-    entries_dir.close();
-    var objects_dir = try omohi_dir.openDir(persistence.stagedObjectsPath(), .{});
-    objects_dir.close();
+    try std.testing.expectError(error.StagedObjectMissing, ensureObjectsExistForEntries(allocator, persistence, &.{missing_entry}));
 }
