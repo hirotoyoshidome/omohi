@@ -140,7 +140,10 @@ pub const all = [_]CommandSpec{
             "omohi find --date 2026-03-17",
             "omohi find --tag release --date 2026-03-17",
         },
-        .notes = &.{"When both filters are set, intersection is returned."},
+        .notes = &.{
+            "When both filters are set, intersection is returned.",
+            "Each result line includes the commit creation timestamp in the user's local timezone.",
+        },
     },
     .{
         .name = "show",
