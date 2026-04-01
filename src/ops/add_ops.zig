@@ -70,18 +70,6 @@ fn addDirectory(
     var outcome = AddOutcome.init(allocator);
     errdefer freeAddOutcome(allocator, &outcome);
 
-    var tracked_statuses = try status_ops.status(allocator, omohi_dir);
-    defer status_ops.freeStatusList(allocator, &tracked_statuses);
-
-    var staged_now = std.StringHashMap(void).init(allocator);
-    defer staged_now.deinit();
-    var committed_now = std.StringHashMap(void).init(allocator);
-    defer committed_now.deinit();
-    for (tracked_statuses.items) |entry| {
-        if (entry.status == .staged) try staged_now.put(entry.path, {});
-        if (entry.status == .committed) try committed_now.put(entry.path, {});
-    }
-
     var collected = std.array_list.Managed([]u8).init(allocator);
     defer {
         for (collected.items) |path| allocator.free(path);
@@ -90,26 +78,19 @@ fn addDirectory(
     try collectRegularFiles(allocator, absolute_path, &collected, &outcome.skipped_non_regular);
     std.mem.sort([]u8, collected.items, {}, lessThanPath);
 
-    for (collected.items) |path| {
-        if (staged_now.contains(path)) {
-            outcome.skipped_already_staged += 1;
-            continue;
-        }
-        if (committed_now.contains(path)) {
-            outcome.skipped_no_change += 1;
-            continue;
-        }
+    const path_views = try allocator.alloc([]const u8, collected.items.len);
+    defer allocator.free(path_views);
+    for (collected.items, 0..) |path, idx| path_views[idx] = path;
 
-        add_store.add(allocator, omohi_dir, path) catch |err| switch (err) {
-            error.TrackedFileNotFound => {
-                outcome.skipped_untracked += 1;
-                continue;
-            },
-            else => return err,
-        };
+    var batch = try add_store.addDirectory(allocator, omohi_dir, path_views);
+    defer add_store.freeAddBatchOutcome(allocator, &batch);
 
-        try outcome.staged_paths.append(try allocator.dupe(u8, path));
-    }
+    outcome.staged_paths.deinit();
+    outcome.staged_paths = batch.staged_paths;
+    batch.staged_paths = add_store.StringList.init(allocator);
+    outcome.skipped_untracked = batch.skipped_untracked;
+    outcome.skipped_already_staged = batch.skipped_already_staged;
+    outcome.skipped_no_change = batch.skipped_no_change;
 
     return outcome;
 }
