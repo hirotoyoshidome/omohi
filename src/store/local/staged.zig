@@ -66,6 +66,25 @@ pub fn writeStagedObjectIfMissing(
     try atomic_write.atomicWrite(allocator, persistence.dir, dest_path, bytes);
 }
 
+pub fn writeStagedObjectFromReaderIfMissing(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    content_hash: []const u8,
+    reader: anytype,
+) !void {
+    _ = try constrained_types.ContentHash.init(content_hash);
+    if (try objectExists(allocator, persistence, content_hash)) return;
+
+    const dest_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}/{s}",
+        .{ persistence.stagedObjectsPath(), content_hash },
+    );
+    defer allocator.free(dest_path);
+
+    try atomic_write.atomicWriteFromReader(allocator, persistence.dir, dest_path, reader);
+}
+
 fn objectExists(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
