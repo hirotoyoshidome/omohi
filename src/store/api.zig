@@ -1,6 +1,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const c = @cImport({
+    @cInclude("stdlib.h");
+    @cInclude("time.h");
+});
+
 const PersistenceLayout = @import("./object/persistence_layout.zig").PersistenceLayout;
 const local_tracked = @import("./local/tracked.zig");
 const local_staged = @import("./local/staged.zig");
@@ -448,10 +453,14 @@ pub fn find(
     var idx: usize = 0;
     while (idx < keep_count) : (idx += 1) {
         const candidate = matches.items[idx];
+        const local_created_at = local_timestamp.iso8601FromMillisLocal(candidate.created_at_millis) catch |err| switch (err) {
+            error.TimestampBeforeEpoch, error.TimestampOutOfRange, error.LocaltimeFailed => return error.InvalidCommit,
+        };
         try out.append(.{
             .commit_id = candidate.parsed.commit_id,
             .message = try allocator.dupe(u8, candidate.parsed.message),
             .created_at = try allocator.dupe(u8, candidate.parsed.created_at),
+            .local_created_at = try allocator.dupe(u8, local_created_at[0..]),
         });
     }
 
@@ -462,6 +471,7 @@ pub fn freeCommitSummaryList(allocator: std.mem.Allocator, list: *CommitSummaryL
     for (list.items) |item| {
         allocator.free(item.message);
         allocator.free(item.created_at);
+        allocator.free(item.local_created_at);
     }
     list.deinit();
 }
@@ -2164,6 +2174,7 @@ test "find sorts by createdAt desc and limits to ten commits" {
     try std.testing.expectEqualStrings("msg-11", list.items[0].message);
     try std.testing.expectEqualStrings("msg-2", list.items[9].message);
     try std.testing.expectEqualSlices(u8, filledHexId('0')[0..], list.items[0].commit_id.asSlice());
+    try std.testing.expectEqual(@as(usize, 29), list.items[0].local_created_at.len);
 }
 
 test "find applies tag and date filters as intersection" {
@@ -2195,6 +2206,7 @@ test "find applies tag and date filters as intersection" {
     defer freeCommitSummaryList(allocator, &by_date);
     try std.testing.expectEqual(@as(usize, 1), by_date.items.len);
     try std.testing.expectEqualStrings("release-a", by_date.items[0].message);
+    try std.testing.expectEqual(@as(usize, 29), by_date.items[0].local_created_at.len);
 
     var by_tag_and_date = try find(allocator, omohi_dir, "release", date_a[0..]);
     defer freeCommitSummaryList(allocator, &by_tag_and_date);
@@ -2204,6 +2216,43 @@ test "find applies tag and date filters as intersection" {
     var no_intersection = try find(allocator, omohi_dir, "prod", date_a[0..]);
     defer freeCommitSummaryList(allocator, &no_intersection);
     try std.testing.expectEqual(@as(usize, 0), no_intersection.items.len);
+}
+
+test "find returns local createdAt in user timezone" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    const previous = std.process.getEnvVarOwned(allocator, "TZ") catch null;
+    defer if (previous) |value| allocator.free(value);
+    defer {
+        if (previous) |value| {
+            if (allocator.dupeZ(u8, value)) |value_z| {
+                defer allocator.free(value_z);
+                _ = c.setenv("TZ", value_z.ptr, 1);
+            } else |_| {
+                _ = c.unsetenv("TZ");
+            }
+        } else {
+            _ = c.unsetenv("TZ");
+        }
+        c.tzset();
+    }
+
+    try std.testing.expectEqual(@as(c_int, 0), c.setenv("TZ", "Asia/Tokyo", 1));
+    c.tzset();
+
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const commit_id = filledHexId('a');
+    try writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], "tokyo", "2026-03-10T18:00:00.123Z");
+
+    var list = try find(allocator, omohi_dir, null, null);
+    defer freeCommitSummaryList(allocator, &list);
+
+    try std.testing.expectEqual(@as(usize, 1), list.items.len);
+    try std.testing.expectEqualStrings("2026-03-11T03:00:00.123+09:00", list.items[0].local_created_at);
 }
 
 test "tagList returns CommitNotFound when commit does not exist" {
