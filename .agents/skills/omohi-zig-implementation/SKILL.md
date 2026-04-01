@@ -30,6 +30,11 @@ Before writing code, determine the following.
 - Confine `@ptrCast` / `*anyopaque` to boundaries.
 - As a rule, do not use dynamic DI (vtable / `*anyopaque`).
 - References from `ops -> store` must go only through `store/api.zig`.
+- Prefer whole-system optimization over local optimization.
+- Judge changes by their impact on architectural boundaries, durability, clarity, and testability, not only by local simplification or micro-performance.
+- As a rule, write comments for functions.
+- For `pub` functions, follow the documentation rules in `docs/Zig-coding-rules.md`. For internal functions, leave a short comment unless the function is trivial and self-evident.
+- If a function exists only for tests, add a marker comment immediately above it using the format `// TEST-ONLY: <reason>`.
 
 ## Change Completion Criteria
 - State the referenced materials and the excluded scope explicitly.
