@@ -9,6 +9,16 @@ pub fn atomicWrite(
     path: []const u8,
     content: []const u8,
 ) !void {
+    var stream = std.io.fixedBufferStream(content);
+    try atomicWriteFromReader(allocator, dir, path, stream.reader());
+}
+
+pub fn atomicWriteFromReader(
+    allocator: std.mem.Allocator,
+    dir: std.fs.Dir,
+    path: []const u8,
+    reader: anytype,
+) !void {
     try ensureParentDirs(dir, path);
 
     const tmp_path = try makeTempPath(allocator, path);
@@ -22,11 +32,46 @@ pub fn atomicWrite(
 
     errdefer dir.deleteFile(tmp_path) catch {};
 
-    try file.writeAll(content);
+    var buffer: [16 * 1024]u8 = undefined;
+    switch (@typeInfo(@TypeOf(reader))) {
+        .pointer => {
+            while (true) {
+                const read_len = try readChunk(reader, &buffer);
+                if (read_len == 0) break;
+                try file.writeAll(buffer[0..read_len]);
+            }
+        },
+        else => {
+            var input = reader;
+            while (true) {
+                const read_len = try readChunk(&input, &buffer);
+                if (read_len == 0) break;
+                try file.writeAll(buffer[0..read_len]);
+            }
+        },
+    }
     try file.sync();
 
     try dir.rename(tmp_path, path);
     try syncParentDir(dir, path);
+}
+
+fn readChunk(reader: anytype, buffer: []u8) !usize {
+    const ReaderType = @TypeOf(reader);
+    const BaseType = switch (@typeInfo(ReaderType)) {
+        .pointer => |pointer| pointer.child,
+        else => ReaderType,
+    };
+
+    if (comptime @hasDecl(BaseType, "read")) {
+        return reader.read(buffer);
+    }
+    if (comptime @hasField(BaseType, "interface")) {
+        var reader_value = reader;
+        return reader_value.interface.readSliceShort(buffer);
+    }
+
+    @compileError("atomicWriteFromReader requires a reader with read() or interface.readSliceShort()");
 }
 
 fn ensureParentDirs(dir: std.fs.Dir, path: []const u8) !void {
@@ -93,4 +138,51 @@ test "atomicWrite writes new file and replaces existing file" {
     const updated = try tmp.dir.readFileAlloc(allocator, "level1/file.txt", 1024);
     defer allocator.free(updated);
     try testing.expectEqualStrings(second, updated);
+}
+
+test "atomicWriteFromReader writes content from reader" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = testing.allocator;
+    const payload = "streamed-content";
+    var stream = std.io.fixedBufferStream(payload);
+
+    try atomicWriteFromReader(allocator, tmp.dir, "level1/file.txt", stream.reader());
+
+    const stored = try tmp.dir.readFileAlloc(allocator, "level1/file.txt", 1024);
+    defer allocator.free(stored);
+    try testing.expectEqualStrings(payload, stored);
+}
+
+test "atomicWriteFromReader removes temp file on read failure" {
+    const FailingReader = struct {
+        emitted: bool = false,
+
+        fn read(self: *@This(), dest: []u8) error{InjectedReadFailure}!usize {
+            if (!self.emitted) {
+                self.emitted = true;
+                const payload = "partial";
+                @memcpy(dest[0..payload.len], payload);
+                return payload.len;
+            }
+            return error.InjectedReadFailure;
+        }
+    };
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var reader = FailingReader{};
+    try testing.expectError(
+        error.InjectedReadFailure,
+        atomicWriteFromReader(testing.allocator, tmp.dir, "level1/file.txt", &reader),
+    );
+
+    try testing.expectError(error.FileNotFound, tmp.dir.access("level1/file.txt", .{}));
+
+    var level1 = try tmp.dir.openDir("level1", .{ .iterate = true });
+    defer level1.close();
+    var it = level1.iterate();
+    try testing.expect((try it.next()) == null);
 }
