@@ -135,33 +135,28 @@ pub fn add(
     var source_dir = try std.fs.openDirAbsolute(source_parent, .{});
     defer source_dir.close();
 
-    var staged_entries = loadStagedEntriesOrEmpty(allocator, persistence) catch |err| switch (err) {
+    const content_hash = try contentHashFromFile(allocator, source_dir, source_name);
+    const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
+    var raw_entries = loadRawStagedEntriesOrEmpty(allocator, persistence) catch |err| switch (err) {
         error.MissingStagedEntries => null,
         else => return err,
     };
-    defer if (staged_entries) |*list| local_staged.freeEntries(allocator, list);
+    defer if (raw_entries) |*list| local_staged.freeRawEntries(allocator, list);
 
-    const content_hash = try contentHashFromFile(allocator, source_dir, source_name);
     if (try headContentHashForPath(allocator, persistence, absolute_path)) |head_hash| {
         if (std.mem.eql(u8, head_hash.asSlice(), &content_hash)) {
-            try unstagePathIfPresent(allocator, persistence, staged_entries, absolute_path);
+            try unstagePathEntriesFromRaw(allocator, persistence, raw_entries, absolute_path, staged_file_id[0..], content_hash[0..], false);
             return;
         }
     }
 
-    if (staged_entries) |list| {
-        if (local_staged.findByPath(list.items, absolute_path)) |existing_entry| {
-            if (std.mem.eql(u8, existing_entry.content_hash.asSlice(), &content_hash)) return;
-            try unstageEntry(allocator, persistence, staged_entries, existing_entry);
-        }
-    }
+    try unstagePathEntriesFromRaw(allocator, persistence, raw_entries, absolute_path, staged_file_id[0..], content_hash[0..], true);
 
     const entry = StagedEntry{
         .path = try constrained_types.TrackedFilePath.init(absolute_path),
         .tracked_file_id = tracked_entry.id,
         .content_hash = try constrained_types.ContentHash.init(&content_hash),
     };
-    const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
 
     try local_staged.writeStagedEntry(allocator, persistence, &staged_file_id, entry);
     try local_staged.copyFileToStagedObject(allocator, persistence, source_dir, source_name, &content_hash);
@@ -1045,6 +1040,16 @@ fn loadStagedEntriesOrEmpty(
     };
 }
 
+fn loadRawStagedEntriesOrEmpty(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+) !?local_staged.RawEntryList {
+    return local_staged.listRawEntries(allocator, persistence) catch |err| switch (err) {
+        error.MissingStagedEntries => null,
+        else => return err,
+    };
+}
+
 fn requireTrackedEntryByPath(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1098,6 +1103,53 @@ fn unstagePathIfPresent(
             try unstageEntry(allocator, persistence, staged_entries, entry);
         }
     }
+}
+
+fn unstagePathEntriesFromRaw(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    raw_entries: ?local_staged.RawEntryList,
+    absolute_path: []const u8,
+    target_staged_file_id: []const u8,
+    current_content_hash: []const u8,
+    keep_target_entry: bool,
+) !void {
+    if (raw_entries) |list| {
+        for (list.items) |entry| {
+            const same_target = std.mem.eql(u8, entry.file_name, target_staged_file_id);
+            const same_path = if (entry.path) |path| std.mem.eql(u8, path, absolute_path) else false;
+            if (!same_target and !same_path) continue;
+            if (same_target and keep_target_entry) continue;
+
+            local_trash.moveStagedEntryToTrash(allocator, persistence, entry.file_name) catch |err| switch (err) {
+                error.FileNotFound => {},
+                else => return err,
+            };
+
+            if (entry.content_hash) |content_hash| {
+                if (std.mem.eql(u8, content_hash.asSlice(), current_content_hash)) continue;
+                if (rawEntriesContainHash(list.items, content_hash.asSlice(), entry.file_name)) continue;
+                local_trash.moveStagedObjectToTrash(allocator, persistence, content_hash.asSlice()) catch |err| switch (err) {
+                    error.FileNotFound => {},
+                    else => return err,
+                };
+            }
+        }
+    }
+}
+
+fn rawEntriesContainHash(
+    entries: []const local_staged.RawEntryInfo,
+    content_hash: []const u8,
+    excluded_file_name: []const u8,
+) bool {
+    for (entries) |entry| {
+        if (std.mem.eql(u8, entry.file_name, excluded_file_name)) continue;
+        if (entry.content_hash) |entry_hash| {
+            if (std.mem.eql(u8, entry_hash.asSlice(), content_hash)) return true;
+        }
+    }
+    return false;
 }
 
 fn unstageEntry(
@@ -1703,6 +1755,44 @@ test "add removes staged entry when file returns to HEAD content" {
 
     try expectDirHasNoFiles(omohi_dir, "staged/entries");
     try expectDirHasNoFiles(omohi_dir, "staged/objects");
+}
+
+test "add reconstructs target staged entry after entry corruption" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    var source_file = try source_dir.createFile("memo.txt", .{});
+    try source_file.writeAll("payload");
+    source_file.close();
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, "memo.txt");
+    defer allocator.free(absolute_path);
+    _ = try track(allocator, omohi_dir, absolute_path);
+    try add(allocator, omohi_dir, absolute_path);
+
+    const content_hash = try contentHashFromFile(allocator, source_dir, "memo.txt");
+    const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
+    const staged_entry_path = try std.fmt.allocPrint(allocator, "staged/entries/{s}", .{staged_file_id});
+    defer allocator.free(staged_entry_path);
+
+    var entry_file = try omohi_dir.createFile(staged_entry_path, .{ .truncate = true });
+    try entry_file.writeAll("contentHash=broken\n");
+    entry_file.close();
+
+    try add(allocator, omohi_dir, absolute_path);
+
+    const recovered = try omohi_dir.readFileAlloc(allocator, staged_entry_path, 1024);
+    defer allocator.free(recovered);
+    try std.testing.expect(std.mem.indexOf(u8, recovered, "path=") != null);
+    try std.testing.expect(std.mem.indexOf(u8, recovered, "trackedFileId=") != null);
+    try std.testing.expect(std.mem.indexOf(u8, recovered, "contentHash=") != null);
 }
 
 test "status tolerates invalid tracked directory entry" {

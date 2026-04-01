@@ -14,6 +14,14 @@ pub const StagedEntry = struct {
 
 pub const EntryList = std.array_list.Managed(StagedEntry);
 
+pub const RawEntryInfo = struct {
+    file_name: []u8,
+    path: ?[]u8,
+    content_hash: ?constrained_types.ContentHash,
+};
+
+pub const RawEntryList = std.array_list.Managed(RawEntryInfo);
+
 const max_entry_file_size = 1024 * 1024;
 const max_staged_object_size = 64 * 1024 * 1024;
 
@@ -98,6 +106,47 @@ pub fn loadStagedEntries(
 
 pub fn freeEntries(allocator: std.mem.Allocator, entries: *EntryList) void {
     for (entries.items) |entry| allocator.free(@constCast(entry.path.asSlice()));
+    entries.deinit();
+}
+
+pub fn listRawEntries(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+) !RawEntryList {
+    var entries_dir = persistence.dir.openDir(persistence.stagedEntriesPath(), .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return error.MissingStagedEntries,
+        else => return err,
+    };
+    defer entries_dir.close();
+
+    var entries = RawEntryList.init(allocator);
+    errdefer freeRawEntries(allocator, &entries);
+
+    var it = entries_dir.iterate();
+    while (try it.next()) |dir_entry| {
+        if (dir_entry.kind != .file) continue;
+
+        const file_name = try allocator.dupe(u8, dir_entry.name);
+        errdefer allocator.free(file_name);
+
+        const bytes = try entries_dir.readFileAlloc(allocator, dir_entry.name, max_entry_file_size);
+        defer allocator.free(bytes);
+
+        try entries.append(.{
+            .file_name = file_name,
+            .path = try extractPathValueOwned(allocator, bytes),
+            .content_hash = extractContentHashValue(bytes),
+        });
+    }
+
+    return entries;
+}
+
+pub fn freeRawEntries(allocator: std.mem.Allocator, entries: *RawEntryList) void {
+    for (entries.items) |entry| {
+        allocator.free(entry.file_name);
+        if (entry.path) |path| allocator.free(path);
+    }
     entries.deinit();
 }
 
@@ -253,6 +302,35 @@ fn parseStagedEntry(allocator: std.mem.Allocator, bytes: []const u8) !StagedEntr
         .tracked_file_id = tracked_file_id,
         .content_hash = content_hash,
     };
+}
+
+fn extractPathValueOwned(allocator: std.mem.Allocator, bytes: []const u8) !?[]u8 {
+    const raw_path = propertyValue(bytes, "path") orelse return null;
+    const owned = try allocator.dupe(u8, raw_path);
+    errdefer allocator.free(owned);
+    _ = constrained_types.TrackedFilePath.init(owned) catch {
+        allocator.free(owned);
+        return null;
+    };
+    return owned;
+}
+
+fn extractContentHashValue(bytes: []const u8) ?constrained_types.ContentHash {
+    const raw_hash = propertyValue(bytes, "contentHash") orelse return null;
+    return constrained_types.ContentHash.init(raw_hash) catch null;
+}
+
+fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
+    var iter = std.mem.splitScalar(u8, bytes, '\n');
+    while (iter.next()) |line_raw| {
+        const line = std.mem.trim(u8, std.mem.trimRight(u8, line_raw, "\r"), " \t");
+        if (line.len == 0 or line[0] == '#') continue;
+        const idx = std.mem.indexOfScalar(u8, line, '=') orelse continue;
+        const candidate_key = std.mem.trimRight(u8, line[0..idx], " ");
+        if (!std.mem.eql(u8, candidate_key, key)) continue;
+        return std.mem.trim(u8, std.mem.trimRight(u8, line[idx + 1 ..], "\r"), " \t");
+    }
+    return null;
 }
 
 fn formatStagedEntry(allocator: std.mem.Allocator, entry: StagedEntry) ![]u8 {
