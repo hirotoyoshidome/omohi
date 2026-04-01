@@ -19,6 +19,13 @@ pub const StatusEntry = struct {
 
 pub const StatusList = std.array_list.Managed(StatusEntry);
 
+pub const AddBatchOutcome = struct {
+    staged_paths: std.array_list.Managed([]u8),
+    skipped_untracked: usize,
+    skipped_already_staged: usize,
+    skipped_no_change: usize,
+};
+
 pub const CommitSummary = struct {
     commit_id: constrained_types.CommitId,
     message: []u8,
