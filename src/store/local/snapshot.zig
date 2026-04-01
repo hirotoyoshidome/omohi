@@ -49,7 +49,7 @@ test "writeSnapshot persists entries with predictable format" {
 
     var entries = [_]ContentEntry{
         .{
-            .path = try constrained_types.ContentPath.init(try allocator.dupe(u8, "/objects/aa/file-a")),
+            .path = try constrained_types.TrackedFilePath.init(try allocator.dupe(u8, "/tmp/file-a.txt")),
             .content_hash = try constrained_types.ContentHash.init(blk: {
                 var buf: [64]u8 = undefined;
                 @memset(&buf, '1');
@@ -57,7 +57,7 @@ test "writeSnapshot persists entries with predictable format" {
             }),
         },
         .{
-            .path = try constrained_types.ContentPath.init(try allocator.dupe(u8, "/objects/bb/file-b")),
+            .path = try constrained_types.TrackedFilePath.init(try allocator.dupe(u8, "/tmp/file-b.txt")),
             .content_hash = try constrained_types.ContentHash.init(blk: {
                 var buf: [64]u8 = undefined;
                 @memset(&buf, '2');
@@ -77,7 +77,7 @@ test "writeSnapshot persists entries with predictable format" {
     defer allocator.free(content);
 
     try std.testing.expectEqualStrings(
-        "entries=/objects/aa/file-a:1111111111111111111111111111111111111111111111111111111111111111,/objects/bb/file-b:2222222222222222222222222222222222222222222222222222222222222222\n",
+        "entries=/tmp/file-a.txt:1111111111111111111111111111111111111111111111111111111111111111,/tmp/file-b.txt:2222222222222222222222222222222222222222222222222222222222222222\n",
         content,
     );
 }
