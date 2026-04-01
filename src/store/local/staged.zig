@@ -46,25 +46,15 @@ pub fn writeStagedEntry(
     try atomic_write.atomicWrite(allocator, persistence.dir, path, content);
 }
 
-pub fn copyFileToStagedObject(
+pub fn writeStagedObjectIfMissing(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
-    source_dir: std.fs.Dir,
-    source_path: []const u8,
     content_hash: []const u8,
+    bytes: []const u8,
 ) !void {
     _ = try constrained_types.ContentHash.init(content_hash);
-
-    var source_file = try source_dir.openFile(source_path, .{});
-    defer source_file.close();
-
-    const stat = try source_file.stat();
-    const file_size = std.math.cast(usize, stat.size) orelse return error.FileTooLarge;
-    const max_bytes = @max(file_size, @as(usize, 1));
-    if (file_size > max_staged_object_size) return error.FileTooLarge;
-
-    const bytes = try source_file.readToEndAlloc(allocator, max_bytes);
-    defer allocator.free(bytes);
+    if (bytes.len > max_staged_object_size) return error.FileTooLarge;
+    if (try objectExists(allocator, persistence, content_hash)) return;
 
     const dest_path = try std.fmt.allocPrint(
         allocator,
@@ -74,6 +64,33 @@ pub fn copyFileToStagedObject(
     defer allocator.free(dest_path);
 
     try atomic_write.atomicWrite(allocator, persistence.dir, dest_path, bytes);
+}
+
+fn objectExists(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    content_hash: []const u8,
+) !bool {
+    const staged_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ persistence.stagedObjectsPath(), content_hash });
+    defer allocator.free(staged_path);
+
+    persistence.dir.access(staged_path, .{}) catch |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    };
+    if (persistence.dir.access(staged_path, .{})) |_| return true else |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    }
+
+    const object_path = try persistence.objectsPath(allocator, content_hash);
+    defer allocator.free(object_path);
+
+    persistence.dir.access(object_path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return false,
+        else => return err,
+    };
+    return true;
 }
 
 pub fn loadStagedEntries(
