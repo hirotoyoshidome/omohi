@@ -119,20 +119,20 @@ test "snapshotIdFrom sorts by path and uses pipe-separated path-hash pairs" {
 
     var entries = [_]ContentEntry{
         .{
-            .path = try constrained_types.ContentPath.init("/objects/b.txt"),
+            .path = try constrained_types.TrackedFilePath.init("/tmp/b.txt"),
             .content_hash = try constrained_types.ContentHash.init(&eff_hash),
         },
         .{
-            .path = try constrained_types.ContentPath.init("/objects/a.txt"),
+            .path = try constrained_types.TrackedFilePath.init("/tmp/a.txt"),
             .content_hash = try constrained_types.ContentHash.init(&zero_hash),
         },
     };
     const id = try snapshotIdFrom(testing.allocator, &entries);
 
-    const joined = "/objects/a.txt" ++ id_field_separator ++
+    const joined = "/tmp/a.txt" ++ id_field_separator ++
         "0000000000000000000000000000000000000000000000000000000000000000" ++
         snapshot_entry_separator ++
-        "/objects/b.txt" ++ id_field_separator ++
+        "/tmp/b.txt" ++ id_field_separator ++
         "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
     const expected = sha256Hex(joined);
     try testing.expectEqualSlices(u8, expected[0..], id[0..]);
