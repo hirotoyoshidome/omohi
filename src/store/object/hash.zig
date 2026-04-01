@@ -11,12 +11,7 @@ const snapshot_entry_separator = "|";
 pub fn sha256Hex(input: []const u8) [64]u8 {
     var hasher = sha2.Sha256.init(.{});
     hasher.update(input);
-    var digest: [sha2.Sha256.digest_length]u8 = undefined;
-    hasher.final(&digest);
-
-    var out: [sha2.Sha256.digest_length * 2]u8 = undefined;
-    encodeHexLower(&out, &digest);
-    return out;
+    return sha256HexFromHasher(&hasher);
 }
 
 /// SnapshotId is generated from entries sorted by path.
@@ -60,6 +55,15 @@ fn encodeHexLower(dest: []u8, source: []const u8) void {
         dest[di + 1] = alphabet[@as(usize, byte & 0x0f)];
         di += 2;
     }
+}
+
+pub fn sha256HexFromHasher(hasher: *sha2.Sha256) [64]u8 {
+    var digest: [sha2.Sha256.digest_length]u8 = undefined;
+    hasher.final(&digest);
+
+    var out: [sha2.Sha256.digest_length * 2]u8 = undefined;
+    encodeHexLower(&out, &digest);
+    return out;
 }
 
 /// CommitId is derived from snapshotId + message.

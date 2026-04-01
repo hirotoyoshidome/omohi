@@ -53,15 +53,6 @@ const StagedPathState = struct {
     content_hash: constrained_types.ContentHash,
 };
 
-const LoadedAddFile = struct {
-    bytes: []u8,
-    content_hash: [64]u8,
-
-    fn deinit(self: LoadedAddFile, allocator: std.mem.Allocator) void {
-        allocator.free(self.bytes);
-    }
-};
-
 /// Validates store VERSION.
 pub fn ensureStoreVersion(
     allocator: std.mem.Allocator,
@@ -150,10 +141,9 @@ pub fn add(
     var source_dir = try std.fs.openDirAbsolute(source_parent, .{});
     defer source_dir.close();
 
-    const loaded = try loadFileForAdd(allocator, source_dir, source_name);
-    defer loaded.deinit(allocator);
+    const content_hash = try contentHashFromFile(source_dir, source_name);
 
-    const staged_file_id = hash.stagedFileIdFrom(absolute_path, &loaded.content_hash);
+    const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
     var raw_entries = loadRawStagedEntriesOrEmpty(allocator, persistence) catch |err| switch (err) {
         error.MissingStagedEntries => null,
         else => return err,
@@ -161,22 +151,22 @@ pub fn add(
     defer if (raw_entries) |*list| local_staged.freeRawEntries(allocator, list);
 
     if (try headContentHashForPath(allocator, persistence, absolute_path)) |head_hash| {
-        if (std.mem.eql(u8, head_hash.asSlice(), &loaded.content_hash)) {
-            try unstagePathEntriesFromRaw(allocator, persistence, raw_entries, absolute_path, staged_file_id[0..], loaded.content_hash[0..], false);
+        if (std.mem.eql(u8, head_hash.asSlice(), &content_hash)) {
+            try unstagePathEntriesFromRaw(allocator, persistence, raw_entries, absolute_path, staged_file_id[0..], content_hash[0..], false);
             return;
         }
     }
 
-    try unstagePathEntriesFromRaw(allocator, persistence, raw_entries, absolute_path, staged_file_id[0..], loaded.content_hash[0..], true);
+    try unstagePathEntriesFromRaw(allocator, persistence, raw_entries, absolute_path, staged_file_id[0..], content_hash[0..], true);
 
     const entry = StagedEntry{
         .path = try constrained_types.TrackedFilePath.init(absolute_path),
         .tracked_file_id = tracked_entry.id,
-        .content_hash = try constrained_types.ContentHash.init(&loaded.content_hash),
+        .content_hash = try constrained_types.ContentHash.init(&content_hash),
     };
 
     try local_staged.writeStagedEntry(allocator, persistence, &staged_file_id, entry);
-    try local_staged.writeStagedObjectIfMissing(allocator, persistence, &loaded.content_hash, loaded.bytes);
+    try writeStagedObjectFromSource(allocator, persistence, source_dir, source_name, &content_hash);
 }
 
 /// Adds multiple absolute file paths into staging using one lock and one metadata scan.
@@ -341,7 +331,7 @@ pub fn status(
             const stat = mutable_file.stat() catch null;
             if (stat) |file_stat| {
                 if (file_stat.kind == .file) {
-                    const current_hash = try contentHashFromOpenedFile(allocator, mutable_file);
+                    const current_hash = try contentHashFromOpenedFile(mutable_file);
                     if (staged_entries) |list| {
                         if (local_staged.findByPath(list.items, tracked_entry.path.asSlice())) |entry| {
                             if (std.mem.eql(u8, entry.content_hash.asSlice(), &current_hash)) {
@@ -848,18 +838,17 @@ fn addDirectoryLocked(
         var source_dir = try std.fs.openDirAbsolute(source_parent, .{});
         defer source_dir.close();
 
-        const loaded = try loadFileForAdd(allocator, source_dir, source_name);
-        defer loaded.deinit(allocator);
+        const content_hash = try contentHashFromFile(source_dir, source_name);
 
         if (staged_index.get(absolute_path)) |staged_state| {
-            if (std.mem.eql(u8, staged_state.content_hash.asSlice(), &loaded.content_hash)) {
+            if (std.mem.eql(u8, staged_state.content_hash.asSlice(), &content_hash)) {
                 outcome.skipped_already_staged += 1;
                 continue;
             }
         }
 
         if (head_index.get(absolute_path)) |head_hash| {
-            if (std.mem.eql(u8, head_hash.asSlice(), &loaded.content_hash)) {
+            if (std.mem.eql(u8, head_hash.asSlice(), &content_hash)) {
                 try removeStagedPathState(allocator, persistence, &staged_index, &staged_hash_counts, absolute_path);
                 outcome.skipped_no_change += 1;
                 continue;
@@ -868,14 +857,14 @@ fn addDirectoryLocked(
 
         try removeStagedPathState(allocator, persistence, &staged_index, &staged_hash_counts, absolute_path);
 
-        const staged_file_id = hash.stagedFileIdFrom(absolute_path, &loaded.content_hash);
+        const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
         const entry = StagedEntry{
             .path = try constrained_types.TrackedFilePath.init(absolute_path),
             .tracked_file_id = tracked_id,
-            .content_hash = try constrained_types.ContentHash.init(&loaded.content_hash),
+            .content_hash = try constrained_types.ContentHash.init(&content_hash),
         };
         try local_staged.writeStagedEntry(allocator, persistence, &staged_file_id, entry);
-        try local_staged.writeStagedObjectIfMissing(allocator, persistence, &loaded.content_hash, loaded.bytes);
+        try writeStagedObjectFromSource(allocator, persistence, source_dir, source_name, &content_hash);
 
         try staged_index.put(absolute_path, .{
             .file_name = try constrained_types.StagedFileId.init(&staged_file_id),
@@ -1330,42 +1319,11 @@ fn hasOtherStagedEntryWithHash(
     return false;
 }
 
-fn contentHashFromFile(
-    allocator: std.mem.Allocator,
-    source_dir: std.fs.Dir,
-    source_path: []const u8,
-) ![64]u8 {
+fn contentHashFromFile(source_dir: std.fs.Dir, source_path: []const u8) ![64]u8 {
     var source_file = try source_dir.openFile(source_path, .{});
     defer source_file.close();
 
-    return contentHashFromOpenedFile(allocator, source_file);
-}
-
-fn loadFileForAdd(
-    allocator: std.mem.Allocator,
-    source_dir: std.fs.Dir,
-    source_path: []const u8,
-) !LoadedAddFile {
-    var source_file = try source_dir.openFile(source_path, .{});
-    defer source_file.close();
-
-    const stat = try source_file.stat();
-    const file_size = std.math.cast(usize, stat.size) orelse return error.FileTooLarge;
-    if (file_size > max_add_file_size) return error.FileTooLarge;
-    const max_bytes = @max(file_size, @as(usize, 1));
-
-    const bytes = try source_file.readToEndAlloc(allocator, max_bytes);
-    errdefer allocator.free(bytes);
-
-    const encoded_len = std.base64.standard.Encoder.calcSize(bytes.len);
-    const encoded = try allocator.alloc(u8, encoded_len);
-    defer allocator.free(encoded);
-    _ = std.base64.standard.Encoder.encode(encoded, bytes);
-
-    return .{
-        .bytes = bytes,
-        .content_hash = hash.sha256Hex(encoded),
-    };
+    return contentHashFromOpenedFile(source_file);
 }
 
 fn ensureTrackTargetIsNotDirectory(absolute_path: []const u8) !void {
@@ -1380,24 +1338,78 @@ fn ensureTrackTargetIsNotDirectory(absolute_path: []const u8) !void {
     if (stat.kind == .directory) return error.InvalidTrackedTarget;
 }
 
-fn contentHashFromOpenedFile(
-    allocator: std.mem.Allocator,
-    source_file: std.fs.File,
-) ![64]u8 {
+fn contentHashFromOpenedFile(source_file: std.fs.File) ![64]u8 {
     const stat = try source_file.stat();
     const file_size = std.math.cast(usize, stat.size) orelse return error.FileTooLarge;
     if (file_size > max_add_file_size) return error.FileTooLarge;
-    const max_bytes = @max(file_size, @as(usize, 1));
+    var file = source_file;
+    try file.seekTo(0);
+    return hashFileBase64(file);
+}
 
-    const bytes = try source_file.readToEndAlloc(allocator, max_bytes);
-    defer allocator.free(bytes);
+fn writeStagedObjectFromSource(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    source_dir: std.fs.Dir,
+    source_path: []const u8,
+    content_hash: []const u8,
+) !void {
+    var source_file = try source_dir.openFile(source_path, .{});
+    defer source_file.close();
 
-    const encoded_len = std.base64.standard.Encoder.calcSize(bytes.len);
-    const encoded = try allocator.alloc(u8, encoded_len);
-    defer allocator.free(encoded);
-    _ = std.base64.standard.Encoder.encode(encoded, bytes);
+    const stat = try source_file.stat();
+    const file_size = std.math.cast(usize, stat.size) orelse return error.FileTooLarge;
+    if (file_size > max_add_file_size) return error.FileTooLarge;
+    try source_file.seekTo(0);
+    var read_buffer: [16 * 1024]u8 = undefined;
 
-    return hash.sha256Hex(encoded);
+    try local_staged.writeStagedObjectFromReaderIfMissing(
+        allocator,
+        persistence,
+        content_hash,
+        source_file.reader(&read_buffer),
+    );
+}
+
+fn hashFileBase64(file: std.fs.File) ![64]u8 {
+    var hasher = std.crypto.hash.sha2.Sha256.init(.{});
+    var reader_file = file;
+    var raw_buffer: [16 * 1024]u8 = undefined;
+    var encode_buffer: [std.base64.standard.Encoder.calcSize(raw_buffer.len + 2)]u8 = undefined;
+    var tail_len: usize = 0;
+    var tail: [2]u8 = undefined;
+
+    while (true) {
+        const read_len = try reader_file.read(&raw_buffer);
+        if (read_len == 0) break;
+
+        var merged: [raw_buffer.len + 2]u8 = undefined;
+        @memcpy(merged[0..tail_len], tail[0..tail_len]);
+        @memcpy(merged[tail_len .. tail_len + read_len], raw_buffer[0..read_len]);
+
+        const available = tail_len + read_len;
+        const whole_len = available - @rem(available, 3);
+        if (whole_len > 0) {
+            const encoded = std.base64.standard.Encoder.encode(
+                encode_buffer[0..std.base64.standard.Encoder.calcSize(whole_len)],
+                merged[0..whole_len],
+            );
+            hasher.update(encoded);
+        }
+
+        tail_len = available - whole_len;
+        @memcpy(tail[0..tail_len], merged[whole_len..available]);
+    }
+
+    if (tail_len > 0) {
+        const encoded = std.base64.standard.Encoder.encode(
+            encode_buffer[0..std.base64.standard.Encoder.calcSize(tail_len)],
+            tail[0..tail_len],
+        );
+        hasher.update(encoded);
+    }
+
+    return hash.sha256HexFromHasher(&hasher);
 }
 
 fn incrementHashCount(
@@ -1833,7 +1845,6 @@ test "content hash uses sha256 of base64-encoded file bytes" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const allocator = std.testing.allocator;
     var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
     defer source_dir.close();
 
@@ -1841,9 +1852,47 @@ test "content hash uses sha256 of base64-encoded file bytes" {
     try source_file.writeAll("hello add");
     source_file.close();
 
-    const content_hash = try contentHashFromFile(allocator, source_dir, "memo.txt");
+    const content_hash = try contentHashFromFile(source_dir, "memo.txt");
     const expected = hash.sha256Hex("aGVsbG8gYWRk");
     try std.testing.expectEqualSlices(u8, expected[0..], content_hash[0..]);
+}
+
+test "content hash keeps base64 semantics across chunk boundaries" {
+    const Case = struct {
+        name: []const u8,
+        payload: []const u8,
+    };
+
+    const cases = [_]Case{
+        .{ .name = "empty.txt", .payload = "" },
+        .{ .name = "one.txt", .payload = "a" },
+        .{ .name = "two.txt", .payload = "ab" },
+        .{ .name = "three.txt", .payload = "abc" },
+        .{ .name = "four.txt", .payload = "abcd" },
+        .{ .name = "long.txt", .payload = "chunk-boundary-check-0123456789" },
+    };
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+
+    for (cases) |case| {
+        var source_file = try source_dir.createFile(case.name, .{ .truncate = true });
+        try source_file.writeAll(case.payload);
+        source_file.close();
+
+        const content_hash = try contentHashFromFile(source_dir, case.name);
+        const encoded_len = std.base64.standard.Encoder.calcSize(case.payload.len);
+        const encoded = try allocator.alloc(u8, encoded_len);
+        defer allocator.free(encoded);
+        _ = std.base64.standard.Encoder.encode(encoded, case.payload);
+
+        const expected = hash.sha256Hex(encoded);
+        try std.testing.expectEqualSlices(u8, expected[0..], content_hash[0..]);
+    }
 }
 
 test "add requires tracked absolute path" {
@@ -1907,7 +1956,7 @@ test "add uses absolute path when generating staged file id" {
     _ = try track(allocator, omohi_dir, absolute_path);
     try add(allocator, omohi_dir, absolute_path);
 
-    const content_hash = try contentHashFromFile(allocator, source_dir, "memo.txt");
+    const content_hash = try contentHashFromFile(source_dir, "memo.txt");
     const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
 
     var staged_entry_id: [64]u8 = undefined;
@@ -2004,7 +2053,7 @@ test "add reconstructs target staged entry after entry corruption" {
     _ = try track(allocator, omohi_dir, absolute_path);
     try add(allocator, omohi_dir, absolute_path);
 
-    const content_hash = try contentHashFromFile(allocator, source_dir, "memo.txt");
+    const content_hash = try contentHashFromFile(source_dir, "memo.txt");
     const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
     const staged_entry_path = try std.fmt.allocPrint(allocator, "staged/entries/{s}", .{staged_file_id});
     defer allocator.free(staged_entry_path);
