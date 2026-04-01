@@ -9,6 +9,7 @@ pub const AddOutcome = struct {
     skipped_untracked: usize,
     skipped_non_regular: usize,
     skipped_already_staged: usize,
+    skipped_no_change: usize,
 
     pub fn init(allocator: std.mem.Allocator) AddOutcome {
         return .{
@@ -16,6 +17,7 @@ pub const AddOutcome = struct {
             .skipped_untracked = 0,
             .skipped_non_regular = 0,
             .skipped_already_staged = 0,
+            .skipped_no_change = 0,
         };
     }
 };
@@ -51,7 +53,12 @@ fn addSingleFile(
 
     var outcome = AddOutcome.init(allocator);
     errdefer freeAddOutcome(allocator, &outcome);
-    try outcome.staged_paths.append(try allocator.dupe(u8, absolute_path));
+    const status_kind = try statusForPath(allocator, omohi_dir, absolute_path);
+    if (status_kind == .staged) {
+        try outcome.staged_paths.append(try allocator.dupe(u8, absolute_path));
+    } else if (status_kind == .committed) {
+        outcome.skipped_no_change = 1;
+    }
     return outcome;
 }
 
@@ -68,8 +75,11 @@ fn addDirectory(
 
     var staged_now = std.StringHashMap(void).init(allocator);
     defer staged_now.deinit();
+    var committed_now = std.StringHashMap(void).init(allocator);
+    defer committed_now.deinit();
     for (tracked_statuses.items) |entry| {
         if (entry.status == .staged) try staged_now.put(entry.path, {});
+        if (entry.status == .committed) try committed_now.put(entry.path, {});
     }
 
     var collected = std.array_list.Managed([]u8).init(allocator);
@@ -83,6 +93,10 @@ fn addDirectory(
     for (collected.items) |path| {
         if (staged_now.contains(path)) {
             outcome.skipped_already_staged += 1;
+            continue;
+        }
+        if (committed_now.contains(path)) {
+            outcome.skipped_no_change += 1;
             continue;
         }
 
@@ -130,6 +144,20 @@ fn collectRegularFiles(
 
 fn lessThanPath(_: void, lhs: []u8, rhs: []u8) bool {
     return std.mem.lessThan(u8, lhs, rhs);
+}
+
+fn statusForPath(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    absolute_path: []const u8,
+) !status_ops.StatusKind {
+    var statuses = try status_ops.status(allocator, omohi_dir);
+    defer status_ops.freeStatusList(allocator, &statuses);
+
+    for (statuses.items) |entry| {
+        if (std.mem.eql(u8, entry.path, absolute_path)) return entry.status;
+    }
+    return .tracked;
 }
 
 fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
@@ -216,12 +244,13 @@ test "add writes staged entry and staged object using content hash" {
 
     const expected_path = try std.fmt.allocPrint(
         allocator,
-        "path=/objects/{s}/{s}",
-        .{ staged_object_hash[0..2], staged_object_hash },
+        "path={s}",
+        .{absolute_path},
     );
     defer allocator.free(expected_path);
     try std.testing.expect(std.mem.indexOf(u8, staged_entry, expected_path) != null);
 
+    try std.testing.expect(std.mem.indexOf(u8, staged_entry, "trackedFileId=") != null);
     const expected_hash = try std.fmt.allocPrint(allocator, "contentHash={s}", .{staged_object_hash});
     defer allocator.free(expected_hash);
     try std.testing.expect(std.mem.indexOf(u8, staged_entry, expected_hash) != null);
@@ -323,6 +352,7 @@ test "add stages tracked files recursively and skips untracked files under direc
     try std.testing.expectEqual(@as(usize, 2), outcome.staged_paths.items.len);
     try std.testing.expectEqual(@as(usize, 1), outcome.skipped_untracked);
     try std.testing.expectEqual(@as(usize, 0), outcome.skipped_already_staged);
+    try std.testing.expectEqual(@as(usize, 0), outcome.skipped_no_change);
 }
 
 test "add skips files already staged with current content when directory is given" {
@@ -365,4 +395,35 @@ test "add skips files already staged with current content when directory is give
 
     try std.testing.expectEqual(@as(usize, 1), outcome.staged_paths.items.len);
     try std.testing.expectEqual(@as(usize, 1), outcome.skipped_already_staged);
+    try std.testing.expectEqual(@as(usize, 0), outcome.skipped_no_change);
+}
+
+test "add reports no-change when file matches HEAD" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try add_store.initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    var file = try source_dir.createFile("a.txt", .{});
+    try file.writeAll("a");
+    file.close();
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, "a.txt");
+    defer allocator.free(absolute_path);
+
+    _ = try add_store.track(allocator, omohi_dir, absolute_path);
+    var initial_outcome = try add(allocator, omohi_dir, absolute_path);
+    defer freeAddOutcome(allocator, &initial_outcome);
+    _ = try commit_ops.commit(allocator, omohi_dir, "first");
+
+    var outcome = try add(allocator, omohi_dir, absolute_path);
+    defer freeAddOutcome(allocator, &outcome);
+
+    try std.testing.expectEqual(@as(usize, 0), outcome.staged_paths.items.len);
+    try std.testing.expectEqual(@as(usize, 1), outcome.skipped_no_change);
 }

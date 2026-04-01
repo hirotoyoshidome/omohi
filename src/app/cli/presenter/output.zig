@@ -56,9 +56,19 @@ pub fn addResult(
         outcome.skipped_untracked == 0 and
         outcome.skipped_non_regular == 0 and
         outcome.skipped_already_staged == 0 and
+        outcome.skipped_no_change == 0 and
         std.mem.eql(u8, outcome.staged_paths.items[0], absolute_path))
     {
         return std.fmt.allocPrint(allocator, "Staged: {s}\n", .{absolute_path});
+    }
+
+    if (outcome.staged_paths.items.len == 0 and
+        outcome.skipped_untracked == 0 and
+        outcome.skipped_non_regular == 0 and
+        outcome.skipped_already_staged == 0 and
+        outcome.skipped_no_change == 1)
+    {
+        return std.fmt.allocPrint(allocator, "No changes to stage: {s}\n", .{absolute_path});
     }
 
     var out = std.array_list.Managed(u8).init(allocator);
@@ -74,6 +84,9 @@ pub fn addResult(
     }
     if (outcome.skipped_already_staged != 0) {
         try writer.print("Skipped already staged file(s): {d}\n", .{outcome.skipped_already_staged});
+    }
+    if (outcome.skipped_no_change != 0) {
+        try writer.print("Skipped unchanged file(s): {d}\n", .{outcome.skipped_no_change});
     }
     if (outcome.skipped_non_regular != 0) {
         try writer.print("Skipped non-regular entry(s): {d}\n", .{outcome.skipped_non_regular});
@@ -387,6 +400,7 @@ test "addResult renders directory summary" {
     try outcome.staged_paths.append(try std.testing.allocator.dupe(u8, "/tmp/root/a.txt"));
     outcome.skipped_untracked = 2;
     outcome.skipped_already_staged = 1;
+    outcome.skipped_no_change = 3;
 
     const output = try addResult(std.testing.allocator, "/tmp/root", &outcome);
     defer std.testing.allocator.free(output);
@@ -395,9 +409,21 @@ test "addResult renders directory summary" {
         "Staged 1 file(s) under /tmp/root\n" ++
             "- /tmp/root/a.txt\n" ++
             "Skipped untracked file(s): 2\n" ++
-            "Skipped already staged file(s): 1\n",
+            "Skipped already staged file(s): 1\n" ++
+            "Skipped unchanged file(s): 3\n",
         output,
     );
+}
+
+test "addResult renders unchanged single file message" {
+    var outcome = add_ops.AddOutcome.init(std.testing.allocator);
+    defer add_ops.freeAddOutcome(std.testing.allocator, &outcome);
+    outcome.skipped_no_change = 1;
+
+    const output = try addResult(std.testing.allocator, "/tmp/a.txt", &outcome);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings("No changes to stage: /tmp/a.txt\n", output);
 }
 
 test "rmResult renders directory summary" {

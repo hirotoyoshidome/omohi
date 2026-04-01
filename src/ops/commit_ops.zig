@@ -58,8 +58,8 @@ test "commit writes immutable data and cleans staged" {
 
     const entry_text = try std.fmt.allocPrint(
         allocator,
-        "path=/objects/{s}/{s}\ncontentHash={s}\n",
-        .{ content_hash[0..2], content_hash, content_hash },
+        "path=/tmp/test-entry.txt\ntrackedFileId=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ncontentHash={s}\n",
+        .{content_hash},
     );
     defer allocator.free(entry_text);
 
@@ -104,8 +104,8 @@ test "commit writes immutable data and cleans staged" {
     defer allocator.free(snapshot_bytes);
     const expected_snapshot_entry = try std.fmt.allocPrint(
         allocator,
-        "entries=/objects/{s}/{s}:{s}",
-        .{ content_hash[0..2], content_hash, content_hash },
+        "entries=/tmp/test-entry.txt:{s}",
+        .{content_hash},
     );
     defer allocator.free(expected_snapshot_entry);
     try std.testing.expect(std.mem.indexOf(u8, snapshot_bytes, expected_snapshot_entry) != null);
