@@ -152,7 +152,7 @@ pub fn tracklistResult(allocator: std.mem.Allocator, list: *const track_ops.Trac
     }
 
     for (list.items) |entry| {
-        try writer.print("{s}: {s}\n", .{ entry.id.asSlice(), entry.path.asSlice() });
+        try writer.print("{s} {s}\n", .{ entry.id.asSlice(), entry.path.asSlice() });
     }
     return out.toOwnedSlice();
 }
@@ -517,7 +517,7 @@ test "tracklistResult renders id and path" {
     defer std.testing.allocator.free(output);
 
     try std.testing.expectEqualStrings(
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: /tmp/tracked.txt\n",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa /tmp/tracked.txt\n",
         output,
     );
 }

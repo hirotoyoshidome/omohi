@@ -123,7 +123,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 - Examples:
   - `omohi tracklist`
 - Notes:
-  - None
+  - Each output line is `<trackedFileId> <absolutePath>`.
 
 ### version
 
