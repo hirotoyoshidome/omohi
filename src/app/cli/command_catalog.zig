@@ -114,7 +114,7 @@ pub const all = [_]CommandSpec{
         .positionals = &.{},
         .options = &.{},
         .examples = &.{"omohi tracklist"},
-        .notes = &.{},
+        .notes = &.{"Each output line is `<trackedFileId> <absolutePath>`."},
     },
     .{
         .name = "version",
