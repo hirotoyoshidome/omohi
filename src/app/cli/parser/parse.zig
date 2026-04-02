@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const date_validation = @import("../validation/date.zig");
 
+// Parses CLI argv tokens into a typed request; commit requests may allocate owned tag slices.
 pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.ParsedRequest {
     if (argv.len == 0) return .{ .help = .{ .topic = null } };
 
@@ -43,12 +44,14 @@ pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.
     return error.InvalidCommand;
 }
 
+// Parses `help` arguments and accepts at most one optional topic.
 fn parseHelp(args: []const []const u8) !types.ParsedRequest {
     if (args.len == 0) return .{ .help = .{ .topic = null } };
     if (args.len == 1) return .{ .help = .{ .topic = args[0] } };
     return error.UnexpectedArgument;
 }
 
+// Parses the hidden completion command and requires `--index` before `--`.
 fn parseComplete(args: []const []const u8) !types.ParsedRequest {
     var index: ?usize = null;
     var stop_option = false;
@@ -93,15 +96,18 @@ fn parseComplete(args: []const []const u8) !types.ParsedRequest {
     } };
 }
 
+// Parses commands that accept no additional positional arguments.
 fn parseNoArgsCommand(comptime tag: anytype, args: []const []const u8) !types.ParsedRequest {
     if (args.len != 0) return error.UnexpectedArgument;
     return @unionInit(types.ParsedRequest, @tagName(tag), {});
 }
 
+// Compares tokens case-insensitively for CLI aliases and option keys.
 fn equalsIgnoreAsciiCase(lhs: []const u8, rhs: []const u8) bool {
     return std.ascii.eqlIgnoreCase(lhs, rhs);
 }
 
+// Parses a `--key` or `--key=value` token and returns null for non-long options.
 fn parseLongOption(token: []const u8) ?struct { key: []const u8, value: ?[]const u8 } {
     if (!std.mem.startsWith(u8, token, "--")) return null;
     const body = token[2..];
@@ -117,41 +123,49 @@ fn parseLongOption(token: []const u8) ?struct { key: []const u8, value: ?[]const
     return .{ .key = body, .value = null };
 }
 
+// Parses `track <path>`.
 fn parseTrack(args: []const []const u8) !types.ParsedRequest {
     if (args.len != 1) return error.MissingArgument;
     return .{ .track = .{ .path = args[0] } };
 }
 
+// Parses `untrack <trackedFileId>`.
 fn parseUntrack(args: []const []const u8) !types.ParsedRequest {
     if (args.len != 1) return error.MissingArgument;
     return .{ .untrack = .{ .tracked_file_id = args[0] } };
 }
 
+// Parses `add <path>`.
 fn parseAdd(args: []const []const u8) !types.ParsedRequest {
     if (args.len != 1) return error.MissingArgument;
     return .{ .add = .{ .path = args[0] } };
 }
 
+// Parses `rm <path>`.
 fn parseRm(args: []const []const u8) !types.ParsedRequest {
     if (args.len != 1) return error.MissingArgument;
     return .{ .rm = .{ .path = args[0] } };
 }
 
+// Parses `show <commitId>`.
 fn parseShow(args: []const []const u8) !types.ParsedRequest {
     if (args.len != 1) return error.MissingArgument;
     return .{ .show = .{ .commit_id = args[0] } };
 }
 
+// Parses `journal` with no extra arguments.
 fn parseJournal(args: []const []const u8) !types.ParsedRequest {
     if (args.len != 0) return error.UnexpectedArgument;
     return .{ .journal = .{} };
 }
 
+// Parses `tag ls <commitId>`.
 fn parseTagLs(args: []const []const u8) !types.ParsedRequest {
     if (args.len != 1) return error.MissingArgument;
     return .{ .tag_ls = .{ .commit_id = args[0] } };
 }
 
+// Parses `tag add <commitId> <tagNames...>`.
 fn parseTagAdd(args: []const []const u8) !types.ParsedRequest {
     if (args.len < 2) return error.MissingArgument;
     return .{ .tag_add = .{
@@ -160,6 +174,7 @@ fn parseTagAdd(args: []const []const u8) !types.ParsedRequest {
     } };
 }
 
+// Parses `tag rm <commitId> <tagNames...>`.
 fn parseTagRm(args: []const []const u8) !types.ParsedRequest {
     if (args.len < 2) return error.MissingArgument;
     return .{ .tag_rm = .{
@@ -168,6 +183,7 @@ fn parseTagRm(args: []const []const u8) !types.ParsedRequest {
     } };
 }
 
+// Parses commit options and returns owned tag storage that callers must release via `deinitParsedRequest`.
 fn parseCommit(allocator: std.mem.Allocator, args: []const []const u8) !types.ParsedRequest {
     var message: ?[]const u8 = null;
     var dry_run = false;
@@ -249,6 +265,7 @@ fn parseCommit(allocator: std.mem.Allocator, args: []const []const u8) !types.Pa
     } };
 }
 
+// Parses `find` options and validates any provided date filter.
 fn parseFind(args: []const []const u8) !types.ParsedRequest {
     var tag_name: ?[]const u8 = null;
     var date: ?[]const u8 = null;
