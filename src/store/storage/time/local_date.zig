@@ -86,6 +86,7 @@ pub fn utcIso8601ToLocalYmd(utc_iso: []const u8) LocalDateError![10]u8 {
     return out;
 }
 
+// Parses an ASCII digit slice into a signed integer timestamp component.
 fn parseInt(slice: []const u8) TimestampParseError!i64 {
     var value: i64 = 0;
     for (slice) |ch| {
@@ -97,12 +98,14 @@ fn parseInt(slice: []const u8) TimestampParseError!i64 {
     return value;
 }
 
+// Reports whether the Gregorian year is a leap year.
 fn isLeapYear(year: i64) bool {
     if (@mod(year, 4) != 0) return false;
     if (@mod(year, 100) != 0) return true;
     return @mod(year, 400) == 0;
 }
 
+// Returns the number of days in the given month for the given year.
 fn daysInMonth(year: i64, month: i64) i64 {
     return switch (month) {
         1, 3, 5, 7, 8, 10, 12 => 31,
@@ -112,6 +115,7 @@ fn daysInMonth(year: i64, month: i64) i64 {
     };
 }
 
+// Converts a civil date to days since the Unix epoch.
 fn daysFromCivil(year: i64, month: i64, day: i64) i64 {
     var y = year;
     if (month <= 2) y -= 1;
@@ -125,6 +129,7 @@ fn daysFromCivil(year: i64, month: i64, day: i64) i64 {
     return era * 146097 + doe - 719468;
 }
 
+// Multiplies two `i64` values while converting overflow into a timestamp parse error.
 fn mulI64(a: i64, b: i64) TimestampParseError!i64 {
     return std.math.mul(i64, a, b) catch error.TimestampOutOfRange;
 }

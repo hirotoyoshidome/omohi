@@ -91,11 +91,13 @@ pub fn readLatestLines(
     return out;
 }
 
+// Releases the owned journal lines stored in the list.
 pub fn freeStringList(allocator: std.mem.Allocator, list: *StringList) void {
     for (list.items) |item| allocator.free(item);
     list.deinit();
 }
 
+// Restricts journal persistence to the supported mutating command types.
 fn isSupportedCommandType(command_type: []const u8) bool {
     return std.mem.eql(u8, command_type, "track") or
         std.mem.eql(u8, command_type, "untrack") or
@@ -106,6 +108,7 @@ fn isSupportedCommandType(command_type: []const u8) bool {
         std.mem.eql(u8, command_type, "tag-rm");
 }
 
+// Builds the owned daily journal path for one UTC date.
 fn journalDailyPath(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -117,10 +120,12 @@ fn journalDailyPath(
     });
 }
 
+// Sorts journal file names in descending order so newer days are read first.
 fn isNameDescLessThan(_: void, lhs: []u8, rhs: []u8) bool {
     return std.mem.order(u8, lhs, rhs) == .gt;
 }
 
+// Appends newest lines from one journal file into the output list until the limit is reached.
 fn appendLatestLinesFromBytes(
     allocator: std.mem.Allocator,
     out: *StringList,

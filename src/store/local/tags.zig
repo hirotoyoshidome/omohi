@@ -7,6 +7,7 @@ const constrained_types = @import("../object/constrained_types.zig");
 
 const max_tag_file_size = 256;
 
+// Persists a tag record under `data/tags` using atomic write semantics.
 pub fn writeTag(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -19,6 +20,7 @@ pub fn writeTag(
     try atomic_write.atomicWrite(allocator, persistence.dir, path, created_at);
 }
 
+// Loads the owned created-at timestamp for one tag; the caller must free the result.
 pub fn readTagCreatedAt(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -35,6 +37,7 @@ pub fn readTagCreatedAt(
     return out;
 }
 
+// Moves one tag record into trash instead of deleting in place.
 pub fn deleteTag(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -43,6 +46,7 @@ pub fn deleteTag(
     try trash.moveTagToTrash(allocator, persistence, tag_name);
 }
 
+// Validates a tag name for safe file-name usage under the tags directory.
 fn validateTagFileName(tag_name: []const u8) !void {
     _ = try constrained_types.TagName.init(tag_name);
     if (std.mem.indexOfScalar(u8, tag_name, '/')) |_| return error.InvalidTagName;

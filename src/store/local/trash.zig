@@ -3,6 +3,7 @@ const std = @import("std");
 const PersistenceLayout = @import("../object/persistence_layout.zig").PersistenceLayout;
 const constrained_types = @import("../object/constrained_types.zig");
 
+// Moves one tracked file record into the tracked trash path.
 pub fn moveTrackedToTrash(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -16,6 +17,7 @@ pub fn moveTrackedToTrash(
     try moveFileToTrashPath(allocator, persistence.dir, from_path, to_path);
 }
 
+// Moves one staged entry record into the staged-entry trash path.
 pub fn moveStagedEntryToTrash(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -29,6 +31,7 @@ pub fn moveStagedEntryToTrash(
     try moveFileToTrashPath(allocator, persistence.dir, from_path, to_path);
 }
 
+// Moves one staged object into the staged-object trash path.
 pub fn moveStagedObjectToTrash(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -42,6 +45,7 @@ pub fn moveStagedObjectToTrash(
     try moveFileToTrashPath(allocator, persistence.dir, from_path, to_path);
 }
 
+// Moves one tag record into the tag trash path after validating the tag name.
 pub fn moveTagToTrash(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -55,6 +59,7 @@ pub fn moveTagToTrash(
     try moveFileToTrashPath(allocator, persistence.dir, from_path, to_path);
 }
 
+// Moves one commit-tag record into the commit-tag trash path.
 pub fn moveCommitTagsToTrash(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -68,6 +73,7 @@ pub fn moveCommitTagsToTrash(
     try moveFileToTrashPath(allocator, persistence.dir, from_path, to_path);
 }
 
+// Moves one file to its trash location and fsyncs both parent directories.
 pub fn moveFileToTrashPath(
     allocator: std.mem.Allocator,
     dir: std.fs.Dir,
@@ -87,6 +93,7 @@ pub fn moveFileToTrashPath(
     try syncParentDir(dir, to_path);
 }
 
+// Ensures that the parent directories for the target relative path exist.
 fn ensureParentDirs(dir: std.fs.Dir, path: []const u8) !void {
     if (std.fs.path.dirname(path)) |parent| {
         if (parent.len == 0) return;
@@ -94,6 +101,7 @@ fn ensureParentDirs(dir: std.fs.Dir, path: []const u8) !void {
     }
 }
 
+// Fsyncs the parent directory for the target relative path.
 fn syncParentDir(dir: std.fs.Dir, path: []const u8) !void {
     if (std.fs.path.dirname(path)) |parent| {
         if (parent.len == 0) return try syncDir(dir);
@@ -105,6 +113,7 @@ fn syncParentDir(dir: std.fs.Dir, path: []const u8) !void {
     try syncDir(dir);
 }
 
+// Fsyncs a directory and tolerates platforms that reject directory fsync.
 fn syncDir(dir: std.fs.Dir) !void {
     const rc = std.posix.system.fsync(dir.fd);
     switch (std.posix.errno(rc)) {
@@ -113,6 +122,7 @@ fn syncDir(dir: std.fs.Dir) !void {
     }
 }
 
+// Validates a tag name for safe trash-path usage.
 fn validateTagFileName(name: []const u8) !void {
     _ = try constrained_types.TagName.init(name);
     if (std.mem.indexOfScalar(u8, name, '/')) |_| return error.InvalidTagName;

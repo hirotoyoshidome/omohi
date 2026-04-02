@@ -13,6 +13,7 @@ pub const CommitTagsRecord = struct {
     created_at: []u8,
     updated_at: []u8,
 
+    // Releases all owned tag and timestamp strings held by the record.
     pub fn deinit(self: *CommitTagsRecord, allocator: std.mem.Allocator) void {
         for (self.tags.items) |tag| allocator.free(tag);
         self.tags.deinit();
@@ -23,6 +24,7 @@ pub const CommitTagsRecord = struct {
 
 const max_commit_tags_file_size = 32 * 1024;
 
+// Persists one commit-tag record using atomic write semantics.
 pub fn writeCommitTags(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -43,6 +45,7 @@ pub fn writeCommitTags(
     try atomic_write.atomicWrite(allocator, persistence.dir, path, content);
 }
 
+// Loads and parses one commit-tag record from storage.
 pub fn readCommitTags(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -58,6 +61,7 @@ pub fn readCommitTags(
     return parseCommitTagsFile(allocator, bytes);
 }
 
+// Moves one commit-tag record into trash instead of deleting in place.
 pub fn deleteCommitTags(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -66,6 +70,7 @@ pub fn deleteCommitTags(
     try trash.moveCommitTagsToTrash(allocator, persistence, commit_id);
 }
 
+// Formats a commit-tag record into owned file contents for the caller to free.
 fn formatCommitTagsFile(
     allocator: std.mem.Allocator,
     commit_id: []const u8,
@@ -102,6 +107,7 @@ fn formatCommitTagsFile(
     return buf.toOwnedSlice();
 }
 
+// Parses a stored commit-tag file into owned record fields.
 fn parseCommitTagsFile(
     allocator: std.mem.Allocator,
     bytes: []const u8,
@@ -165,12 +171,14 @@ fn parseCommitTagsFile(
     };
 }
 
+// Validates a tag name for safe commit-tag file usage.
 fn validateTagFileName(tag_name: []const u8) !void {
     _ = try constrained_types.TagName.init(tag_name);
     if (std.mem.indexOfScalar(u8, tag_name, '/')) |_| return error.InvalidTagName;
     if (std.mem.indexOf(u8, tag_name, "..")) |_| return error.InvalidTagName;
 }
 
+// Sorts tag names in ascending byte order.
 fn sortTagNameAsc(_: void, lhs: []u8, rhs: []u8) bool {
     return std.mem.order(u8, lhs, rhs) == .lt;
 }

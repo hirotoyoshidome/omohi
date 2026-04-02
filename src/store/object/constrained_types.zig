@@ -137,12 +137,14 @@ pub const ContentPath = struct {
     }
 };
 
+// Validates absolute paths while rejecting parent traversal segments.
 fn validateAbsolutePathWithoutParent(raw: []const u8, comptime err_tag: anytype) !void {
     if (raw.len == 0) return err_tag;
     if (raw[0] != '/') return err_tag;
     if (std.mem.indexOf(u8, raw, "..") != null) return err_tag;
 }
 
+// Parses a fixed-length hex string into lowercase bytes.
 fn parseHexFixed(source: []const u8, dest: []u8, comptime err_tag: anytype) !void {
     if (source.len != dest.len) return err_tag;
     for (source, 0..) |ch, idx| {
@@ -151,6 +153,7 @@ fn parseHexFixed(source: []const u8, dest: []u8, comptime err_tag: anytype) !voi
     }
 }
 
+// Encodes bytes into lowercase hexadecimal characters.
 fn encodeHexLower(dest: []u8, source: []const u8) void {
     const alphabet = "0123456789abcdef";
     var di: usize = 0;
