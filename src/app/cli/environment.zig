@@ -4,12 +4,14 @@ pub const OmohiLocation = struct {
     path: []u8,
     dir: std.fs.Dir,
 
+    // Releases the opened store directory and frees the owned path string.
     pub fn deinit(self: *OmohiLocation, allocator: std.mem.Allocator) void {
         self.dir.close();
         allocator.free(self.path);
     }
 };
 
+// Resolves the user's `~/.omohi` path and returns an owned string.
 pub fn resolveOmohiPath(allocator: std.mem.Allocator) ![]u8 {
     const home = std.process.getEnvVarOwned(allocator, "HOME") catch return error.MissingHome;
     defer allocator.free(home);
@@ -17,6 +19,7 @@ pub fn resolveOmohiPath(allocator: std.mem.Allocator) ![]u8 {
     return std.fmt.allocPrint(allocator, "{s}/.omohi", .{home});
 }
 
+// Opens the store directory and optionally creates it first on initial track flows.
 pub fn openOmohiDir(
     allocator: std.mem.Allocator,
     create_if_missing: bool,

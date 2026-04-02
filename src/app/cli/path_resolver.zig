@@ -5,6 +5,7 @@ pub const SourcePath = struct {
     relative_path: []const u8,
 };
 
+// Resolves a user-supplied path into an owned absolute path string.
 pub fn resolveAbsolutePath(allocator: std.mem.Allocator, raw_path: []const u8) ![]u8 {
     if (std.fs.path.isAbsolute(raw_path)) {
         return std.fs.path.resolve(allocator, &.{raw_path});
@@ -16,6 +17,7 @@ pub fn resolveAbsolutePath(allocator: std.mem.Allocator, raw_path: []const u8) !
     return std.fs.path.resolve(allocator, &.{ cwd, raw_path });
 }
 
+// Opens the parent directory for an absolute file path; the caller must close `source_dir`.
 pub fn openSourcePath(absolute_path: []const u8) !SourcePath {
     const parent = std.fs.path.dirname(absolute_path) orelse return error.InvalidPath;
     const name = std.fs.path.basename(absolute_path);
