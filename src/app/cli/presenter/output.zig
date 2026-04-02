@@ -222,7 +222,7 @@ pub fn findResult(
     }
 
     for (list.items) |entry| {
-        try writer.print("- {s} {s}: {s}\n", .{ entry.commit_id.asSlice(), entry.local_created_at, entry.message });
+        try writer.print("- {s} {s} {s}\n", .{ entry.local_created_at, entry.message, entry.commit_id.asSlice() });
     }
     return out.toOwnedSlice();
 }
@@ -515,7 +515,7 @@ test "findResult renders migration heading and entries" {
 
     try std.testing.expectEqualStrings(
         "Found 1 commit(s) for tag release.\n" ++
-            "- aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2026-03-10T09:00:00.000+09:00: first\n",
+            "- 2026-03-10T09:00:00.000+09:00 first aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
         output,
     );
 }
