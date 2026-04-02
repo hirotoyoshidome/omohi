@@ -7,6 +7,7 @@ const presenter = @import("../presenter/output.zig");
 const exit_code = @import("../error/exit_code.zig");
 const track_ops = @import("../../../ops/track_ops.zig");
 
+// Runs the `track` command and returns owned CLI output for the caller to free.
 pub fn run(allocator: std.mem.Allocator, args: parser_types.TrackArgs) !command_types.CommandResult {
     var omohi = try environment.openOmohiDir(allocator, true);
     defer omohi.deinit(allocator);

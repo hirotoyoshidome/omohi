@@ -10,6 +10,7 @@ const error_message = @import("error/error_message.zig");
 const environment = @import("environment.zig");
 const journal_append = @import("../../ops/journal/append.zig");
 
+// Runs the CLI request, writes output to stdout or stderr, and returns the final exit code.
 pub fn run(allocator: std.mem.Allocator, argv: []const []const u8) u8 {
     var parsed = parser.parseArgs(allocator, argv) catch |err| {
         writeErrLine(error_message.forParseError(err));
@@ -57,19 +58,23 @@ pub fn run(allocator: std.mem.Allocator, argv: []const []const u8) u8 {
     return result.exit_code;
 }
 
+// Writes text to stdout and ignores I/O failures because no recovery path exists here.
 fn writeOut(text: []const u8) void {
     std.fs.File.stdout().writeAll(text) catch {};
 }
 
+// Writes text to stderr and ignores I/O failures because no recovery path exists here.
 fn writeErr(text: []const u8) void {
     std.fs.File.stderr().writeAll(text) catch {};
 }
 
+// Writes a line to stderr by appending a trailing newline.
 fn writeErrLine(text: []const u8) void {
     writeErr(text);
     writeErr("\n");
 }
 
+// Collects process arguments, normalizes them to slices, and delegates to `run`.
 pub fn runFromProcessArgs(allocator: std.mem.Allocator) u8 {
     const args = std.process.argsAlloc(allocator) catch return exit_code.system_error;
     defer std.process.argsFree(allocator, args);

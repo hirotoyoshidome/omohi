@@ -7,6 +7,7 @@ const presenter = @import("../presenter/output.zig");
 const exit_code = @import("../error/exit_code.zig");
 const add_ops = @import("../../../ops/add_ops.zig");
 
+// Runs the `add` command and returns owned CLI output for the caller to free.
 pub fn run(allocator: std.mem.Allocator, args: parser_types.AddArgs) !command_types.CommandResult {
     var omohi = try environment.openOmohiDir(allocator, false);
     defer omohi.deinit(allocator);
@@ -24,6 +25,7 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.AddArgs) !command_ty
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
 }
 
+// Builds the owned stderr result for an untracked path.
 fn trackedNotFoundResult(
     allocator: std.mem.Allocator,
     absolute_path: []const u8,

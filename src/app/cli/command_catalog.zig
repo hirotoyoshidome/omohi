@@ -216,6 +216,7 @@ pub const all = [_]CommandSpec{
     },
 };
 
+// Reports whether the catalog contains a command with the exact internal name.
 fn hasCommandName(name: []const u8) bool {
     for (all) |spec| {
         if (std.mem.eql(u8, spec.name, name)) return true;

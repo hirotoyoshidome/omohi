@@ -73,6 +73,7 @@ pub const ParsedRequest = union(enum) {
     complete: CompleteArgs,
 };
 
+// Releases any owned fields stored inside a parsed request union.
 pub fn deinitParsedRequest(allocator: anytype, parsed: *ParsedRequest) void {
     switch (parsed.*) {
         .commit => |args| allocator.free(args.tags),

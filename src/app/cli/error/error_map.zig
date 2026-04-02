@@ -1,6 +1,7 @@
 const std = @import("std");
 const exit_code = @import("exit_code.zig");
 
+// Maps runtime errors to stable CLI exit codes.
 pub fn exitCodeFor(err: anyerror) u8 {
     if (err == error.DataDestroyed) return exit_code.data_destroyed;
     if (err == error.MissingStoreVersion) return exit_code.data_destroyed;

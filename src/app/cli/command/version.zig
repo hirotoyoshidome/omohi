@@ -4,6 +4,7 @@ const build_options = @import("build_options");
 const command_types = @import("../runtime/types.zig");
 const exit_code = @import("../error/exit_code.zig");
 
+// Renders the build version string as owned CLI output for the caller to free.
 pub fn run(allocator: std.mem.Allocator) !command_types.CommandResult {
     const output = try std.fmt.allocPrint(
         allocator,

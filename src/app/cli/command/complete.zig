@@ -5,6 +5,7 @@ const environment = @import("../environment.zig");
 const exit_code = @import("../error/exit_code.zig");
 const completion_ops = @import("../../../ops/completion_ops.zig");
 
+// Runs the hidden completion command and returns newline-delimited owned output.
 pub fn run(allocator: std.mem.Allocator, args: parser_types.CompleteArgs) !command_types.CommandResult {
     var list = if (completion_ops.requiresStore(args.words, args.index)) blk: {
         var omohi = try environment.openOmohiDir(allocator, false);
@@ -17,6 +18,7 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.CompleteArgs) !comma
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
 }
 
+// Renders completion candidates into an owned newline-delimited buffer.
 fn renderCandidates(allocator: std.mem.Allocator, items: []const []u8) ![]u8 {
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();

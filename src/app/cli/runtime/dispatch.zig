@@ -18,6 +18,7 @@ const tag_rm = @import("../command/tag_rm.zig");
 const help = @import("../command/help.zig");
 const complete = @import("../command/complete.zig");
 
+// Dispatches a parsed request to the matching command implementation.
 pub fn dispatch(allocator: std.mem.Allocator, parsed: parser_types.ParsedRequest) !command_types.CommandResult {
     return switch (parsed) {
         .track => |args| try track.run(allocator, args),
