@@ -36,6 +36,7 @@ pub fn snapshotIdFrom(allocator: std.mem.Allocator, entries: []const ContentEntr
     return out;
 }
 
+// Wraps `snapshotIdFrom` in the constrained snapshot-id value object.
 pub fn snapshotIdVoFrom(
     allocator: std.mem.Allocator,
     entries: []const ContentEntry,
@@ -43,10 +44,12 @@ pub fn snapshotIdVoFrom(
     return .{ .value = try snapshotIdFrom(allocator, entries) };
 }
 
+// Sorts content entries by their tracked path.
 fn isPathLessThan(_: void, lhs: ContentEntry, rhs: ContentEntry) bool {
     return ContentEntry.isPathLessThan(lhs, rhs);
 }
 
+// Encodes bytes into lowercase hexadecimal characters.
 fn encodeHexLower(dest: []u8, source: []const u8) void {
     const alphabet = "0123456789abcdef";
     var di: usize = 0;
@@ -57,6 +60,7 @@ fn encodeHexLower(dest: []u8, source: []const u8) void {
     }
 }
 
+// Finalizes the hasher and returns its lowercase hex digest.
 pub fn sha256HexFromHasher(hasher: *sha2.Sha256) [64]u8 {
     var digest: [sha2.Sha256.digest_length]u8 = undefined;
     hasher.final(&digest);
@@ -81,6 +85,7 @@ pub fn commitIdFrom(snapshotId: []const u8, message: []const u8) [64]u8 {
     return out;
 }
 
+// Wraps `commitIdFrom` in the constrained commit-id value object.
 pub fn commitIdVoFrom(snapshot_id: constrained_types.SnapshotId, message: []const u8) constrained_types.CommitId {
     return .{ .value = commitIdFrom(snapshot_id.asSlice(), message) };
 }
@@ -100,6 +105,7 @@ pub fn stagedFileIdFrom(path: []const u8, contentHash: []const u8) [64]u8 {
     return out;
 }
 
+// Wraps `stagedFileIdFrom` in the constrained staged-file-id value object.
 pub fn stagedFileIdVoFrom(
     path: constrained_types.TrackedFilePath,
     content_hash: constrained_types.ContentHash,

@@ -190,10 +190,12 @@ pub const PersistenceLayout = struct {
     }
 };
 
+// Returns the sibling `.trash` directory for a fixed base path.
 fn trashPath(comptime base: []const u8) []const u8 {
     return base ++ "/.trash";
 }
 
+// Builds an owned prefixed object path in live or trash form.
 fn buildPrefixedPath(
     allocator: std.mem.Allocator,
     base: []const u8,
