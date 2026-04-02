@@ -41,6 +41,7 @@ pub fn releaseLock(dir: std.fs.Dir) void {
     syncDir(dir) catch {};
 }
 
+// Fsyncs a directory and tolerates platforms that reject directory fsync.
 fn syncDir(dir: std.fs.Dir) !void {
     const rc = std.posix.system.fsync(dir.fd);
     switch (std.posix.errno(rc)) {

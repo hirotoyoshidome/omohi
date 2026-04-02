@@ -13,6 +13,7 @@ pub fn atomicWrite(
     try atomicWriteFromReader(allocator, dir, path, stream.reader());
 }
 
+// Streams data from the reader into a temp file, then renames and fsyncs the parent directory.
 pub fn atomicWriteFromReader(
     allocator: std.mem.Allocator,
     dir: std.fs.Dir,
@@ -56,6 +57,7 @@ pub fn atomicWriteFromReader(
     try syncParentDir(dir, path);
 }
 
+// Reads one chunk from either a standard reader or an interface-based reader.
 fn readChunk(reader: anytype, buffer: []u8) !usize {
     const ReaderType = @TypeOf(reader);
     const BaseType = switch (@typeInfo(ReaderType)) {
@@ -74,6 +76,7 @@ fn readChunk(reader: anytype, buffer: []u8) !usize {
     @compileError("atomicWriteFromReader requires a reader with read() or interface.readSliceShort()");
 }
 
+// Ensures that the parent directories for the target relative path exist.
 fn ensureParentDirs(dir: std.fs.Dir, path: []const u8) !void {
     if (std.fs.path.dirname(path)) |parent| {
         if (parent.len == 0) return;
@@ -81,6 +84,7 @@ fn ensureParentDirs(dir: std.fs.Dir, path: []const u8) !void {
     }
 }
 
+// Fsyncs the parent directory for the target relative path.
 fn syncParentDir(dir: std.fs.Dir, path: []const u8) !void {
     if (std.fs.path.dirname(path)) |parent| {
         if (parent.len == 0) {
@@ -95,6 +99,7 @@ fn syncParentDir(dir: std.fs.Dir, path: []const u8) !void {
     }
 }
 
+// Builds an owned temporary path alongside the destination file.
 fn makeTempPath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     var rand: [8]u8 = undefined;
     std.crypto.random.bytes(&rand);
@@ -103,6 +108,7 @@ fn makeTempPath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "{s}.tmp-{s}", .{ path, hex });
 }
 
+// Encodes bytes into lowercase hexadecimal characters.
 fn encodeHexLower(dest: []u8, source: []const u8) void {
     const alphabet = "0123456789abcdef";
     var di: usize = 0;
@@ -113,6 +119,7 @@ fn encodeHexLower(dest: []u8, source: []const u8) void {
     }
 }
 
+// Fsyncs a directory and tolerates platforms that reject directory fsync.
 fn syncDir(dir: std.fs.Dir) !void {
     const rc = std.posix.system.fsync(dir.fd);
     switch (std.posix.errno(rc)) {
