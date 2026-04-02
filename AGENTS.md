@@ -99,6 +99,8 @@ Agents should also refer to directories under `docs/` when they are relevant to 
 - Increment `VERSION` only when the data structure changes.
 - Persist timestamps in UTC; display in system timezone.
 - Keep the fixed millisecond timestamp format.
+- Add a short comment above non-trivial functions. Public functions must follow the Zig documentation rules, and internal helper functions should still have a brief intent comment unless trivial.
+- When a file is generated from Zig sources or templates, modify the generator/source (`.zig`, templates, catalog data) first; do not hand-edit the generated artifact alone.
 - Naming rules:
   - Do not use `save` (too ambiguous).
   - Define `update` at field/column granularity.
@@ -121,7 +123,7 @@ Agents should also refer to directories under `docs/` when they are relevant to 
 - Ensure Bash Completion still works. Use `make test-completion` when commands, subcommands, or options may be affected.
 - If commands, subcommands, or options are added or changed, update completion behavior accordingly.
 - Avoid introducing significant performance regressions. When behavior may affect command cost or traversal size, verify that performance is not materially worse.
-- If commands, subcommands, or options are added or changed, update generated user-facing CLI docs:
+- If commands, subcommands, or options are added or changed, update the generating Zig sources first and then regenerate the user-facing CLI docs:
   - `docs/cli.md`
   - `docs/man/omohi.1`
 - Ensure formatting is applied. Use `make fmt-check` at minimum.
