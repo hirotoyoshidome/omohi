@@ -142,7 +142,7 @@ pub const all = [_]CommandSpec{
         },
         .notes = &.{
             "When both filters are set, intersection is returned.",
-            "Each result line is shown as local timestamp, commit message, then commit ID.",
+            "Each result is shown as commit ID, local timestamp, and commit message in a multi-line block.",
         },
     },
     .{
