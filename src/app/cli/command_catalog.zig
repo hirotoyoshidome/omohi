@@ -154,7 +154,11 @@ pub const all = [_]CommandSpec{
         },
         .options = &.{},
         .examples = &.{"omohi show aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-        .notes = &.{},
+        .notes = &.{
+            "Shows the commit ID and UTC timestamp first, then the commit message.",
+            "Lists changed file paths under `commit changes:`.",
+            "Omits internal IDs such as `snapshotId` and object content hashes.",
+        },
     },
     .{
         .name = "journal",

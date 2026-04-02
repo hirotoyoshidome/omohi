@@ -258,6 +258,17 @@ required: 64\-char commit ID.
 .nf
 omohi show aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 .fi
+.TP
+.B Notes
+.RS 4
+Shows the commit ID and UTC timestamp first, then the commit message.
+.RE
+.RS 4
+Lists changed file paths under `commit changes:`.
+.RE
+.RS 4
+Omits internal IDs such as `snapshotId` and object content hashes.
+.RE
 .SS journal
 .TP
 .B Summary

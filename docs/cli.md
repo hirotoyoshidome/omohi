@@ -167,7 +167,9 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 - Examples:
   - `omohi show aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
 - Notes:
-  - None
+  - Shows the commit ID and UTC timestamp first, then the commit message.
+  - Lists changed file paths under `commit changes:`.
+  - Omits internal IDs such as `snapshotId` and object content hashes.
 
 ### journal
 
