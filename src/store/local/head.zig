@@ -3,6 +3,7 @@ const std = @import("std");
 const atomic_write = @import("../storage/atomic_write.zig");
 const PersistenceLayout = @import("../object/persistence_layout.zig").PersistenceLayout;
 
+// Persists the current HEAD commit id using atomic write semantics.
 pub fn writeHead(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -13,6 +14,7 @@ pub fn writeHead(
     try atomic_write.atomicWrite(allocator, persistence.dir, persistence.headPath(), content);
 }
 
+// Formats HEAD file contents as an owned newline-terminated buffer.
 fn formatHeadFile(allocator: std.mem.Allocator, commit_id: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "{s}\n", .{commit_id});
 }

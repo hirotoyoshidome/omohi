@@ -14,6 +14,7 @@ pub const TrackedList = std.array_list.Managed(TrackedEntry);
 
 const max_tracked_file_size = 16 * 1024;
 
+// Persists one tracked file record using atomic write semantics.
 pub fn writeTracked(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -29,6 +30,7 @@ pub fn writeTracked(
     try atomic_write.atomicWrite(allocator, persistence.dir, path, tracked_path);
 }
 
+// Moves one tracked file record into trash instead of deleting in place.
 pub fn deleteTracked(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -37,6 +39,7 @@ pub fn deleteTracked(
     try trash.moveTrackedToTrash(allocator, persistence, tracked_file_id);
 }
 
+// Loads all tracked file records into owned path storage.
 pub fn loadTracked(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -72,6 +75,7 @@ pub fn loadTracked(
     return list;
 }
 
+// Releases the owned tracked paths stored in the list.
 pub fn freeTrackedList(allocator: std.mem.Allocator, list: *TrackedList) void {
     for (list.items) |entry| allocator.free(@constCast(entry.path.asSlice()));
     list.deinit();

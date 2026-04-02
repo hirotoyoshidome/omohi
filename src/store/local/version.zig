@@ -5,6 +5,7 @@ const PersistenceLayout = @import("../object/persistence_layout.zig").Persistenc
 
 const max_version_file_size = 64;
 
+// Persists the store version file using atomic write semantics.
 pub fn writeVersion(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -15,6 +16,7 @@ pub fn writeVersion(
     try atomic_write.atomicWrite(allocator, persistence.dir, persistence.versionPath(), content);
 }
 
+// Loads and parses the store version number.
 pub fn readVersion(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -31,6 +33,7 @@ pub fn readVersion(
     return std.fmt.parseInt(u32, trimmed, 10) catch error.InvalidVersion;
 }
 
+// Verifies that the stored version matches the expected schema version.
 pub fn ensureVersion(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,

@@ -4,6 +4,7 @@ const atomic_write = @import("../storage/atomic_write.zig");
 const PersistenceLayout = @import("../object/persistence_layout.zig").PersistenceLayout;
 const utc = @import("../storage/time/utc.zig");
 
+// Persists one commit record using atomic write semantics.
 pub fn writeCommit(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -21,6 +22,7 @@ pub fn writeCommit(
     try atomic_write.atomicWrite(allocator, persistence.dir, path, content);
 }
 
+// Formats a commit record into owned file contents for the caller to free.
 fn formatCommitFile(
     allocator: std.mem.Allocator,
     snapshot_id: []const u8,

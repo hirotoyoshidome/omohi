@@ -5,6 +5,7 @@ const PersistenceLayout = @import("../object/persistence_layout.zig").Persistenc
 const atomic_write = @import("../storage/atomic_write.zig");
 const constrained_types = @import("../object/constrained_types.zig");
 
+// Persists one snapshot record using atomic write semantics.
 pub fn writeSnapshot(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -20,6 +21,7 @@ pub fn writeSnapshot(
     try atomic_write.atomicWrite(allocator, persistence.dir, path, content);
 }
 
+// Formats snapshot entries into owned file contents for the caller to free.
 fn formatSnapshotEntries(allocator: std.mem.Allocator, entries: []const ContentEntry) ![]u8 {
     var buffer = std.array_list.Managed(u8).init(allocator);
     defer buffer.deinit();

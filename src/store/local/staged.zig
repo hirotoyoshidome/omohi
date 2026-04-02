@@ -25,6 +25,7 @@ pub const RawEntryList = std.array_list.Managed(RawEntryInfo);
 const max_entry_file_size = 1024 * 1024;
 const max_staged_object_size = 64 * 1024 * 1024;
 
+// Persists one staged entry record using atomic write semantics.
 pub fn writeStagedEntry(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -46,6 +47,7 @@ pub fn writeStagedEntry(
     try atomic_write.atomicWrite(allocator, persistence.dir, path, content);
 }
 
+// Writes a staged object only when neither staged nor committed storage already contains the hash.
 pub fn writeStagedObjectIfMissing(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -66,6 +68,7 @@ pub fn writeStagedObjectIfMissing(
     try atomic_write.atomicWrite(allocator, persistence.dir, dest_path, bytes);
 }
 
+// Streams a staged object from a reader when the hash is not already present.
 pub fn writeStagedObjectFromReaderIfMissing(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -85,6 +88,7 @@ pub fn writeStagedObjectFromReaderIfMissing(
     try atomic_write.atomicWriteFromReader(allocator, persistence.dir, dest_path, reader);
 }
 
+// Reports whether the content hash exists in staged or committed object storage.
 fn objectExists(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -112,6 +116,7 @@ fn objectExists(
     return true;
 }
 
+// Loads staged entry files into owned parsed entries.
 pub fn loadStagedEntries(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -140,11 +145,13 @@ pub fn loadStagedEntries(
     return entries;
 }
 
+// Releases owned staged entry paths stored in the list.
 pub fn freeEntries(allocator: std.mem.Allocator, entries: *EntryList) void {
     for (entries.items) |entry| allocator.free(@constCast(entry.path.asSlice()));
     entries.deinit();
 }
 
+// Loads staged entry files as partially parsed raw entry information.
 pub fn listRawEntries(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -178,6 +185,7 @@ pub fn listRawEntries(
     return entries;
 }
 
+// Releases owned raw entry file names and optional paths.
 pub fn freeRawEntries(allocator: std.mem.Allocator, entries: *RawEntryList) void {
     for (entries.items) |entry| {
         allocator.free(entry.file_name);
@@ -186,6 +194,7 @@ pub fn freeRawEntries(allocator: std.mem.Allocator, entries: *RawEntryList) void
     entries.deinit();
 }
 
+// Finds one staged entry by absolute path.
 pub fn findByPath(entries: []const StagedEntry, absolute_path: []const u8) ?StagedEntry {
     for (entries) |entry| {
         if (std.mem.eql(u8, entry.path.asSlice(), absolute_path)) return entry;
@@ -193,14 +202,17 @@ pub fn findByPath(entries: []const StagedEntry, absolute_path: []const u8) ?Stag
     return null;
 }
 
+// Reports whether a staged entry exists for the absolute path.
 pub fn containsPath(entries: []const StagedEntry, absolute_path: []const u8) bool {
     return findByPath(entries, absolute_path) != null;
 }
 
+// Derives the staged file id for one parsed staged entry.
 pub fn stagedFileIdForEntry(entry: StagedEntry) [64]u8 {
     return hash.stagedFileIdFrom(entry.path.asSlice(), entry.content_hash.asSlice());
 }
 
+// Verifies that every staged entry has either a staged object or a committed object.
 pub fn ensureObjectsExistForEntries(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -231,6 +243,7 @@ pub fn ensureObjectsExistForEntries(
     }
 }
 
+// Moves staged objects into committed object storage and fsyncs destination parents.
 pub fn moveObjectsFromStage(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -265,6 +278,7 @@ pub fn moveObjectsFromStage(
     }
 }
 
+// Resets the staged area by recreating empty entries and objects directories.
 pub fn resetStaged(persistence: PersistenceLayout) !void {
     var has_staged = true;
     persistence.dir.access(persistence.stagedRoot(), .{}) catch |err| switch (err) {
@@ -276,11 +290,13 @@ pub fn resetStaged(persistence: PersistenceLayout) !void {
     try persistence.dir.makePath(persistence.stagedObjectsPath());
 }
 
+// Releases owned snapshot entry paths stored in the list.
 pub fn freeSnapshotEntries(allocator: std.mem.Allocator, entries: *std.array_list.Managed(ContentEntry)) void {
     for (entries.items) |entry| allocator.free(@constCast(entry.path.asSlice()));
     entries.deinit();
 }
 
+// Converts staged entries into owned snapshot entries for commit persistence.
 pub fn snapshotEntriesFromStaged(
     allocator: std.mem.Allocator,
     entries: []const StagedEntry,
@@ -300,6 +316,7 @@ pub fn snapshotEntriesFromStaged(
     return out;
 }
 
+// Parses one staged entry file into validated typed fields.
 fn parseStagedEntry(allocator: std.mem.Allocator, bytes: []const u8) !StagedEntry {
     var path_value: ?[]const u8 = null;
     var tracked_file_id_value: ?[]const u8 = null;
@@ -340,6 +357,7 @@ fn parseStagedEntry(allocator: std.mem.Allocator, bytes: []const u8) !StagedEntr
     };
 }
 
+// Extracts the staged path as owned memory and returns null for missing or invalid values.
 fn extractPathValueOwned(allocator: std.mem.Allocator, bytes: []const u8) !?[]u8 {
     const raw_path = propertyValue(bytes, "path") orelse return null;
     const owned = try allocator.dupe(u8, raw_path);
@@ -351,11 +369,13 @@ fn extractPathValueOwned(allocator: std.mem.Allocator, bytes: []const u8) !?[]u8
     return owned;
 }
 
+// Extracts the staged content hash when present and valid.
 fn extractContentHashValue(bytes: []const u8) ?constrained_types.ContentHash {
     const raw_hash = propertyValue(bytes, "contentHash") orelse return null;
     return constrained_types.ContentHash.init(raw_hash) catch null;
 }
 
+// Returns the value for a `key=value` property line when present.
 fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
     var iter = std.mem.splitScalar(u8, bytes, '\n');
     while (iter.next()) |line_raw| {
@@ -369,6 +389,7 @@ fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
     return null;
 }
 
+// Formats one staged entry into owned file contents for the caller to free.
 fn formatStagedEntry(allocator: std.mem.Allocator, entry: StagedEntry) ![]u8 {
     return std.fmt.allocPrint(
         allocator,
@@ -377,6 +398,7 @@ fn formatStagedEntry(allocator: std.mem.Allocator, entry: StagedEntry) ![]u8 {
     );
 }
 
+// Ensures that the parent directories for the target relative path exist.
 fn ensureParentDirs(dir: std.fs.Dir, path: []const u8) !void {
     if (std.fs.path.dirname(path)) |parent| {
         if (parent.len == 0) return;
@@ -384,6 +406,7 @@ fn ensureParentDirs(dir: std.fs.Dir, path: []const u8) !void {
     }
 }
 
+// Fsyncs the parent directory for the target relative path.
 fn syncParentDir(dir: std.fs.Dir, path: []const u8) !void {
     if (std.fs.path.dirname(path)) |parent| {
         if (parent.len == 0) {
@@ -398,6 +421,7 @@ fn syncParentDir(dir: std.fs.Dir, path: []const u8) !void {
     }
 }
 
+// Fsyncs a directory and tolerates platforms that reject directory fsync.
 fn syncDir(dir: std.fs.Dir) !void {
     const rc = std.posix.system.fsync(dir.fd);
     switch (std.posix.errno(rc)) {
@@ -406,6 +430,7 @@ fn syncDir(dir: std.fs.Dir) !void {
     }
 }
 
+// TEST-ONLY: Writes a raw staged entry file fixture without atomic-write behavior.
 fn writeStageEntryFile(
     allocator: std.mem.Allocator,
     dir: std.fs.Dir,
