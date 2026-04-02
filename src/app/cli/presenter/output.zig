@@ -13,10 +13,12 @@ pub const TagRemoveOutcome = enum {
     removed,
 };
 
+// Returns an owned copy of a fixed presenter message.
 pub fn message(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
     return allocator.dupe(u8, text);
 }
 
+// Renders the track result as owned CLI output.
 pub fn trackResult(
     allocator: std.mem.Allocator,
     absolute_path: []const u8,
@@ -43,10 +45,12 @@ pub fn trackResult(
     return out.toOwnedSlice();
 }
 
+// Renders the untrack result as owned CLI output.
 pub fn untrackResult(allocator: std.mem.Allocator, absolute_path: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "Untracked: {s}\n", .{absolute_path});
 }
 
+// Renders add results as owned CLI output, including skipped-path summaries when needed.
 pub fn addResult(
     allocator: std.mem.Allocator,
     absolute_path: []const u8,
@@ -95,6 +99,7 @@ pub fn addResult(
     return out.toOwnedSlice();
 }
 
+// Renders rm results as owned CLI output, including skipped-path summaries when needed.
 pub fn rmResult(
     allocator: std.mem.Allocator,
     absolute_path: []const u8,
@@ -130,10 +135,12 @@ pub fn rmResult(
     return out.toOwnedSlice();
 }
 
+// Renders the created commit id as owned CLI output.
 pub fn commitResult(allocator: std.mem.Allocator, commit_id: [64]u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "Committed {s}.\n", .{&commit_id});
 }
 
+// Renders tracked entries as owned CLI output.
 pub fn tracklistResult(allocator: std.mem.Allocator, list: *const track_ops.TrackedList) ![]u8 {
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
@@ -150,6 +157,7 @@ pub fn tracklistResult(allocator: std.mem.Allocator, list: *const track_ops.Trac
     return out.toOwnedSlice();
 }
 
+// Renders staged and tracked status groups as owned CLI output.
 pub fn statusResult(allocator: std.mem.Allocator, list: *const status_ops.StatusList) ![]u8 {
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
@@ -182,6 +190,7 @@ pub fn statusResult(allocator: std.mem.Allocator, list: *const status_ops.Status
     return out.toOwnedSlice();
 }
 
+// Renders find results as owned CLI output and includes active filter context.
 pub fn findResult(
     allocator: std.mem.Allocator,
     list: *const find_ops.CommitSummaryList,
@@ -218,6 +227,7 @@ pub fn findResult(
     return out.toOwnedSlice();
 }
 
+// Renders commit details and related tags as owned CLI output.
 pub fn showResult(allocator: std.mem.Allocator, details: *const show_ops.CommitDetails) ![]u8 {
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
@@ -242,6 +252,7 @@ pub fn showResult(allocator: std.mem.Allocator, details: *const show_ops.CommitD
     return out.toOwnedSlice();
 }
 
+// Renders tags for a commit as owned CLI output.
 pub fn tagListResult(allocator: std.mem.Allocator, commit_id: []const u8, tags: *const tag_ops.TagList) ![]u8 {
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
@@ -253,6 +264,7 @@ pub fn tagListResult(allocator: std.mem.Allocator, commit_id: []const u8, tags: 
     return out.toOwnedSlice();
 }
 
+// Renders the outcome of `tag add` as owned CLI output.
 pub fn tagAddResult(
     allocator: std.mem.Allocator,
     commit_id: []const u8,
@@ -276,6 +288,7 @@ pub fn tagAddResult(
     return out.toOwnedSlice();
 }
 
+// Renders the outcome of `tag rm` as owned CLI output.
 pub fn tagRmResult(
     allocator: std.mem.Allocator,
     commit_id: []const u8,
@@ -297,6 +310,7 @@ pub fn tagRmResult(
     return out.toOwnedSlice();
 }
 
+// Renders dry-run commit output as owned CLI text without mutating store state.
 pub fn commitDryRunResult(allocator: std.mem.Allocator, staged_count: usize, staged_paths: []const []const u8) ![]u8 {
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
@@ -310,6 +324,7 @@ pub fn commitDryRunResult(allocator: std.mem.Allocator, staged_count: usize, sta
     return out.toOwnedSlice();
 }
 
+// Writes tags as a single CSV line and writes `(none)` when the list is empty.
 fn writeTagCsvLine(writer: anytype, tags: []const []u8) !void {
     if (tags.len == 0) {
         try writer.writeAll("(none)\n");
@@ -323,12 +338,14 @@ fn writeTagCsvLine(writer: anytype, tags: []const []u8) !void {
     try writer.writeByte('\n');
 }
 
+// Fills a 32-byte test id with the requested byte.
 fn filled32(ch: u8) [32]u8 {
     var value: [32]u8 = undefined;
     @memset(&value, ch);
     return value;
 }
 
+// Fills a 64-byte test id with the requested byte.
 fn filled64(ch: u8) [64]u8 {
     var value: [64]u8 = undefined;
     @memset(&value, ch);

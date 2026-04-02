@@ -1,5 +1,6 @@
 const std = @import("std");
 
+// Maps parser errors to user-facing CLI messages.
 pub fn forParseError(err: anyerror) []const u8 {
     return switch (err) {
         error.InvalidCommand => "Invalid command. Run `omohi help` to see available commands.",
@@ -12,6 +13,7 @@ pub fn forParseError(err: anyerror) []const u8 {
     };
 }
 
+// Maps runtime errors to user-facing CLI messages with recovery guidance when needed.
 pub fn forRuntimeError(err: anyerror) []const u8 {
     if (err == error.LockAlreadyAcquired) {
         return "Another operation is in progress because ~/.omohi/LOCK exists.\nIf no omohi process is running, remove ~/.omohi/LOCK manually and retry.";
