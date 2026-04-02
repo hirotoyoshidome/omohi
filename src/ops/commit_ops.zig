@@ -13,6 +13,7 @@ pub fn commit(
     return id.value;
 }
 
+// Returns the value for a `key=value` property line when present.
 fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
     var iter = std.mem.splitScalar(u8, bytes, '\n');
     while (iter.next()) |raw| {
@@ -24,6 +25,7 @@ fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
     return null;
 }
 
+// Returns the first non-empty HEAD line from the stored file bytes.
 fn headValue(bytes: []const u8) ?[]const u8 {
     var iter = std.mem.splitScalar(u8, bytes, '\n');
     while (iter.next()) |raw| {
@@ -34,6 +36,7 @@ fn headValue(bytes: []const u8) ?[]const u8 {
     return null;
 }
 
+// TEST-ONLY: Asserts that the target directory fixture contains no entries.
 fn expectDirEmpty(dir: std.fs.Dir, path: []const u8) !void {
     var target = try dir.openDir(path, .{ .iterate = true });
     defer target.close();

@@ -16,6 +16,7 @@ pub fn find(
     return store_api.find(allocator, omohi_dir, tag_name, date_prefix);
 }
 
+// Releases the owned commit summary strings returned by `find`.
 pub fn freeCommitSummaryList(allocator: std.mem.Allocator, list: *CommitSummaryList) void {
     store_api.freeCommitSummaryList(allocator, list);
 }

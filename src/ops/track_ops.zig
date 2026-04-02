@@ -7,6 +7,7 @@ pub const TrackOutcome = struct {
     tracked_paths: std.array_list.Managed([]u8),
     skipped_paths: usize,
 
+    // Initializes an empty track outcome that owns its collected tracked paths.
     pub fn init(allocator: std.mem.Allocator) TrackOutcome {
         return .{
             .tracked_paths = std.array_list.Managed([]u8).init(allocator),
@@ -53,15 +54,18 @@ pub fn tracklist(
     return store_api.tracklist(allocator, omohi_dir);
 }
 
+// Releases the owned tracked id/path records returned by `tracklist`.
 pub fn freeTracklist(allocator: std.mem.Allocator, list: *TrackedList) void {
     store_api.freeTracklist(allocator, list);
 }
 
+// Releases the owned tracked path strings stored in the outcome.
 pub fn freeTrackOutcome(allocator: std.mem.Allocator, outcome: *TrackOutcome) void {
     for (outcome.tracked_paths.items) |path| allocator.free(path);
     outcome.tracked_paths.deinit();
 }
 
+// Tracks one file path and returns it as a single-path outcome.
 fn trackSingleFile(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -76,6 +80,7 @@ fn trackSingleFile(
     return outcome;
 }
 
+// Recursively tracks regular files below a directory and skips already tracked paths.
 fn trackDirectory(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -115,6 +120,7 @@ fn trackDirectory(
     return outcome;
 }
 
+// Recursively collects regular files below the absolute directory path.
 fn collectTrackableFiles(
     allocator: std.mem.Allocator,
     absolute_dir_path: []const u8,
@@ -139,6 +145,7 @@ fn collectTrackableFiles(
     }
 }
 
+// Sorts collected absolute paths in ascending byte order.
 fn lessThanPath(_: void, lhs: []u8, rhs: []u8) bool {
     return std.mem.lessThan(u8, lhs, rhs);
 }

@@ -10,6 +10,7 @@ pub fn list(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir, commit_id: []co
     return store_api.tagList(allocator, omohi_dir, commit_id);
 }
 
+// Releases the owned tag strings returned by tag queries.
 pub fn freeTagList(allocator: std.mem.Allocator, tags: *TagList) void {
     store_api.freeTagList(allocator, tags);
 }

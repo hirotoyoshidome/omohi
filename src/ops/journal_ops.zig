@@ -14,6 +14,7 @@ pub fn journal(
     return store_api.journal(allocator, omohi_dir, limit);
 }
 
+// Releases the owned journal lines returned by `journal`.
 pub fn freeJournalList(allocator: std.mem.Allocator, list: *JournalList) void {
     store_api.freeStringList(allocator, list);
 }
