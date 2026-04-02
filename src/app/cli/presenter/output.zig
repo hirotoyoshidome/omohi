@@ -233,20 +233,22 @@ pub fn showResult(allocator: std.mem.Allocator, details: *const show_ops.CommitD
     errdefer out.deinit();
     const writer = out.writer();
 
-    try writer.print("Found commit {s}.\n", .{details.commit_id.asSlice()});
-    try writer.print("{s} {s}\n", .{ details.commit_id.asSlice(), details.message });
+    try writer.print("Found commit {s}\n", .{details.commit_id.asSlice()});
+    try writer.print("{s}\n\n", .{details.created_at});
+    try writer.print("{s}\n\n", .{details.message});
 
-    try writer.print("snapshot: {s}\n", .{details.snapshot_id.asSlice()});
-    try writer.print("createdAt: {s}\n", .{details.created_at});
-
-    try writer.writeAll("entries:\n");
+    try writer.writeAll("commit changes:\n");
     for (details.entries.items) |entry| {
-        try writer.print("- {s} {s}\n", .{ entry.path.asSlice(), entry.content_hash.asSlice() });
+        try writer.print("- {s}\n", .{entry.path.asSlice()});
     }
 
     try writer.writeAll("tags:\n");
-    for (details.tags.items) |tag_name| {
-        try writer.print("- {s}\n", .{tag_name});
+    if (details.tags.items.len == 0) {
+        try writer.writeAll("- (none)\n");
+    } else {
+        for (details.tags.items) |tag_name| {
+            try writer.print("- {s}\n", .{tag_name});
+        }
     }
 
     return out.toOwnedSlice();
@@ -350,6 +352,27 @@ fn filled64(ch: u8) [64]u8 {
     var value: [64]u8 = undefined;
     @memset(&value, ch);
     return value;
+}
+
+// Builds owned commit details for presenter tests and leaves cleanup to `show_ops.freeCommitDetails`.
+fn initTestCommitDetails(
+    allocator: std.mem.Allocator,
+    commit_id: [64]u8,
+    snapshot_id: [64]u8,
+    commit_message: []const u8,
+    created_at: []const u8,
+) !show_ops.CommitDetails {
+    const EntryList = @TypeOf(@as(show_ops.CommitDetails, undefined).entries);
+    const TagList = @TypeOf(@as(show_ops.CommitDetails, undefined).tags);
+
+    return .{
+        .commit_id = .{ .value = commit_id },
+        .snapshot_id = .{ .value = snapshot_id },
+        .message = try allocator.dupe(u8, commit_message),
+        .created_at = try allocator.dupe(u8, created_at),
+        .entries = EntryList.init(allocator),
+        .tags = TagList.init(allocator),
+    };
 }
 
 test "trackResult follows migration contract" {
@@ -516,6 +539,71 @@ test "findResult renders migration heading and entries" {
     try std.testing.expectEqualStrings(
         "Found 1 commit(s) for tag release.\n" ++
             "- 2026-03-10T09:00:00.000+09:00 first aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        output,
+    );
+}
+
+test "showResult renders readable commit details without internal ids" {
+    var details = try initTestCommitDetails(
+        std.testing.allocator,
+        filled64('a'),
+        filled64('b'),
+        "fix README.md",
+        "2026-04-01T12:27:39.914Z",
+    );
+    defer show_ops.freeCommitDetails(std.testing.allocator, &details);
+
+    try details.entries.append(.{
+        .path = .{ .value = try std.testing.allocator.dupe(u8, "/Users/yoshidome/.vimrc") },
+        .content_hash = .{ .value = filled64('c') },
+    });
+    try details.tags.append(try std.testing.allocator.dupe(u8, "tag1"));
+    try details.tags.append(try std.testing.allocator.dupe(u8, "tag2"));
+
+    const output = try showResult(std.testing.allocator, &details);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Found commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n" ++
+            "2026-04-01T12:27:39.914Z\n\n" ++
+            "fix README.md\n\n" ++
+            "commit changes:\n" ++
+            "- /Users/yoshidome/.vimrc\n" ++
+            "tags:\n" ++
+            "- tag1\n" ++
+            "- tag2\n",
+        output,
+    );
+    try std.testing.expect(std.mem.indexOf(u8, output, "snapshot") == null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "cccccccccccc") == null);
+}
+
+test "showResult renders empty tags as none" {
+    var details = try initTestCommitDetails(
+        std.testing.allocator,
+        filled64('d'),
+        filled64('e'),
+        "note",
+        "2026-04-02T00:00:00.000Z",
+    );
+    defer show_ops.freeCommitDetails(std.testing.allocator, &details);
+
+    try details.entries.append(.{
+        .path = .{ .value = try std.testing.allocator.dupe(u8, "/tmp/a.txt") },
+        .content_hash = .{ .value = filled64('f') },
+    });
+
+    const output = try showResult(std.testing.allocator, &details);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Found commit dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\n" ++
+            "2026-04-02T00:00:00.000Z\n\n" ++
+            "note\n\n" ++
+            "commit changes:\n" ++
+            "- /tmp/a.txt\n" ++
+            "tags:\n" ++
+            "- (none)\n",
         output,
     );
 }
