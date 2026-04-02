@@ -142,7 +142,7 @@ pub const all = [_]CommandSpec{
         },
         .notes = &.{
             "When both filters are set, intersection is returned.",
-            "Each result line includes the commit creation timestamp in the user's local timezone.",
+            "Each result line is shown as local timestamp, commit message, then commit ID.",
         },
     },
     .{

@@ -154,7 +154,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
   - `omohi find --tag release --date 2026-03-17`
 - Notes:
   - When both filters are set, intersection is returned.
-  - Each result line includes the commit creation timestamp in the user's local timezone.
+  - Each result line is shown as local timestamp, commit message, then commit ID.
 
 ### show
 
