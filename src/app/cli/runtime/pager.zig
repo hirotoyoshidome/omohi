@@ -2,6 +2,7 @@ const std = @import("std");
 
 const less_args = [_][]const u8{ "less", "-RX" };
 
+// Writes output to stdout directly or through `less` when paging is requested and supported.
 pub fn writeOutput(
     allocator: std.mem.Allocator,
     output: []const u8,
@@ -16,12 +17,14 @@ pub fn writeOutput(
     try std.fs.File.stdout().writeAll(output);
 }
 
+// Reports whether pager use is appropriate for the current output and terminal state.
 fn shouldUsePager(output: []const u8, page_output: bool) bool {
     if (!page_output) return false;
     if (std.mem.indexOfScalar(u8, output, '\n') == null) return false;
     return std.posix.isatty(std.fs.File.stdout().handle);
 }
 
+// Tries to pipe the output through `less` and returns whether paging succeeded.
 fn pageWithLess(allocator: std.mem.Allocator, output: []const u8) !bool {
     var child = std.process.Child.init(&less_args, allocator);
     child.stdin_behavior = .Pipe;

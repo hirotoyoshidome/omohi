@@ -5,11 +5,13 @@ pub const PreparedJournalEvent = struct {
     command_type: []const u8,
     payload_json: []u8,
 
+    // Releases the owned JSON payload buffer for the prepared journal event.
     pub fn deinit(self: *PreparedJournalEvent, allocator: std.mem.Allocator) void {
         allocator.free(self.payload_json);
     }
 };
 
+// Converts mutating parsed requests into owned journal events and skips non-persisted commands.
 pub fn fromParsedRequest(
     allocator: std.mem.Allocator,
     parsed: parser_types.ParsedRequest,
@@ -41,6 +43,7 @@ pub fn fromParsedRequest(
     };
 }
 
+// Formats a journal event payload as owned JSON for later persistence.
 fn makeEvent(
     allocator: std.mem.Allocator,
     command_type: []const u8,
