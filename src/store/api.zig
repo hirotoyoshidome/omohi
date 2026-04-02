@@ -1582,6 +1582,7 @@ test "stagedPathList returns staged paths sorted ascending" {
     try std.testing.expectEqualStrings(b_path, paths.items[1]);
 }
 
+// TEST-ONLY: Creates a file fixture for commit-related tests and returns its resolved absolute path.
 fn addTestFileForCommit(
     root: std.fs.Dir,
     allocator: std.mem.Allocator,
@@ -1594,6 +1595,7 @@ fn addTestFileForCommit(
     return try root.realpathAlloc(allocator, name);
 }
 
+// TEST-ONLY: Writes a commit fixture used by find-related tests.
 fn writeFindFixtureCommit(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -1621,6 +1623,7 @@ fn writeFindFixtureCommit(
     try file.writeAll(content);
 }
 
+// TEST-ONLY: Writes commit-tag fixtures used by find-related tests.
 fn writeFindFixtureTags(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -1638,16 +1641,19 @@ fn writeFindFixtureTags(
     );
 }
 
+// TEST-ONLY: Enables a specific injected commit failure point for recovery tests.
 fn setCommitFailurePoint(point: CommitFailurePoint) void {
     if (!builtin.is_test) return;
     commit_failure_point = point;
 }
 
+// TEST-ONLY: Clears any injected commit failure point after a recovery test.
 fn clearCommitFailurePoint() void {
     if (!builtin.is_test) return;
     commit_failure_point = .none;
 }
 
+// TEST-ONLY: Asserts that a directory fixture contains no entries.
 fn expectDirEmpty(dir: std.fs.Dir, path: []const u8) !void {
     var target = try dir.openDir(path, .{ .iterate = true });
     defer target.close();
@@ -1656,6 +1662,7 @@ fn expectDirEmpty(dir: std.fs.Dir, path: []const u8) !void {
     try std.testing.expect((try it.next()) == null);
 }
 
+// TEST-ONLY: Asserts that a directory fixture contains no file entries.
 fn expectDirHasNoFiles(dir: std.fs.Dir, path: []const u8) !void {
     var target = try dir.openDir(path, .{ .iterate = true });
     defer target.close();
@@ -1666,6 +1673,7 @@ fn expectDirHasNoFiles(dir: std.fs.Dir, path: []const u8) !void {
     }
 }
 
+// TEST-ONLY: Writes staged entry and object fixtures for commit-related tests.
 fn writeCommitFixtureStage(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
