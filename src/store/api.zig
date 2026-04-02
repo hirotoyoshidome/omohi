@@ -103,6 +103,7 @@ pub fn appendJournal(
     });
 }
 
+// Reports whether the opened store directory currently has no entries.
 fn isStoreEmpty(omohi_dir: std.fs.Dir) !bool {
     var it = omohi_dir.iterate();
     while (try it.next()) |_| return false;
@@ -296,6 +297,7 @@ pub fn tracklist(
     return (try loadTrackedOrEmpty(allocator, persistence)) orelse TrackedList.init(allocator);
 }
 
+// Releases the owned tracked entry paths returned by `tracklist`.
 pub fn freeTracklist(allocator: std.mem.Allocator, list: *TrackedList) void {
     local_tracked.freeTrackedList(allocator, list);
 }
@@ -378,11 +380,13 @@ pub fn status(
     return results;
 }
 
+// Releases the owned status entry paths returned by `status`.
 pub fn freeStatusList(allocator: std.mem.Allocator, list: *StatusList) void {
     for (list.items) |entry| allocator.free(entry.path);
     list.deinit();
 }
 
+// Releases owned path strings held by a batched add outcome.
 pub fn freeAddBatchOutcome(allocator: std.mem.Allocator, outcome: *AddBatchOutcome) void {
     freeStringList(allocator, &outcome.staged_paths);
 }
@@ -457,6 +461,7 @@ pub fn find(
     return out;
 }
 
+// Releases owned strings held by commit summaries returned from `find`.
 pub fn freeCommitSummaryList(allocator: std.mem.Allocator, list: *CommitSummaryList) void {
     for (list.items) |item| {
         allocator.free(item.message);
@@ -508,6 +513,7 @@ pub fn show(
     };
 }
 
+// Releases owned strings and nested lists held by one commit details payload.
 pub fn freeCommitDetails(allocator: std.mem.Allocator, details: *CommitDetails) void {
     allocator.free(details.message);
     allocator.free(details.created_at);
@@ -515,6 +521,7 @@ pub fn freeCommitDetails(allocator: std.mem.Allocator, details: *CommitDetails) 
     freeTagList(allocator, &details.tags);
 }
 
+// Loads tags for a commit into owned strings and returns an empty list when no tag file exists.
 pub fn tagList(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -542,11 +549,13 @@ pub fn tagList(
     return tags;
 }
 
+// Releases the owned tag strings returned by tag queries.
 pub fn freeTagList(allocator: std.mem.Allocator, tags: *TagList) void {
     for (tags.items) |tag| allocator.free(tag);
     tags.deinit();
 }
 
+// Releases the owned strings stored in a generic string list.
 pub fn freeStringList(allocator: std.mem.Allocator, list: *StringList) void {
     for (list.items) |item| allocator.free(item);
     list.deinit();
@@ -563,6 +572,7 @@ pub fn journal(
     return local_journal.readLatestLines(allocator, persistence, limit);
 }
 
+// Adds tags to a commit, creating missing tag records and updating commit-tag metadata under the lock.
 pub fn tagAdd(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -684,6 +694,7 @@ pub fn stagedPathList(
     return out;
 }
 
+// Removes tags from a commit and deletes the commit-tag record when no tags remain.
 pub fn tagRemove(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -774,15 +785,18 @@ pub fn commit(
     return try constrained_types.CommitId.init(commit_id[0..]);
 }
 
+// TEST-ONLY: Injects a commit failure at the selected step when running in tests.
 fn maybeFailCommitAt(point: CommitFailurePoint) !void {
     if (!builtin.is_test) return;
     if (commit_failure_point == point) return error.TestInjectedFailure;
 }
 
+// Sorts content entries by tracked path before snapshot persistence.
 fn isPathLessThan(_: void, lhs: ContentEntry, rhs: ContentEntry) bool {
     return ContentEntry.isPathLessThan(lhs, rhs);
 }
 
+// Adds multiple absolute paths while the caller already holds the store lock.
 fn addDirectoryLocked(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -899,6 +913,7 @@ const FindCandidate = struct {
     created_at_millis: i64,
 };
 
+// Loads and parses one commit file into owned message and timestamp fields.
 fn readCommitFile(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -924,16 +939,19 @@ fn readCommitFile(
     };
 }
 
+// Releases owned strings inside a parsed commit payload.
 fn freeParsedCommit(allocator: std.mem.Allocator, parsed: *const ParsedCommit) void {
     allocator.free(parsed.message);
     allocator.free(parsed.created_at);
 }
 
+// Releases parsed commit payloads collected during `find`.
 fn freeFindCandidates(allocator: std.mem.Allocator, candidates: *std.array_list.Managed(FindCandidate)) void {
     for (candidates.items) |candidate| freeParsedCommit(allocator, &candidate.parsed);
     candidates.deinit();
 }
 
+// Loads and parses snapshot entries into owned path storage.
 fn readSnapshotEntries(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -976,11 +994,13 @@ fn readSnapshotEntries(
     return out;
 }
 
+// Releases owned content-entry paths stored in the list.
 fn freeContentEntryList(allocator: std.mem.Allocator, entries: *std.array_list.Managed(ContentEntry)) void {
     for (entries.items) |entry| allocator.free(@constCast(entry.path.asSlice()));
     entries.deinit();
 }
 
+// Returns the value for a `key=value` property line when present.
 fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
     var iter = std.mem.splitScalar(u8, bytes, '\n');
     while (iter.next()) |raw| {
@@ -994,6 +1014,7 @@ fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
     return null;
 }
 
+// Lists commit ids from sharded storage and sorts them in descending order.
 fn listCommitIds(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1028,6 +1049,7 @@ fn listCommitIds(
     return list;
 }
 
+// Loads all persisted tag names into an owned ascending list.
 fn loadTagNameList(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1053,20 +1075,24 @@ fn loadTagNameList(
     return list;
 }
 
+// Sorts commit ids in descending byte order.
 fn isCommitIdDescLessThan(_: void, lhs: [64]u8, rhs: [64]u8) bool {
     return std.mem.order(u8, &lhs, &rhs) == .gt;
 }
 
+// Sorts find candidates by descending creation time and then descending commit id.
 fn isFindCandidateDescLessThan(_: void, lhs: FindCandidate, rhs: FindCandidate) bool {
     if (lhs.created_at_millis != rhs.created_at_millis) return lhs.created_at_millis > rhs.created_at_millis;
     return std.mem.order(u8, lhs.parsed.commit_id.asSlice(), rhs.parsed.commit_id.asSlice()) == .gt;
 }
 
+// Reports whether the input is exactly two hexadecimal characters.
 fn isTwoHex(input: []const u8) bool {
     if (input.len != 2) return false;
     return std.ascii.isHex(input[0]) and std.ascii.isHex(input[1]);
 }
 
+// Copies a fixed-length hex id into lowercase form or returns the supplied error tag.
 fn copyHexId(source: []const u8, out: *[64]u8, comptime err_tag: anytype) !void {
     if (source.len != out.len) return err_tag;
     for (source, 0..) |ch, idx| {
@@ -1075,6 +1101,7 @@ fn copyHexId(source: []const u8, out: *[64]u8, comptime err_tag: anytype) !void 
     }
 }
 
+// Reports whether the commit currently has the given tag.
 fn commitHasTag(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1096,6 +1123,7 @@ fn commitHasTag(
     return false;
 }
 
+// Verifies that the target commit file exists and maps absence to `CommitNotFound`.
 fn ensureCommitExists(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1111,6 +1139,7 @@ fn ensureCommitExists(
     file.close();
 }
 
+// Reports whether the target tag appears in the provided list.
 fn containsTag(list: []const []const u8, target: []const u8) bool {
     for (list) |item| {
         if (std.mem.eql(u8, item, target)) return true;
@@ -1118,10 +1147,12 @@ fn containsTag(list: []const []const u8, target: []const u8) bool {
     return false;
 }
 
+// Sorts owned strings in ascending byte order.
 fn isStringAscLessThan(_: void, lhs: []u8, rhs: []u8) bool {
     return std.mem.order(u8, lhs, rhs) == .lt;
 }
 
+// Loads the current HEAD commit id when present.
 fn headCommitId(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1135,6 +1166,7 @@ fn headCommitId(
     return try constrained_types.CommitId.init(parseHeadCommitId(bytes) orelse return error.InvalidHead);
 }
 
+// Parses HEAD file contents, accepting either a plain id line or `commitId=...`.
 fn parseHeadCommitId(bytes: []const u8) ?[]const u8 {
     var iter = std.mem.splitScalar(u8, bytes, '\n');
     while (iter.next()) |raw| {
@@ -1147,6 +1179,7 @@ fn parseHeadCommitId(bytes: []const u8) ?[]const u8 {
     return null;
 }
 
+// Loads snapshot entries for the current HEAD commit when HEAD exists.
 fn loadHeadSnapshotEntries(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -1156,6 +1189,7 @@ fn loadHeadSnapshotEntries(
     return loadHeadSnapshotEntriesFromPersistence(allocator, persistence);
 }
 
+// Loads snapshot entries for the current HEAD commit using an existing persistence handle.
 fn loadHeadSnapshotEntriesFromPersistence(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1164,6 +1198,7 @@ fn loadHeadSnapshotEntriesFromPersistence(
     return try readSnapshotEntriesForCommit(allocator, persistence, head_id.asSlice());
 }
 
+// Finds one content entry by tracked absolute path.
 fn findContentEntryByPath(
     entries: ?std.array_list.Managed(ContentEntry),
     absolute_path: []const u8,
@@ -1176,6 +1211,7 @@ fn findContentEntryByPath(
     return null;
 }
 
+// Loads staged entries and returns null when the staged area does not exist yet.
 fn loadStagedEntriesOrEmpty(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1186,6 +1222,7 @@ fn loadStagedEntriesOrEmpty(
     };
 }
 
+// Loads raw staged entries and returns null when the staged area does not exist yet.
 fn loadRawStagedEntriesOrEmpty(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1196,6 +1233,7 @@ fn loadRawStagedEntriesOrEmpty(
     };
 }
 
+// Loads the tracked entry for one absolute path or returns `TrackedFileNotFound`.
 fn requireTrackedEntryByPath(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1213,6 +1251,7 @@ fn requireTrackedEntryByPath(
     return error.TrackedFileNotFound;
 }
 
+// Loads the HEAD content hash for one tracked path when HEAD exists.
 fn headContentHashForPath(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1228,6 +1267,7 @@ fn headContentHashForPath(
     return null;
 }
 
+// Loads snapshot entries for the commit by first reading the commit record.
 fn readSnapshotEntriesForCommit(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1238,6 +1278,7 @@ fn readSnapshotEntriesForCommit(
     return try readSnapshotEntries(allocator, persistence, parsed.snapshot_id.asSlice());
 }
 
+// Unstages the path when it currently exists in the staged entry list.
 fn unstagePathIfPresent(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1251,6 +1292,7 @@ fn unstagePathIfPresent(
     }
 }
 
+// Removes raw staged entries for a path and trashes unreferenced staged objects.
 fn unstagePathEntriesFromRaw(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1284,6 +1326,7 @@ fn unstagePathEntriesFromRaw(
     }
 }
 
+// Reports whether another raw staged entry still references the content hash.
 fn rawEntriesContainHash(
     entries: []const local_staged.RawEntryInfo,
     content_hash: []const u8,
@@ -1298,6 +1341,7 @@ fn rawEntriesContainHash(
     return false;
 }
 
+// Moves one staged entry to trash and trashes its object when no other entry references the hash.
 fn unstageEntry(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1315,6 +1359,7 @@ fn unstageEntry(
     }
 }
 
+// Reports whether another staged entry still references the content hash.
 fn hasOtherStagedEntryWithHash(
     staged_entries: ?local_staged.EntryList,
     content_hash: []const u8,
@@ -1329,6 +1374,7 @@ fn hasOtherStagedEntryWithHash(
     return false;
 }
 
+// Opens the source file by path and returns its base64-SHA256 content hash.
 fn contentHashFromFile(source_dir: std.fs.Dir, source_path: []const u8) ![64]u8 {
     var source_file = try source_dir.openFile(source_path, .{});
     defer source_file.close();
@@ -1336,6 +1382,7 @@ fn contentHashFromFile(source_dir: std.fs.Dir, source_path: []const u8) ![64]u8 
     return contentHashFromOpenedFile(source_file);
 }
 
+// Rejects directory targets for single-file track flows.
 fn ensureTrackTargetIsNotDirectory(absolute_path: []const u8) !void {
     var file = std.fs.openFileAbsolute(absolute_path, .{}) catch |err| switch (err) {
         error.FileNotFound => return,
@@ -1348,6 +1395,7 @@ fn ensureTrackTargetIsNotDirectory(absolute_path: []const u8) !void {
     if (stat.kind == .directory) return error.InvalidTrackedTarget;
 }
 
+// Hashes an already opened file after checking the file-size limit.
 fn contentHashFromOpenedFile(source_file: std.fs.File) ![64]u8 {
     const stat = try source_file.stat();
     const file_size = std.math.cast(usize, stat.size) orelse return error.FileTooLarge;
@@ -1357,6 +1405,7 @@ fn contentHashFromOpenedFile(source_file: std.fs.File) ![64]u8 {
     return hashFileBase64(file);
 }
 
+// Streams one source file into staged object storage after checking the file-size limit.
 fn writeStagedObjectFromSource(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1381,6 +1430,7 @@ fn writeStagedObjectFromSource(
     );
 }
 
+// Computes the content hash as SHA-256 of the file's base64-encoded bytes.
 fn hashFileBase64(file: std.fs.File) ![64]u8 {
     var hasher = std.crypto.hash.sha2.Sha256.init(.{});
     var reader_file = file;
@@ -1422,6 +1472,7 @@ fn hashFileBase64(file: std.fs.File) ![64]u8 {
     return hash.sha256HexFromHasher(&hasher);
 }
 
+// Increments the staged-object reference count for one content hash.
 fn incrementHashCount(
     counts: *std.AutoHashMap([64]u8, usize),
     content_hash: constrained_types.ContentHash,
@@ -1435,6 +1486,7 @@ fn incrementHashCount(
     }
 }
 
+// Removes the staged-path state and trashes the staged object when its reference count reaches zero.
 fn removeStagedPathState(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1449,6 +1501,7 @@ fn removeStagedPathState(
     _ = staged_index.remove(absolute_path);
 }
 
+// Decrements one staged-object reference count and trashes the object when unused.
 fn decrementHashCountAndTrashObject(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1469,12 +1522,14 @@ fn decrementHashCountAndTrashObject(
     };
 }
 
+// Materializes a fixed hash-map key from a constrained content hash.
 fn contentHashKey(content_hash: constrained_types.ContentHash) [64]u8 {
     var key: [64]u8 = undefined;
     @memcpy(&key, content_hash.asSlice());
     return key;
 }
 
+// Loads tracked entries and returns null when tracking has not been initialized yet.
 fn loadTrackedOrEmpty(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
@@ -1485,6 +1540,7 @@ fn loadTrackedOrEmpty(
     };
 }
 
+// Reads the single file name inside a directory and copies it into the fixed output buffer.
 fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
     var target = try dir.openDir(path, .{ .iterate = true });
     defer target.close();
@@ -1497,6 +1553,7 @@ fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
     @memcpy(out, first.name);
 }
 
+// TEST-ONLY: Fills a 64-byte id buffer with the requested byte.
 fn filledHexId(ch: u8) [64]u8 {
     var value: [64]u8 = undefined;
     @memset(&value, ch);
