@@ -11,6 +11,7 @@ pub const AddOutcome = struct {
     skipped_already_staged: usize,
     skipped_no_change: usize,
 
+    // Initializes an empty add outcome that owns its collected staged paths.
     pub fn init(allocator: std.mem.Allocator) AddOutcome {
         return .{
             .staged_paths = std.array_list.Managed([]u8).init(allocator),
@@ -39,11 +40,13 @@ pub fn add(
     return addDirectory(allocator, omohi_dir, absolute_path);
 }
 
+// Releases all owned staged path strings stored in the outcome.
 pub fn freeAddOutcome(allocator: std.mem.Allocator, outcome: *AddOutcome) void {
     for (outcome.staged_paths.items) |path| allocator.free(path);
     outcome.staged_paths.deinit();
 }
 
+// Stages one tracked file and reports whether it became staged or was already committed.
 fn addSingleFile(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -62,6 +65,7 @@ fn addSingleFile(
     return outcome;
 }
 
+// Stages every regular file under the directory and reports skipped-path counters.
 fn addDirectory(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -95,6 +99,7 @@ fn addDirectory(
     return outcome;
 }
 
+// Recursively collects regular files below the absolute directory path.
 fn collectRegularFiles(
     allocator: std.mem.Allocator,
     absolute_dir_path: []const u8,
@@ -123,10 +128,12 @@ fn collectRegularFiles(
     }
 }
 
+// Sorts collected absolute paths in ascending byte order.
 fn lessThanPath(_: void, lhs: []u8, rhs: []u8) bool {
     return std.mem.lessThan(u8, lhs, rhs);
 }
 
+// Loads the current status for one path to classify add outcomes.
 fn statusForPath(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -141,6 +148,7 @@ fn statusForPath(
     return .tracked;
 }
 
+// Reads the single file name inside a directory and copies it into the fixed output buffer.
 fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
     var target = try dir.openDir(path, .{ .iterate = true });
     defer target.close();
@@ -153,6 +161,7 @@ fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
     @memcpy(out, first.name);
 }
 
+// Returns the staged entry file name as an owned string for test assertions.
 fn stagedEntryIdFrom(
     allocator: std.mem.Allocator,
     dir: std.fs.Dir,
@@ -163,6 +172,7 @@ fn stagedEntryIdFrom(
     return std.fmt.allocPrint(allocator, "{s}", .{staged_hash});
 }
 
+// Returns the value for a `key=value` property line when present.
 fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
     var iter = std.mem.splitScalar(u8, bytes, '\n');
     while (iter.next()) |raw| {
@@ -174,6 +184,7 @@ fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
     return null;
 }
 
+// Returns the first non-empty HEAD line from the stored file bytes.
 fn headValue(bytes: []const u8) ?[]const u8 {
     var iter = std.mem.splitScalar(u8, bytes, '\n');
     while (iter.next()) |raw| {

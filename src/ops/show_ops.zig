@@ -14,6 +14,7 @@ pub fn show(
     return store_api.show(allocator, omohi_dir, commit_id);
 }
 
+// Releases the owned strings contained in one commit details payload.
 pub fn freeCommitDetails(allocator: std.mem.Allocator, details: *CommitDetails) void {
     store_api.freeCommitDetails(allocator, details);
 }

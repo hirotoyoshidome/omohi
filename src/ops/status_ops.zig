@@ -12,6 +12,7 @@ pub fn status(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir) !StatusList {
     return store_api.status(allocator, omohi_dir);
 }
 
+// Releases the owned status entry paths returned by `status`.
 pub fn freeStatusList(allocator: std.mem.Allocator, list: *StatusList) void {
     store_api.freeStatusList(allocator, list);
 }

@@ -9,6 +9,7 @@ pub const RmOutcome = struct {
     skipped_not_staged: usize,
     skipped_non_regular: usize,
 
+    // Initializes an empty rm outcome that owns its collected unstaged paths.
     pub fn init(allocator: std.mem.Allocator) RmOutcome {
         return .{
             .unstaged_paths = std.array_list.Managed([]u8).init(allocator),
@@ -36,11 +37,13 @@ pub fn rm(
     return rmDirectory(allocator, omohi_dir, absolute_path);
 }
 
+// Releases all owned unstaged path strings stored in the outcome.
 pub fn freeRmOutcome(allocator: std.mem.Allocator, outcome: *RmOutcome) void {
     for (outcome.unstaged_paths.items) |path| allocator.free(path);
     outcome.unstaged_paths.deinit();
 }
 
+// Unstages one tracked file and returns a single-path outcome.
 fn rmSingleFile(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -54,6 +57,7 @@ fn rmSingleFile(
     return outcome;
 }
 
+// Unstages every staged regular file below the directory and records skip counts.
 fn rmDirectory(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -99,6 +103,7 @@ fn rmDirectory(
     return outcome;
 }
 
+// Recursively collects regular files below the absolute directory path.
 fn collectRegularFiles(
     allocator: std.mem.Allocator,
     absolute_dir_path: []const u8,
@@ -127,6 +132,7 @@ fn collectRegularFiles(
     }
 }
 
+// Sorts collected absolute paths in ascending byte order.
 fn lessThanPath(_: void, lhs: []u8, rhs: []u8) bool {
     return std.mem.lessThan(u8, lhs, rhs);
 }
