@@ -2,6 +2,7 @@ const std = @import("std");
 const command_catalog = @import("../command_catalog.zig");
 const exit_code = @import("../error/exit_code.zig");
 
+// Renders the generated man page as an owned buffer for the caller to free.
 pub fn renderCliMan(allocator: std.mem.Allocator) ![]u8 {
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
@@ -101,6 +102,7 @@ pub fn renderCliMan(allocator: std.mem.Allocator) ![]u8 {
     return out.toOwnedSlice();
 }
 
+// Writes a labelled roff paragraph with escaped content.
 fn writeLabelledText(writer: anytype, label: []const u8, text: []const u8) !void {
     try writer.writeAll(".TP\n");
     try writer.writeAll(".B ");
@@ -110,6 +112,7 @@ fn writeLabelledText(writer: anytype, label: []const u8, text: []const u8) !void
     try writer.writeByte('\n');
 }
 
+// Writes a labelled preformatted usage block in roff syntax.
 fn writePreformattedBlock(writer: anytype, label: []const u8, usage: []const u8) !void {
     try writer.writeAll(".TP\n");
     try writer.writeAll(".B ");
@@ -122,6 +125,7 @@ fn writePreformattedBlock(writer: anytype, label: []const u8, usage: []const u8)
     try writer.writeAll(".fi\n");
 }
 
+// Writes an examples section as a preformatted roff block.
 fn writeExamples(writer: anytype, examples: []const []const u8) !void {
     try writer.writeAll(".TP\n");
     try writer.writeAll(".B Examples\n");
@@ -133,6 +137,7 @@ fn writeExamples(writer: anytype, examples: []const []const u8) !void {
     try writer.writeAll(".fi\n");
 }
 
+// Writes the short and long option spellings for one command option.
 fn writeOptionNames(writer: anytype, opt: command_catalog.OptionArgSpec) !void {
     try writer.writeAll(".B ");
     if (opt.short) |short_opt| {
@@ -154,6 +159,7 @@ fn writeOptionNames(writer: anytype, opt: command_catalog.OptionArgSpec) !void {
     }
 }
 
+// Writes one documented exit code entry in the man page.
 fn writeExitCode(writer: anytype, code: u8, description: []const u8) !void {
     try writer.writeAll(".TP\n");
     try writer.print(".B {d}\n", .{code});
@@ -161,6 +167,7 @@ fn writeExitCode(writer: anytype, code: u8, description: []const u8) !void {
     try writer.writeByte('\n');
 }
 
+// Escapes roff-sensitive characters before writing user-facing text.
 fn writeEscaped(writer: anytype, text: []const u8) !void {
     for (text, 0..) |char, idx| {
         switch (char) {

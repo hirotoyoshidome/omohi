@@ -3,6 +3,7 @@ const command_catalog = @import("../command_catalog.zig");
 const exit_code = @import("../error/exit_code.zig");
 const error_message = @import("../error/error_message.zig");
 
+// Renders the generated Markdown CLI reference as an owned buffer for the caller to free.
 pub fn renderCliMarkdown(allocator: std.mem.Allocator) ![]u8 {
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
