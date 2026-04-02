@@ -4,6 +4,7 @@ const exit_code = @import("../error/exit_code.zig");
 const catalog = @import("../command_catalog.zig");
 const parser_types = @import("../parser/types.zig");
 
+// Runs the `help` command and returns owned CLI output for the caller to free.
 pub fn run(allocator: std.mem.Allocator, args: parser_types.HelpArgs) !command_types.CommandResult {
     _ = args;
 

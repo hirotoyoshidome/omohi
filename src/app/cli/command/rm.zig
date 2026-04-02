@@ -7,6 +7,7 @@ const presenter = @import("../presenter/output.zig");
 const exit_code = @import("../error/exit_code.zig");
 const rm_ops = @import("../../../ops/rm_ops.zig");
 
+// Runs the `rm` command and returns owned CLI output for the caller to free.
 pub fn run(allocator: std.mem.Allocator, args: parser_types.RmArgs) !command_types.CommandResult {
     var omohi = try environment.openOmohiDir(allocator, false);
     defer omohi.deinit(allocator);
@@ -25,6 +26,7 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.RmArgs) !command_typ
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
 }
 
+// Builds the owned stderr result for a tracked path that was not found.
 fn trackedNotFoundResult(
     allocator: std.mem.Allocator,
     absolute_path: []const u8,
@@ -33,6 +35,7 @@ fn trackedNotFoundResult(
     return .{ .output = output, .to_stderr = true, .exit_code = exit_code.use_case_error };
 }
 
+// Builds the owned stderr result for a path that is tracked but not staged.
 fn stagedNotFoundResult(
     allocator: std.mem.Allocator,
     absolute_path: []const u8,

@@ -8,6 +8,7 @@ const journal_ops = @import("../../../ops/journal_ops.zig");
 
 const default_limit: usize = 500;
 
+// Runs the `journal` command and marks the owned output for pager-friendly display.
 pub fn run(allocator: std.mem.Allocator, args: parser_types.JournalArgs) !command_types.CommandResult {
     _ = args;
 
@@ -26,6 +27,7 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.JournalArgs) !comman
     };
 }
 
+// Renders journal lines into owned output and returns a fallback message when empty.
 fn journalResult(allocator: std.mem.Allocator, lines: *const journal_ops.JournalList) ![]u8 {
     if (lines.items.len == 0) return presenter.message(allocator, "no journal entries\n");
 

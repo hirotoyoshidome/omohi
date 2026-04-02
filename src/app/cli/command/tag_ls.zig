@@ -6,6 +6,7 @@ const presenter = @import("../presenter/output.zig");
 const exit_code = @import("../error/exit_code.zig");
 const tag_ops = @import("../../../ops/tag_ops.zig");
 
+// Runs the `tag ls` command and returns owned CLI output for the caller to free.
 pub fn run(allocator: std.mem.Allocator, args: parser_types.TagLsArgs) !command_types.CommandResult {
     var omohi = try environment.openOmohiDir(allocator, false);
     defer omohi.deinit(allocator);
@@ -20,6 +21,7 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.TagLsArgs) !command_
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
 }
 
+// Builds the owned stderr result for a missing commit id.
 fn commitNotFoundResult(
     allocator: std.mem.Allocator,
     commit_id: []const u8,

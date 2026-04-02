@@ -8,6 +8,7 @@ const commit_ops = @import("../../../ops/commit_ops.zig");
 const status_ops = @import("../../../ops/status_ops.zig");
 const tag_ops = @import("../../../ops/tag_ops.zig");
 
+// Runs the `commit` command and returns owned CLI output for the caller to free.
 pub fn run(allocator: std.mem.Allocator, args: parser_types.CommitArgs) !command_types.CommandResult {
     var omohi = try environment.openOmohiDir(allocator, false);
     defer omohi.deinit(allocator);
