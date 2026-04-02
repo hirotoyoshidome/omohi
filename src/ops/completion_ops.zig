@@ -380,6 +380,7 @@ test "complete returns no candidates for journal arguments" {
     try std.testing.expectEqual(@as(usize, 0), list.items.len);
 }
 
+// TEST-ONLY: Creates a temporary file fixture and returns its resolved absolute path.
 fn createFileWithContentsAndResolve(
     root: std.fs.Dir,
     allocator: std.mem.Allocator,
@@ -392,6 +393,7 @@ fn createFileWithContentsAndResolve(
     return try root.realpathAlloc(allocator, name);
 }
 
+// TEST-ONLY: Checks whether a completion test result contains an expected candidate.
 fn containsCandidate(items: []const []u8, expected: []const u8) bool {
     for (items) |item| {
         if (std.mem.eql(u8, item, expected)) return true;
