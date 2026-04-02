@@ -222,7 +222,9 @@ pub fn findResult(
     }
 
     for (list.items) |entry| {
-        try writer.print("- {s} {s} {s}\n", .{ entry.local_created_at, entry.message, entry.commit_id.asSlice() });
+        try writer.print("- {s}\n", .{entry.commit_id.asSlice()});
+        try writer.print("  {s}\n\n", .{entry.local_created_at});
+        try writer.print("  {s}\n\n", .{entry.message});
     }
     return out.toOwnedSlice();
 }
@@ -520,7 +522,7 @@ test "tracklistResult renders id and path" {
     );
 }
 
-test "findResult renders migration heading and entries" {
+test "findResult renders heading and commit blocks" {
     var list = find_ops.CommitSummaryList.init(std.testing.allocator);
     defer {
         find_ops.freeCommitSummaryList(std.testing.allocator, &list);
@@ -538,7 +540,9 @@ test "findResult renders migration heading and entries" {
 
     try std.testing.expectEqualStrings(
         "Found 1 commit(s) for tag release.\n" ++
-            "- 2026-03-10T09:00:00.000+09:00 first aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+            "- aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n" ++
+            "  2026-03-10T09:00:00.000+09:00\n\n" ++
+            "  first\n\n",
         output,
     );
 }
