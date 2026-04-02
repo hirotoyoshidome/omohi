@@ -13,6 +13,7 @@ const commit_options = [_][]const u8{ "-m", "--message", "-t", "--tag", "--dry-r
 const find_options = [_][]const u8{ "-t", "--tag", "-d", "--date" };
 const help_topics = [_][]const u8{ "track", "untrack", "add", "rm", "commit", "status", "tracklist", "version", "find", "show", "journal", "tag", "help" };
 
+// Reports whether completion at the current cursor position needs store-backed data.
 pub fn requiresStore(words: []const []const u8, index: usize) bool {
     if (words.len == 0 or index >= words.len) return false;
     if (index == 1) return false;
@@ -37,6 +38,7 @@ pub fn requiresStore(words: []const []const u8, index: usize) bool {
     return false;
 }
 
+// Completes command words into an owned candidate list that callers must free.
 pub fn complete(
     allocator: std.mem.Allocator,
     maybe_omohi_dir: ?std.fs.Dir,
@@ -108,11 +110,13 @@ pub fn complete(
     return out;
 }
 
+// Releases all owned completion candidate strings.
 pub fn freeCandidateList(allocator: std.mem.Allocator, list: *CandidateList) void {
     for (list.items) |item| allocator.free(item);
     list.deinit();
 }
 
+// Completes `tag` subcommands, commit ids, and tag names.
 fn completeTagCommand(
     allocator: std.mem.Allocator,
     out: *CandidateList,
@@ -151,6 +155,7 @@ fn completeTagCommand(
     }
 }
 
+// Completes commit options and tag values for the `commit` command.
 fn completeCommitCommand(
     allocator: std.mem.Allocator,
     out: *CandidateList,
@@ -173,6 +178,7 @@ fn completeCommitCommand(
     try appendFilteredStatic(allocator, out, &commit_options, current);
 }
 
+// Loads tracked file ids into an owned candidate list sorted ascending.
 fn loadTrackedFileIds(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir) !CandidateList {
     try store_api.ensureStoreVersion(allocator, omohi_dir);
     var tracked = try store_api.tracklist(allocator, omohi_dir);
@@ -188,6 +194,7 @@ fn loadTrackedFileIds(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir) !Cand
     return out;
 }
 
+// Loads commit ids into an owned candidate list.
 fn loadCommitIds(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir) !CandidateList {
     try store_api.ensureStoreVersion(allocator, omohi_dir);
     var ids = try store_api.commitIdList(allocator, omohi_dir);
@@ -195,6 +202,7 @@ fn loadCommitIds(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir) !Candidate
     return try dupList(allocator, ids.items);
 }
 
+// Loads all known tag names into an owned candidate list.
 fn loadTagNames(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir) !CandidateList {
     try store_api.ensureStoreVersion(allocator, omohi_dir);
     var tags = try store_api.tagNameList(allocator, omohi_dir);
@@ -202,6 +210,7 @@ fn loadTagNames(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir) !CandidateL
     return try dupList(allocator, tags.items);
 }
 
+// Loads tags for one commit into an owned candidate list sorted ascending.
 fn loadCommitTags(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir, commit_id: []const u8) !CandidateList {
     try store_api.ensureStoreVersion(allocator, omohi_dir);
     var tags = try store_api.tagList(allocator, omohi_dir, commit_id);
@@ -212,6 +221,7 @@ fn loadCommitTags(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir, commit_id
     return out;
 }
 
+// Loads staged paths into an owned candidate list.
 fn loadStagedPaths(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir) !CandidateList {
     try store_api.ensureStoreVersion(allocator, omohi_dir);
     var paths = try store_api.stagedPathList(allocator, omohi_dir);
@@ -219,6 +229,7 @@ fn loadStagedPaths(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir) !Candida
     return try dupList(allocator, paths.items);
 }
 
+// Duplicates candidate strings into owned storage for the caller to free.
 fn dupList(allocator: std.mem.Allocator, items: []const []u8) !CandidateList {
     var out = CandidateList.init(allocator);
     errdefer freeCandidateList(allocator, &out);
@@ -227,6 +238,7 @@ fn dupList(allocator: std.mem.Allocator, items: []const []u8) !CandidateList {
     return out;
 }
 
+// Appends static completion items that match the current prefix.
 fn appendFilteredStatic(
     allocator: std.mem.Allocator,
     out: *CandidateList,
@@ -240,6 +252,7 @@ fn appendFilteredStatic(
     }
 }
 
+// Appends owned completion items that match the current prefix.
 fn appendFilteredOwned(
     allocator: std.mem.Allocator,
     out: *CandidateList,
@@ -253,12 +266,14 @@ fn appendFilteredOwned(
     }
 }
 
+// Reports whether the current cursor position is the value for the given option spellings.
 fn expectsValue(words: []const []const u8, index: usize, long: []const u8, short: []const u8) bool {
     if (index == 0 or index >= words.len) return false;
     const prev = words[index - 1];
     return std.mem.eql(u8, prev, long) or std.mem.eql(u8, prev, short);
 }
 
+// Sorts owned strings in ascending byte order.
 fn isStringAscLessThan(_: void, lhs: []u8, rhs: []u8) bool {
     return std.mem.order(u8, lhs, rhs) == .lt;
 }
