@@ -17,10 +17,10 @@ pub fn fromParsedRequest(
     parsed: parser_types.ParsedRequest,
 ) !?PreparedJournalEvent {
     return switch (parsed) {
-        .track => |args| try makeEvent(allocator, "track", .{ .path = args.path }),
+        .track => |args| try makeEvent(allocator, "track", .{ .paths = args.paths }),
         .untrack => |args| try makeEvent(allocator, "untrack", .{ .trackedFileId = args.tracked_file_id }),
-        .add => |args| try makeEvent(allocator, "add", .{ .path = args.path }),
-        .rm => |args| try makeEvent(allocator, "rm", .{ .path = args.path }),
+        .add => |args| try makeEvent(allocator, "add", .{ .paths = args.paths }),
+        .rm => |args| try makeEvent(allocator, "rm", .{ .paths = args.paths }),
         .commit => |args| blk: {
             if (args.dry_run) break :blk null;
             break :blk try makeEvent(allocator, "commit", .{
@@ -57,12 +57,13 @@ fn makeEvent(
 }
 
 test "fromParsedRequest maps mutating command to event" {
-    const parsed: parser_types.ParsedRequest = .{ .add = .{ .path = "/tmp/a b.txt" } };
+    const paths = [_][]const u8{ "/tmp/a b.txt", "/tmp/c.txt" };
+    const parsed: parser_types.ParsedRequest = .{ .add = .{ .paths = &paths } };
     var event = (try fromParsedRequest(std.testing.allocator, parsed)).?;
     defer event.deinit(std.testing.allocator);
 
     try std.testing.expectEqualStrings("add", event.command_type);
-    try std.testing.expect(std.mem.indexOf(u8, event.payload_json, "\"path\":\"/tmp/a b.txt\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, event.payload_json, "\"paths\":[\"/tmp/a b.txt\",\"/tmp/c.txt\"]") != null);
 }
 
 test "fromParsedRequest skips commit dry-run" {
