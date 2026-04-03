@@ -30,16 +30,17 @@ pub const CommandSpec = struct {
 pub const all = [_]CommandSpec{
     .{
         .name = "track",
-        .usage = "track <path>",
+        .usage = "track <path>...",
         .summary = "Register one file or recursively track files under a directory.",
         .positionals = &.{
-            .{ .name = "path", .required = true, .repeatable = false, .description = "Path to the file or directory to track." },
+            .{ .name = "path", .required = true, .repeatable = true, .description = "Path to the file or directory to track." },
         },
         .options = &.{},
-        .examples = &.{ "omohi track /tmp/note.txt", "omohi track ." },
+        .examples = &.{ "omohi track /tmp/note.txt", "omohi track .", "omohi track ./*.md" },
         .notes = &.{
             "The store is auto-created on the first successful track.",
             "Directories are expanded recursively into tracked files. Non-regular entries are skipped.",
+            "Shell-expanded multiple paths are accepted and processed in order.",
         },
     },
     .{
@@ -55,30 +56,32 @@ pub const all = [_]CommandSpec{
     },
     .{
         .name = "add",
-        .usage = "add <path>",
+        .usage = "add <path>...",
         .summary = "Stage one tracked file or recursively stage tracked files under a directory.",
         .positionals = &.{
-            .{ .name = "path", .required = true, .repeatable = false, .description = "Path to the tracked file or directory to stage." },
+            .{ .name = "path", .required = true, .repeatable = true, .description = "Path to the tracked file or directory to stage." },
         },
         .options = &.{},
-        .examples = &.{ "omohi add /tmp/note.txt", "omohi add ." },
+        .examples = &.{ "omohi add /tmp/note.txt", "omohi add .", "omohi add ./*.md" },
         .notes = &.{
             "When a directory is given, tracked files under it are staged recursively.",
             "Untracked and non-regular entries are skipped.",
+            "Shell-expanded multiple paths are accepted and processed in order.",
         },
     },
     .{
         .name = "rm",
-        .usage = "rm <path>",
+        .usage = "rm <path>...",
         .summary = "Remove one staged file or recursively unstage staged files under a directory.",
         .positionals = &.{
-            .{ .name = "path", .required = true, .repeatable = false, .description = "Path to the staged file or directory to unstage." },
+            .{ .name = "path", .required = true, .repeatable = true, .description = "Path to the staged file or directory to unstage." },
         },
         .options = &.{},
-        .examples = &.{ "omohi rm /tmp/note.txt", "omohi rm ." },
+        .examples = &.{ "omohi rm /tmp/note.txt", "omohi rm .", "omohi rm ./*.md" },
         .notes = &.{
             "When a directory is given, staged files under it are unstaged recursively.",
             "Untracked, non-staged, and non-regular entries are skipped.",
+            "Shell-expanded multiple paths are accepted and processed in order.",
         },
     },
     .{
