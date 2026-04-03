@@ -1,5 +1,5 @@
 pub const TrackArgs = struct {
-    path: []const u8,
+    paths: []const []const u8,
 };
 
 pub const UntrackArgs = struct {
@@ -7,11 +7,11 @@ pub const UntrackArgs = struct {
 };
 
 pub const AddArgs = struct {
-    path: []const u8,
+    paths: []const []const u8,
 };
 
 pub const RmArgs = struct {
-    path: []const u8,
+    paths: []const []const u8,
 };
 
 pub const CommitArgs = struct {

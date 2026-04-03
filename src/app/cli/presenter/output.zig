@@ -45,6 +45,23 @@ pub fn trackResult(
     return out.toOwnedSlice();
 }
 
+// Renders aggregated track results for multiple explicit path inputs.
+pub fn trackMultiResult(allocator: std.mem.Allocator, outcome: *const track_ops.TrackOutcome) ![]u8 {
+    var out = std.array_list.Managed(u8).init(allocator);
+    errdefer out.deinit();
+    const writer = out.writer();
+
+    try writer.print("Tracked {d} file(s).\n", .{outcome.tracked_paths.items.len});
+    for (outcome.tracked_paths.items) |path| {
+        try writer.print("- {s}\n", .{path});
+    }
+    if (outcome.skipped_paths != 0) {
+        try writer.print("Skipped already tracked file(s): {d}\n", .{outcome.skipped_paths});
+    }
+
+    return out.toOwnedSlice();
+}
+
 // Renders the untrack result as owned CLI output.
 pub fn untrackResult(allocator: std.mem.Allocator, absolute_path: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "Untracked: {s}\n", .{absolute_path});
@@ -99,6 +116,32 @@ pub fn addResult(
     return out.toOwnedSlice();
 }
 
+// Renders aggregated add results for multiple explicit path inputs.
+pub fn addMultiResult(allocator: std.mem.Allocator, outcome: *const add_ops.AddOutcome) ![]u8 {
+    var out = std.array_list.Managed(u8).init(allocator);
+    errdefer out.deinit();
+    const writer = out.writer();
+
+    try writer.print("Staged {d} file(s).\n", .{outcome.staged_paths.items.len});
+    for (outcome.staged_paths.items) |path| {
+        try writer.print("- {s}\n", .{path});
+    }
+    if (outcome.skipped_untracked != 0) {
+        try writer.print("Skipped untracked file(s): {d}\n", .{outcome.skipped_untracked});
+    }
+    if (outcome.skipped_already_staged != 0) {
+        try writer.print("Skipped already staged file(s): {d}\n", .{outcome.skipped_already_staged});
+    }
+    if (outcome.skipped_no_change != 0) {
+        try writer.print("Skipped unchanged file(s): {d}\n", .{outcome.skipped_no_change});
+    }
+    if (outcome.skipped_non_regular != 0) {
+        try writer.print("Skipped non-regular entry(s): {d}\n", .{outcome.skipped_non_regular});
+    }
+
+    return out.toOwnedSlice();
+}
+
 // Renders rm results as owned CLI output, including skipped-path summaries when needed.
 pub fn rmResult(
     allocator: std.mem.Allocator,
@@ -119,6 +162,29 @@ pub fn rmResult(
     const writer = out.writer();
 
     try writer.print("Unstaged {d} file(s) under {s}\n", .{ outcome.unstaged_paths.items.len, absolute_path });
+    for (outcome.unstaged_paths.items) |path| {
+        try writer.print("- {s}\n", .{path});
+    }
+    if (outcome.skipped_untracked != 0) {
+        try writer.print("Skipped untracked file(s): {d}\n", .{outcome.skipped_untracked});
+    }
+    if (outcome.skipped_not_staged != 0) {
+        try writer.print("Skipped non-staged file(s): {d}\n", .{outcome.skipped_not_staged});
+    }
+    if (outcome.skipped_non_regular != 0) {
+        try writer.print("Skipped non-regular entry(s): {d}\n", .{outcome.skipped_non_regular});
+    }
+
+    return out.toOwnedSlice();
+}
+
+// Renders aggregated rm results for multiple explicit path inputs.
+pub fn rmMultiResult(allocator: std.mem.Allocator, outcome: *const rm_ops.RmOutcome) ![]u8 {
+    var out = std.array_list.Managed(u8).init(allocator);
+    errdefer out.deinit();
+    const writer = out.writer();
+
+    try writer.print("Unstaged {d} file(s).\n", .{outcome.unstaged_paths.items.len});
     for (outcome.unstaged_paths.items) |path| {
         try writer.print("- {s}\n", .{path});
     }
@@ -407,6 +473,25 @@ test "trackResult renders directory expansion summary" {
     );
 }
 
+test "trackMultiResult renders aggregated summary without under-clause" {
+    var outcome = track_ops.TrackOutcome.init(std.testing.allocator);
+    defer track_ops.freeTrackOutcome(std.testing.allocator, &outcome);
+    try outcome.tracked_paths.append(try std.testing.allocator.dupe(u8, "/tmp/a.txt"));
+    try outcome.tracked_paths.append(try std.testing.allocator.dupe(u8, "/tmp/b.txt"));
+    outcome.skipped_paths = 1;
+
+    const output = try trackMultiResult(std.testing.allocator, &outcome);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Tracked 2 file(s).\n" ++
+            "- /tmp/a.txt\n" ++
+            "- /tmp/b.txt\n" ++
+            "Skipped already tracked file(s): 1\n",
+        output,
+    );
+}
+
 test "untrackResult follows migration contract" {
     const output = try untrackResult(std.testing.allocator, "/tmp/a.txt");
     defer std.testing.allocator.free(output);
@@ -468,6 +553,29 @@ test "addResult renders unchanged single file message" {
     try std.testing.expectEqualStrings("No changes to stage: /tmp/a.txt\n", output);
 }
 
+test "addMultiResult renders aggregated summary without under-clause" {
+    var outcome = add_ops.AddOutcome.init(std.testing.allocator);
+    defer add_ops.freeAddOutcome(std.testing.allocator, &outcome);
+    try outcome.staged_paths.append(try std.testing.allocator.dupe(u8, "/tmp/a.txt"));
+    try outcome.staged_paths.append(try std.testing.allocator.dupe(u8, "/tmp/b.txt"));
+    outcome.skipped_untracked = 2;
+    outcome.skipped_already_staged = 1;
+    outcome.skipped_no_change = 3;
+
+    const output = try addMultiResult(std.testing.allocator, &outcome);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Staged 2 file(s).\n" ++
+            "- /tmp/a.txt\n" ++
+            "- /tmp/b.txt\n" ++
+            "Skipped untracked file(s): 2\n" ++
+            "Skipped already staged file(s): 1\n" ++
+            "Skipped unchanged file(s): 3\n",
+        output,
+    );
+}
+
 test "rmResult renders directory summary" {
     var outcome = rm_ops.RmOutcome.init(std.testing.allocator);
     defer rm_ops.freeRmOutcome(std.testing.allocator, &outcome);
@@ -481,6 +589,27 @@ test "rmResult renders directory summary" {
     try std.testing.expectEqualStrings(
         "Unstaged 1 file(s) under /tmp/root\n" ++
             "- /tmp/root/a.txt\n" ++
+            "Skipped untracked file(s): 2\n" ++
+            "Skipped non-staged file(s): 1\n",
+        output,
+    );
+}
+
+test "rmMultiResult renders aggregated summary without under-clause" {
+    var outcome = rm_ops.RmOutcome.init(std.testing.allocator);
+    defer rm_ops.freeRmOutcome(std.testing.allocator, &outcome);
+    try outcome.unstaged_paths.append(try std.testing.allocator.dupe(u8, "/tmp/a.txt"));
+    try outcome.unstaged_paths.append(try std.testing.allocator.dupe(u8, "/tmp/b.txt"));
+    outcome.skipped_not_staged = 1;
+    outcome.skipped_untracked = 2;
+
+    const output = try rmMultiResult(std.testing.allocator, &outcome);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Unstaged 2 file(s).\n" ++
+            "- /tmp/a.txt\n" ++
+            "- /tmp/b.txt\n" ++
             "Skipped untracked file(s): 2\n" ++
             "Skipped non-staged file(s): 1\n",
         output,

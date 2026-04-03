@@ -6,10 +6,10 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 
 | Command | Usage | Summary |
 | --- | --- | --- |
-| `track` | `track <path>` | Register one file or recursively track files under a directory. |
+| `track` | `track <path>...` | Register one file or recursively track files under a directory. |
 | `untrack` | `untrack <trackedFileId>` | Remove a tracked target by tracked file ID. |
-| `add` | `add <path>` | Stage one tracked file or recursively stage tracked files under a directory. |
-| `rm` | `rm <path>` | Remove one staged file or recursively unstage staged files under a directory. |
+| `add` | `add <path>...` | Stage one tracked file or recursively stage tracked files under a directory. |
+| `rm` | `rm <path>...` | Remove one staged file or recursively unstage staged files under a directory. |
 | `commit` | `commit -m <message> [-t <tag>] [--dry-run]` | Create a commit from staged entries. |
 | `status` | `status` | Show tracked and staged state overview. |
 | `tracklist` | `tracklist` | List tracked targets with tracked file IDs. |
@@ -26,18 +26,20 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 
 ### track
 
-- Usage: `omohi track <path>`
+- Usage: `omohi track <path>...`
 - Summary: Register one file or recursively track files under a directory.
 - Positionals:
-  - `path` (required): Path to the file or directory to track.
+  - `path` (required, repeatable): Path to the file or directory to track.
 - Options:
   - None
 - Examples:
   - `omohi track /tmp/note.txt`
   - `omohi track .`
+  - `omohi track ./*.md`
 - Notes:
   - The store is auto-created on the first successful track.
   - Directories are expanded recursively into tracked files. Non-regular entries are skipped.
+  - Shell-expanded multiple paths are accepted and processed in order.
 
 ### untrack
 
@@ -54,33 +56,37 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 
 ### add
 
-- Usage: `omohi add <path>`
+- Usage: `omohi add <path>...`
 - Summary: Stage one tracked file or recursively stage tracked files under a directory.
 - Positionals:
-  - `path` (required): Path to the tracked file or directory to stage.
+  - `path` (required, repeatable): Path to the tracked file or directory to stage.
 - Options:
   - None
 - Examples:
   - `omohi add /tmp/note.txt`
   - `omohi add .`
+  - `omohi add ./*.md`
 - Notes:
   - When a directory is given, tracked files under it are staged recursively.
   - Untracked and non-regular entries are skipped.
+  - Shell-expanded multiple paths are accepted and processed in order.
 
 ### rm
 
-- Usage: `omohi rm <path>`
+- Usage: `omohi rm <path>...`
 - Summary: Remove one staged file or recursively unstage staged files under a directory.
 - Positionals:
-  - `path` (required): Path to the staged file or directory to unstage.
+  - `path` (required, repeatable): Path to the staged file or directory to unstage.
 - Options:
   - None
 - Examples:
   - `omohi rm /tmp/note.txt`
   - `omohi rm .`
+  - `omohi rm ./*.md`
 - Notes:
   - When a directory is given, staged files under it are unstaged recursively.
   - Untracked, non-staged, and non-regular entries are skipped.
+  - Shell-expanded multiple paths are accepted and processed in order.
 
 ### commit
 

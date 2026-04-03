@@ -16,19 +16,20 @@ Register one file or recursively track files under a directory.
 .TP
 .B Usage
 .nf
-omohi track <path>
+omohi track <path>...
 .fi
 .TP
 .B Positionals
 .RS 4
 .B path
-required: Path to the file or directory to track.
+required, repeatable: Path to the file or directory to track.
 .RE
 .TP
 .B Examples
 .nf
 omohi track /tmp/note.txt
 omohi track .
+omohi track ./*.md
 .fi
 .TP
 .B Notes
@@ -37,6 +38,9 @@ The store is auto\-created on the first successful track.
 .RE
 .RS 4
 Directories are expanded recursively into tracked files. Non\-regular entries are skipped.
+.RE
+.RS 4
+Shell\-expanded multiple paths are accepted and processed in order.
 .RE
 .SS untrack
 .TP
@@ -70,19 +74,20 @@ Stage one tracked file or recursively stage tracked files under a directory.
 .TP
 .B Usage
 .nf
-omohi add <path>
+omohi add <path>...
 .fi
 .TP
 .B Positionals
 .RS 4
 .B path
-required: Path to the tracked file or directory to stage.
+required, repeatable: Path to the tracked file or directory to stage.
 .RE
 .TP
 .B Examples
 .nf
 omohi add /tmp/note.txt
 omohi add .
+omohi add ./*.md
 .fi
 .TP
 .B Notes
@@ -92,6 +97,9 @@ When a directory is given, tracked files under it are staged recursively.
 .RS 4
 Untracked and non\-regular entries are skipped.
 .RE
+.RS 4
+Shell\-expanded multiple paths are accepted and processed in order.
+.RE
 .SS rm
 .TP
 .B Summary
@@ -99,19 +107,20 @@ Remove one staged file or recursively unstage staged files under a directory.
 .TP
 .B Usage
 .nf
-omohi rm <path>
+omohi rm <path>...
 .fi
 .TP
 .B Positionals
 .RS 4
 .B path
-required: Path to the staged file or directory to unstage.
+required, repeatable: Path to the staged file or directory to unstage.
 .RE
 .TP
 .B Examples
 .nf
 omohi rm /tmp/note.txt
 omohi rm .
+omohi rm ./*.md
 .fi
 .TP
 .B Notes
@@ -120,6 +129,9 @@ When a directory is given, staged files under it are unstaged recursively.
 .RE
 .RS 4
 Untracked, non\-staged, and non\-regular entries are skipped.
+.RE
+.RS 4
+Shell\-expanded multiple paths are accepted and processed in order.
 .RE
 .SS commit
 .TP
