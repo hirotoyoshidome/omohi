@@ -12,17 +12,51 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.AddArgs) !command_ty
     var omohi = try environment.openOmohiDir(allocator, false);
     defer omohi.deinit(allocator);
 
-    const absolute_path = try path_resolver.resolveAbsolutePath(allocator, args.path);
-    defer allocator.free(absolute_path);
+    if (args.paths.len == 1) {
+        const absolute_path = try path_resolver.resolveAbsolutePath(allocator, args.paths[0]);
+        defer allocator.free(absolute_path);
 
-    var outcome = add_ops.add(allocator, omohi.dir, absolute_path) catch |err| switch (err) {
-        error.TrackedFileNotFound => return trackedNotFoundResult(allocator, absolute_path),
-        else => return err,
-    };
-    defer add_ops.freeAddOutcome(allocator, &outcome);
+        var outcome = add_ops.add(allocator, omohi.dir, absolute_path) catch |err| switch (err) {
+            error.TrackedFileNotFound => return trackedNotFoundResult(allocator, absolute_path),
+            else => return err,
+        };
+        defer add_ops.freeAddOutcome(allocator, &outcome);
 
-    const output = try presenter.addResult(allocator, absolute_path, &outcome);
+        const output = try presenter.addResult(allocator, absolute_path, &outcome);
+        return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
+    }
+
+    var combined = add_ops.AddOutcome.init(allocator);
+    defer add_ops.freeAddOutcome(allocator, &combined);
+
+    for (args.paths) |raw_path| {
+        const absolute_path = try path_resolver.resolveAbsolutePath(allocator, raw_path);
+        defer allocator.free(absolute_path);
+
+        var outcome = add_ops.add(allocator, omohi.dir, absolute_path) catch |err| switch (err) {
+            error.TrackedFileNotFound => return trackedNotFoundResult(allocator, absolute_path),
+            else => return err,
+        };
+        errdefer add_ops.freeAddOutcome(allocator, &outcome);
+        try adoptAddOutcome(&combined, &outcome);
+    }
+
+    const output = try presenter.addMultiResult(allocator, &combined);
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
+}
+
+// Moves staged path ownership and counters into the combined result.
+fn adoptAddOutcome(combined: *add_ops.AddOutcome, outcome: *add_ops.AddOutcome) !void {
+    combined.skipped_untracked += outcome.skipped_untracked;
+    combined.skipped_non_regular += outcome.skipped_non_regular;
+    combined.skipped_already_staged += outcome.skipped_already_staged;
+    combined.skipped_no_change += outcome.skipped_no_change;
+    try combined.staged_paths.ensureUnusedCapacity(outcome.staged_paths.items.len);
+    for (outcome.staged_paths.items) |path| {
+        combined.staged_paths.appendAssumeCapacity(path);
+    }
+    outcome.staged_paths.items.len = 0;
+    outcome.staged_paths.deinit();
 }
 
 // Builds the owned stderr result for an untracked path.
