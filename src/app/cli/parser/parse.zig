@@ -123,10 +123,10 @@ fn parseLongOption(token: []const u8) ?struct { key: []const u8, value: ?[]const
     return .{ .key = body, .value = null };
 }
 
-// Parses `track <path>`.
+// Parses `track <path>...`.
 fn parseTrack(args: []const []const u8) !types.ParsedRequest {
-    if (args.len != 1) return error.MissingArgument;
-    return .{ .track = .{ .path = args[0] } };
+    if (args.len == 0) return error.MissingArgument;
+    return .{ .track = .{ .paths = args } };
 }
 
 // Parses `untrack <trackedFileId>`.
@@ -135,16 +135,16 @@ fn parseUntrack(args: []const []const u8) !types.ParsedRequest {
     return .{ .untrack = .{ .tracked_file_id = args[0] } };
 }
 
-// Parses `add <path>`.
+// Parses `add <path>...`.
 fn parseAdd(args: []const []const u8) !types.ParsedRequest {
-    if (args.len != 1) return error.MissingArgument;
-    return .{ .add = .{ .path = args[0] } };
+    if (args.len == 0) return error.MissingArgument;
+    return .{ .add = .{ .paths = args } };
 }
 
-// Parses `rm <path>`.
+// Parses `rm <path>...`.
 fn parseRm(args: []const []const u8) !types.ParsedRequest {
-    if (args.len != 1) return error.MissingArgument;
-    return .{ .rm = .{ .path = args[0] } };
+    if (args.len == 0) return error.MissingArgument;
+    return .{ .rm = .{ .paths = args } };
 }
 
 // Parses `show <commitId>`.
@@ -345,6 +345,55 @@ test "parser resolves longest command match for tag subcommands" {
     switch (parsed) {
         .tag_ls => |args| try std.testing.expectEqualStrings("abc", args.commit_id),
         else => return error.UnexpectedResult,
+    }
+}
+
+test "parser accepts multiple positional paths for track add and rm" {
+    const allocator = std.testing.allocator;
+
+    {
+        const argv = [_][]const u8{ "track", "./a.md", "./b.md" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .track => |args| {
+                try std.testing.expectEqual(@as(usize, 2), args.paths.len);
+                try std.testing.expectEqualStrings("./a.md", args.paths[0]);
+                try std.testing.expectEqualStrings("./b.md", args.paths[1]);
+            },
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        const argv = [_][]const u8{ "add", "./a.md", "./b.md" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .add => |args| {
+                try std.testing.expectEqual(@as(usize, 2), args.paths.len);
+                try std.testing.expectEqualStrings("./a.md", args.paths[0]);
+                try std.testing.expectEqualStrings("./b.md", args.paths[1]);
+            },
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        const argv = [_][]const u8{ "rm", "./a.md", "./b.md" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .rm => |args| {
+                try std.testing.expectEqual(@as(usize, 2), args.paths.len);
+                try std.testing.expectEqualStrings("./a.md", args.paths[0]);
+                try std.testing.expectEqualStrings("./b.md", args.paths[1]);
+            },
+            else => return error.UnexpectedResult,
+        }
     }
 }
 
