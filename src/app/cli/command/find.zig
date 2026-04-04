@@ -14,6 +14,6 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.FindArgs) !command_t
     var list = try find_ops.find(allocator, omohi.dir, args.tag, args.date);
     defer find_ops.freeCommitSummaryList(allocator, &list);
 
-    const output = try presenter.findResult(allocator, &list, args.tag, args.date);
+    const output = try presenter.findResult(allocator, &list, args);
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
 }
