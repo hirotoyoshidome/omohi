@@ -35,10 +35,10 @@ pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.
     if (std.mem.eql(u8, argv[0], "rm")) return try parseRm(argv[1..]);
     if (std.mem.eql(u8, argv[0], "commit")) return try parseCommit(allocator, argv[1..]);
     if (std.mem.eql(u8, argv[0], "status")) return try parseNoArgsCommand(.status, argv[1..]);
-    if (std.mem.eql(u8, argv[0], "tracklist")) return try parseNoArgsCommand(.tracklist, argv[1..]);
+    if (std.mem.eql(u8, argv[0], "tracklist")) return try parseTracklist(allocator, argv[1..]);
     if (std.mem.eql(u8, argv[0], "version")) return try parseNoArgsCommand(.version, argv[1..]);
-    if (std.mem.eql(u8, argv[0], "find")) return try parseFind(argv[1..]);
-    if (std.mem.eql(u8, argv[0], "show")) return try parseShow(argv[1..]);
+    if (std.mem.eql(u8, argv[0], "find")) return try parseFind(allocator, argv[1..]);
+    if (std.mem.eql(u8, argv[0], "show")) return try parseShow(allocator, argv[1..]);
     if (std.mem.eql(u8, argv[0], "journal")) return try parseJournal(argv[1..]);
 
     return error.InvalidCommand;
@@ -129,6 +129,57 @@ fn parseTrack(args: []const []const u8) !types.ParsedRequest {
     return .{ .track = .{ .paths = args } };
 }
 
+// Parses `tracklist` options for output formatting and field selection.
+fn parseTracklist(allocator: std.mem.Allocator, args: []const []const u8) !types.ParsedRequest {
+    var fields = std.array_list.Managed(types.TracklistField).init(allocator);
+    errdefer fields.deinit();
+
+    var output: types.OutputFormat = .text;
+    var idx: usize = 0;
+    var stop_option = false;
+    while (idx < args.len) : (idx += 1) {
+        const token = args[idx];
+
+        if (!stop_option and std.mem.eql(u8, token, "--")) {
+            stop_option = true;
+            continue;
+        }
+
+        if (!stop_option) {
+            if (parseLongOption(token)) |opt| {
+                if (equalsIgnoreAsciiCase(opt.key, "output")) {
+                    const value = opt.value orelse blk: {
+                        idx += 1;
+                        if (idx >= args.len) return error.MissingValue;
+                        break :blk args[idx];
+                    };
+                    output = try parseOutputFormat(value);
+                    continue;
+                }
+
+                if (equalsIgnoreAsciiCase(opt.key, "field")) {
+                    const value = opt.value orelse blk: {
+                        idx += 1;
+                        if (idx >= args.len) return error.MissingValue;
+                        break :blk args[idx];
+                    };
+                    try fields.append(try parseTracklistField(value));
+                    continue;
+                }
+
+                return error.UnknownOption;
+            }
+        }
+
+        return error.UnexpectedArgument;
+    }
+
+    return .{ .tracklist = .{
+        .output = output,
+        .fields = try fields.toOwnedSlice(),
+    } };
+}
+
 // Parses `untrack <trackedFileId>`.
 fn parseUntrack(args: []const []const u8) !types.ParsedRequest {
     if (args.len != 1) return error.MissingArgument;
@@ -145,12 +196,6 @@ fn parseAdd(args: []const []const u8) !types.ParsedRequest {
 fn parseRm(args: []const []const u8) !types.ParsedRequest {
     if (args.len == 0) return error.MissingArgument;
     return .{ .rm = .{ .paths = args } };
-}
-
-// Parses `show <commitId>`.
-fn parseShow(args: []const []const u8) !types.ParsedRequest {
-    if (args.len != 1) return error.MissingArgument;
-    return .{ .show = .{ .commit_id = args[0] } };
 }
 
 // Parses `journal` with no extra arguments.
@@ -266,9 +311,12 @@ fn parseCommit(allocator: std.mem.Allocator, args: []const []const u8) !types.Pa
 }
 
 // Parses `find` options and validates any provided date filter.
-fn parseFind(args: []const []const u8) !types.ParsedRequest {
+fn parseFind(allocator: std.mem.Allocator, args: []const []const u8) !types.ParsedRequest {
     var tag_name: ?[]const u8 = null;
     var date: ?[]const u8 = null;
+    var output: types.OutputFormat = .text;
+    var fields = std.array_list.Managed(types.FindField).init(allocator);
+    errdefer fields.deinit();
 
     var idx: usize = 0;
     var stop_option = false;
@@ -306,6 +354,26 @@ fn parseFind(args: []const []const u8) !types.ParsedRequest {
                     continue;
                 }
 
+                if (equalsIgnoreAsciiCase(opt.key, "output")) {
+                    const value = opt.value orelse blk: {
+                        idx += 1;
+                        if (idx >= args.len) return error.MissingValue;
+                        break :blk args[idx];
+                    };
+                    output = try parseOutputFormat(value);
+                    continue;
+                }
+
+                if (equalsIgnoreAsciiCase(opt.key, "field")) {
+                    const value = opt.value orelse blk: {
+                        idx += 1;
+                        if (idx >= args.len) return error.MissingValue;
+                        break :blk args[idx];
+                    };
+                    try fields.append(try parseFindField(value));
+                    continue;
+                }
+
                 return error.UnknownOption;
             }
         }
@@ -333,7 +401,93 @@ fn parseFind(args: []const []const u8) !types.ParsedRequest {
     return .{ .find = .{
         .tag = tag_name,
         .date = date,
+        .output = output,
+        .fields = try fields.toOwnedSlice(),
     } };
+}
+
+// Parses `show <commitId>` plus output formatting and field selection options.
+fn parseShow(allocator: std.mem.Allocator, args: []const []const u8) !types.ParsedRequest {
+    var fields = std.array_list.Managed(types.ShowField).init(allocator);
+    errdefer fields.deinit();
+
+    var output: types.OutputFormat = .text;
+    var commit_id: ?[]const u8 = null;
+    var idx: usize = 0;
+    var stop_option = false;
+    while (idx < args.len) : (idx += 1) {
+        const token = args[idx];
+
+        if (!stop_option and std.mem.eql(u8, token, "--")) {
+            stop_option = true;
+            continue;
+        }
+
+        if (!stop_option) {
+            if (parseLongOption(token)) |opt| {
+                if (equalsIgnoreAsciiCase(opt.key, "output")) {
+                    const value = opt.value orelse blk: {
+                        idx += 1;
+                        if (idx >= args.len) return error.MissingValue;
+                        break :blk args[idx];
+                    };
+                    output = try parseOutputFormat(value);
+                    continue;
+                }
+
+                if (equalsIgnoreAsciiCase(opt.key, "field")) {
+                    const value = opt.value orelse blk: {
+                        idx += 1;
+                        if (idx >= args.len) return error.MissingValue;
+                        break :blk args[idx];
+                    };
+                    try fields.append(try parseShowField(value));
+                    continue;
+                }
+            }
+        }
+
+        if (commit_id != null) return error.UnexpectedArgument;
+        commit_id = token;
+    }
+
+    return .{ .show = .{
+        .commit_id = commit_id orelse return error.MissingArgument,
+        .output = output,
+        .fields = try fields.toOwnedSlice(),
+    } };
+}
+
+// Parses supported output formats for reference-style commands.
+fn parseOutputFormat(value: []const u8) !types.OutputFormat {
+    if (equalsIgnoreAsciiCase(value, "text")) return .text;
+    if (equalsIgnoreAsciiCase(value, "json")) return .json;
+    return error.InvalidArgument;
+}
+
+// Parses a `tracklist` field name into its enum form.
+fn parseTracklistField(value: []const u8) !types.TracklistField {
+    if (equalsIgnoreAsciiCase(value, "id")) return .id;
+    if (equalsIgnoreAsciiCase(value, "path")) return .path;
+    return error.InvalidArgument;
+}
+
+// Parses a `find` field name into its enum form.
+fn parseFindField(value: []const u8) !types.FindField {
+    if (equalsIgnoreAsciiCase(value, "commit_id")) return .commit_id;
+    if (equalsIgnoreAsciiCase(value, "message")) return .message;
+    if (equalsIgnoreAsciiCase(value, "created_at")) return .created_at;
+    return error.InvalidArgument;
+}
+
+// Parses a `show` field name into its enum form.
+fn parseShowField(value: []const u8) !types.ShowField {
+    if (equalsIgnoreAsciiCase(value, "commit_id")) return .commit_id;
+    if (equalsIgnoreAsciiCase(value, "message")) return .message;
+    if (equalsIgnoreAsciiCase(value, "created_at")) return .created_at;
+    if (equalsIgnoreAsciiCase(value, "paths")) return .paths;
+    if (equalsIgnoreAsciiCase(value, "tags")) return .tags;
+    return error.InvalidArgument;
 }
 
 test "parser resolves longest command match for tag subcommands" {
@@ -602,6 +756,74 @@ test "parser normalizes option keys for find" {
             },
             else => return error.UnexpectedResult,
         }
+    }
+}
+
+test "parser accepts tracklist output and repeated fields" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{ "tracklist", "--output", "json", "--field=id", "--field", "path" };
+    var parsed = try parseArgs(allocator, &argv);
+    defer types.deinitParsedRequest(allocator, &parsed);
+
+    switch (parsed) {
+        .tracklist => |args| {
+            try std.testing.expectEqual(types.OutputFormat.json, args.output);
+            try std.testing.expectEqual(@as(usize, 2), args.fields.len);
+            try std.testing.expectEqual(types.TracklistField.id, args.fields[0]);
+            try std.testing.expectEqual(types.TracklistField.path, args.fields[1]);
+        },
+        else => return error.UnexpectedResult,
+    }
+}
+
+test "parser accepts find output and repeated fields" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{ "find", "--output", "json", "--field", "commit_id", "--field=created_at" };
+    var parsed = try parseArgs(allocator, &argv);
+    defer types.deinitParsedRequest(allocator, &parsed);
+
+    switch (parsed) {
+        .find => |args| {
+            try std.testing.expectEqual(types.OutputFormat.json, args.output);
+            try std.testing.expectEqual(@as(usize, 2), args.fields.len);
+            try std.testing.expectEqual(types.FindField.commit_id, args.fields[0]);
+            try std.testing.expectEqual(types.FindField.created_at, args.fields[1]);
+        },
+        else => return error.UnexpectedResult,
+    }
+}
+
+test "parser accepts show options before commit id" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{ "show", "--field", "commit_id", "--output=text", "abc" };
+    var parsed = try parseArgs(allocator, &argv);
+    defer types.deinitParsedRequest(allocator, &parsed);
+
+    switch (parsed) {
+        .show => |args| {
+            try std.testing.expectEqualStrings("abc", args.commit_id);
+            try std.testing.expectEqual(types.OutputFormat.text, args.output);
+            try std.testing.expectEqual(@as(usize, 1), args.fields.len);
+            try std.testing.expectEqual(types.ShowField.commit_id, args.fields[0]);
+        },
+        else => return error.UnexpectedResult,
+    }
+}
+
+test "parser rejects unknown reference fields" {
+    const allocator = std.testing.allocator;
+
+    {
+        const argv = [_][]const u8{ "tracklist", "--field", "unknown" };
+        try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &argv));
+    }
+    {
+        const argv = [_][]const u8{ "find", "--field", "unknown" };
+        try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &argv));
+    }
+    {
+        const argv = [_][]const u8{ "show", "--field", "unknown", "abc" };
+        try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &argv));
     }
 }
 
