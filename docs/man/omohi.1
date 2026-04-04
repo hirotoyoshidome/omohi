@@ -189,17 +189,32 @@ List tracked targets with tracked file IDs.
 .TP
 .B Usage
 .nf
-omohi tracklist
+omohi tracklist [\-\-output <text|json>] [\-\-field <id|path>]...
 .fi
+.TP
+.B Options
+.RS 4
+.B \-\-output <text|json>
+optional: Choose human\-readable text or JSON output.
+.RE
+.RS 4
+.B \-\-field <id|path>
+optional, repeatable: Select one or more fields. Repeat to keep field order.
+.RE
 .TP
 .B Examples
 .nf
 omohi tracklist
+omohi tracklist \-\-field id \-\-field path
+omohi tracklist \-\-output json
 .fi
 .TP
 .B Notes
 .RS 4
-Each output line is `<trackedFileId> <absolutePath>`.
+Default text output keeps the existing `<trackedFileId> <absolutePath>` line format.
+.RE
+.RS 4
+When `\-\-field` is set in text mode, each line contains only the selected values separated by spaces.
 .RE
 .SS version
 .TP
@@ -227,7 +242,7 @@ Search commits by optional tag and date filters.
 .TP
 .B Usage
 .nf
-omohi find [\-\-tag <tag>] [\-\-date YYYY\-MM\-DD]
+omohi find [\-\-tag <tag>] [\-\-date YYYY\-MM\-DD] [\-\-output <text|json>] [\-\-field <commit_id|message|created_at>]...
 .fi
 .TP
 .B Options
@@ -239,6 +254,14 @@ optional: Filter commits by tag name.
 .B \-d, \-\-date <YYYY\-MM\-DD>
 optional: Filter commits by local date prefix.
 .RE
+.RS 4
+.B \-\-output <text|json>
+optional: Choose human\-readable text or JSON output.
+.RE
+.RS 4
+.B \-\-field <commit_id|message|created_at>
+optional, repeatable: Select one or more result fields. Repeat to keep field order.
+.RE
 .TP
 .B Examples
 .nf
@@ -246,6 +269,8 @@ omohi find
 omohi find \-\-tag release
 omohi find \-\-date 2026\-03\-17
 omohi find \-\-tag release \-\-date 2026\-03\-17
+omohi find \-\-field commit_id \-\-field created_at
+omohi find \-\-output json \-\-tag release
 .fi
 .TP
 .B Notes
@@ -255,6 +280,9 @@ When both filters are set, intersection is returned.
 .RS 4
 Each result is shown as commit ID, local timestamp, and commit message in a multi\-line block.
 .RE
+.RS 4
+The public `created_at` field is rendered in the local timezone.
+.RE
 .SS show
 .TP
 .B Summary
@@ -262,7 +290,7 @@ Show one commit details payload.
 .TP
 .B Usage
 .nf
-omohi show <commitId>
+omohi show [\-\-output <text|json>] [\-\-field <commit_id|message|created_at|paths|tags>]... <commitId>
 .fi
 .TP
 .B Positionals
@@ -271,14 +299,26 @@ omohi show <commitId>
 required: 64\-char commit ID.
 .RE
 .TP
+.B Options
+.RS 4
+.B \-\-output <text|json>
+optional: Choose human\-readable text or JSON output.
+.RE
+.RS 4
+.B \-\-field <commit_id|message|created_at|paths|tags>
+optional, repeatable: Select one or more fields. Repeat to keep field order.
+.RE
+.TP
 .B Examples
 .nf
 omohi show aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+omohi show \-\-field commit_id \-\-field tags aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+omohi show \-\-output json aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 .fi
 .TP
 .B Notes
 .RS 4
-Shows the commit ID and UTC timestamp first, then the commit message.
+Shows the commit ID and local timestamp first, then the commit message.
 .RE
 .RS 4
 Lists changed file paths under `commit changes:`.

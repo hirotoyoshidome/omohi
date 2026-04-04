@@ -12,10 +12,10 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 | `rm` | `rm <path>...` | Remove one staged file or recursively unstage staged files under a directory. |
 | `commit` | `commit -m <message> [-t <tag>] [--dry-run]` | Create a commit from staged entries. |
 | `status` | `status` | Show tracked and staged state overview. |
-| `tracklist` | `tracklist` | List tracked targets with tracked file IDs. |
+| `tracklist` | `tracklist [--output <text|json>] [--field <id|path>]...` | List tracked targets with tracked file IDs. |
 | `version` | `version` | Print application version and build target. |
-| `find` | `find [--tag <tag>] [--date YYYY-MM-DD]` | Search commits by optional tag and date filters. |
-| `show` | `show <commitId>` | Show one commit details payload. |
+| `find` | `find [--tag <tag>] [--date YYYY-MM-DD] [--output <text|json>] [--field <commit_id|message|created_at>]...` | Search commits by optional tag and date filters. |
+| `show` | `show [--output <text|json>] [--field <commit_id|message|created_at|paths|tags>]... <commitId>` | Show one commit details payload. |
 | `journal` | `journal` | Show recent journal logs in reverse chronological order. |
 | `tag ls` | `tag ls <commitId>` | List tags for one commit. |
 | `tag add` | `tag add <commitId> <tagNames...>` | Attach one or more tags to a commit. |
@@ -120,16 +120,20 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 
 ### tracklist
 
-- Usage: `omohi tracklist`
+- Usage: `omohi tracklist [--output <text|json>] [--field <id|path>]...`
 - Summary: List tracked targets with tracked file IDs.
 - Positionals:
   - None
 - Options:
-  - None
+  - `--output` `<text|json>` (optional): Choose human-readable text or JSON output.
+  - `--field` `<id|path>` (optional, repeatable): Select one or more fields. Repeat to keep field order.
 - Examples:
   - `omohi tracklist`
+  - `omohi tracklist --field id --field path`
+  - `omohi tracklist --output json`
 - Notes:
-  - Each output line is `<trackedFileId> <absolutePath>`.
+  - Default text output keeps the existing `<trackedFileId> <absolutePath>` line format.
+  - When `--field` is set in text mode, each line contains only the selected values separated by spaces.
 
 ### version
 
@@ -146,34 +150,42 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 
 ### find
 
-- Usage: `omohi find [--tag <tag>] [--date YYYY-MM-DD]`
+- Usage: `omohi find [--tag <tag>] [--date YYYY-MM-DD] [--output <text|json>] [--field <commit_id|message|created_at>]...`
 - Summary: Search commits by optional tag and date filters.
 - Positionals:
   - None
 - Options:
   - `-t`, `--tag` `<tag>` (optional): Filter commits by tag name.
   - `-d`, `--date` `<YYYY-MM-DD>` (optional): Filter commits by local date prefix.
+  - `--output` `<text|json>` (optional): Choose human-readable text or JSON output.
+  - `--field` `<commit_id|message|created_at>` (optional, repeatable): Select one or more result fields. Repeat to keep field order.
 - Examples:
   - `omohi find`
   - `omohi find --tag release`
   - `omohi find --date 2026-03-17`
   - `omohi find --tag release --date 2026-03-17`
+  - `omohi find --field commit_id --field created_at`
+  - `omohi find --output json --tag release`
 - Notes:
   - When both filters are set, intersection is returned.
   - Each result is shown as commit ID, local timestamp, and commit message in a multi-line block.
+  - The public `created_at` field is rendered in the local timezone.
 
 ### show
 
-- Usage: `omohi show <commitId>`
+- Usage: `omohi show [--output <text|json>] [--field <commit_id|message|created_at|paths|tags>]... <commitId>`
 - Summary: Show one commit details payload.
 - Positionals:
   - `commitId` (required): 64-char commit ID.
 - Options:
-  - None
+  - `--output` `<text|json>` (optional): Choose human-readable text or JSON output.
+  - `--field` `<commit_id|message|created_at|paths|tags>` (optional, repeatable): Select one or more fields. Repeat to keep field order.
 - Examples:
   - `omohi show aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
+  - `omohi show --field commit_id --field tags aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
+  - `omohi show --output json aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
 - Notes:
-  - Shows the commit ID and UTC timestamp first, then the commit message.
+  - Shows the commit ID and local timestamp first, then the commit message.
   - Lists changed file paths under `commit changes:`.
   - Omits internal IDs such as `snapshotId` and object content hashes.
 
