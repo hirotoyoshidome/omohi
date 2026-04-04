@@ -1,3 +1,27 @@
+pub const OutputFormat = enum {
+    text,
+    json,
+};
+
+pub const TracklistField = enum {
+    id,
+    path,
+};
+
+pub const FindField = enum {
+    commit_id,
+    message,
+    created_at,
+};
+
+pub const ShowField = enum {
+    commit_id,
+    message,
+    created_at,
+    paths,
+    tags,
+};
+
 pub const TrackArgs = struct {
     paths: []const []const u8,
 };
@@ -20,13 +44,22 @@ pub const CommitArgs = struct {
     dry_run: bool,
 };
 
+pub const TracklistArgs = struct {
+    output: OutputFormat,
+    fields: []const TracklistField,
+};
+
 pub const FindArgs = struct {
     tag: ?[]const u8,
     date: ?[]const u8,
+    output: OutputFormat,
+    fields: []const FindField,
 };
 
 pub const ShowArgs = struct {
     commit_id: []const u8,
+    output: OutputFormat,
+    fields: []const ShowField,
 };
 
 pub const JournalArgs = struct {};
@@ -61,7 +94,7 @@ pub const ParsedRequest = union(enum) {
     rm: RmArgs,
     commit: CommitArgs,
     status,
-    tracklist,
+    tracklist: TracklistArgs,
     version,
     find: FindArgs,
     show: ShowArgs,
@@ -77,6 +110,9 @@ pub const ParsedRequest = union(enum) {
 pub fn deinitParsedRequest(allocator: anytype, parsed: *ParsedRequest) void {
     switch (parsed.*) {
         .commit => |args| allocator.free(args.tags),
+        .tracklist => |args| allocator.free(args.fields),
+        .find => |args| allocator.free(args.fields),
+        .show => |args| allocator.free(args.fields),
         else => {},
     }
 }
