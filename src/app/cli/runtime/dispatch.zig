@@ -27,7 +27,7 @@ pub fn dispatch(allocator: std.mem.Allocator, parsed: parser_types.ParsedRequest
         .rm => |args| try rm.run(allocator, args),
         .commit => |args| try commit.run(allocator, args),
         .status => try status.run(allocator),
-        .tracklist => try tracklist.run(allocator),
+        .tracklist => |args| try tracklist.run(allocator, args),
         .version => try version.run(allocator),
         .find => |args| try find.run(allocator, args),
         .show => |args| try show.run(allocator, args),
