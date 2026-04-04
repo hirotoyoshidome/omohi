@@ -17,7 +17,7 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.ShowArgs) !command_t
     };
     defer show_ops.freeCommitDetails(allocator, &details);
 
-    const output = try presenter.showResult(allocator, &details);
+    const output = try presenter.showResult(allocator, &details, args);
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
 }
 

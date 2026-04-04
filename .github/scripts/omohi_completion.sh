@@ -55,6 +55,18 @@ case "$*" in
   "omohi find --d" )
     printf '%s\n' --date
     ;;
+  "omohi tracklist " )
+    printf '%s\n' --output --field
+    ;;
+  "omohi tracklist --o" )
+    printf '%s\n' --output
+    ;;
+  "omohi tracklist --output " )
+    printf '%s\n' text json
+    ;;
+  "omohi tracklist --field " )
+    printf '%s\n' id path
+    ;;
   "omohi untrack " )
     printf '%s\n' 11111111111111111111111111111111 22222222222222222222222222222222
     ;;
@@ -102,6 +114,10 @@ assert_reply "-m --message -t --tag --dry-run" omohi commit ""
 assert_reply "--message" omohi commit --m
 assert_reply "-t --tag -d --date" omohi find ""
 assert_reply "--date" omohi find --d
+assert_reply "--output --field" omohi tracklist ""
+assert_reply "--output" omohi tracklist --o
+assert_reply "text json" omohi tracklist --output ""
+assert_reply "id path" omohi tracklist --field ""
 assert_reply "" omohi status ""
 assert_reply "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" omohi show ""
 assert_reply "" omohi commit --message ""

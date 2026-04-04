@@ -46,7 +46,17 @@ _omohi_complete() {
       _omohi_collect_candidates
       return 0
       ;;
-    status|tracklist|version|journal)
+    tracklist)
+      case "${prev}" in
+        --output|--field)
+          _omohi_collect_candidates
+          return 0
+          ;;
+      esac
+      _omohi_collect_candidates
+      return 0
+      ;;
+    status|version|journal)
       return 0
       ;;
     help|untrack|rm|show)
