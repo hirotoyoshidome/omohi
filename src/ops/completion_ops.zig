@@ -10,7 +10,13 @@ const top_level_commands = [_][]const u8{
 const top_level_aliases = [_][]const u8{ "-h", "--help", "-v", "--version" };
 const tag_commands = [_][]const u8{ "ls", "add", "rm" };
 const commit_options = [_][]const u8{ "-m", "--message", "-t", "--tag", "--dry-run" };
-const find_options = [_][]const u8{ "-t", "--tag", "-d", "--date" };
+const tracklist_options = [_][]const u8{ "--output", "--field" };
+const find_options = [_][]const u8{ "-t", "--tag", "-d", "--date", "--output", "--field" };
+const show_options = [_][]const u8{ "--output", "--field" };
+const output_values = [_][]const u8{ "text", "json" };
+const tracklist_field_values = [_][]const u8{ "id", "path" };
+const find_field_values = [_][]const u8{ "commit_id", "message", "created_at" };
+const show_field_values = [_][]const u8{ "commit_id", "message", "created_at", "paths", "tags" };
 const help_topics = [_][]const u8{ "track", "untrack", "add", "rm", "commit", "status", "tracklist", "version", "find", "show", "journal", "tag", "help" };
 
 // Reports whether completion at the current cursor position needs store-backed data.
@@ -20,7 +26,7 @@ pub fn requiresStore(words: []const []const u8, index: usize) bool {
 
     const command = words[1];
     if (std.mem.eql(u8, command, "untrack")) return index == 2;
-    if (std.mem.eql(u8, command, "show")) return index == 2;
+    if (std.mem.eql(u8, command, "show")) return showExpectsCommitId(words, index);
     if (std.mem.eql(u8, command, "rm")) return index == 2;
     if (std.mem.eql(u8, command, "find")) return expectsValue(words, index, "--tag", "-t");
     if (std.mem.eql(u8, command, "commit")) return expectsValue(words, index, "--tag", "-t");
@@ -75,7 +81,27 @@ pub fn complete(
             }
             return out;
         }
+        if (expectsValue(words, index, "--output", "")) {
+            try appendFilteredStatic(allocator, &out, &output_values, current);
+            return out;
+        }
+        if (expectsValue(words, index, "--field", "")) {
+            try appendFilteredStatic(allocator, &out, &find_field_values, current);
+            return out;
+        }
         try appendFilteredStatic(allocator, &out, &find_options, current);
+        return out;
+    }
+    if (std.mem.eql(u8, command, "tracklist")) {
+        if (expectsValue(words, index, "--output", "")) {
+            try appendFilteredStatic(allocator, &out, &output_values, current);
+            return out;
+        }
+        if (expectsValue(words, index, "--field", "")) {
+            try appendFilteredStatic(allocator, &out, &tracklist_field_values, current);
+            return out;
+        }
+        try appendFilteredStatic(allocator, &out, &tracklist_options, current);
         return out;
     }
     if (std.mem.eql(u8, command, "help")) {
@@ -90,12 +116,24 @@ pub fn complete(
         }
         return out;
     }
-    if (std.mem.eql(u8, command, "show") and index == 2) {
+    if (std.mem.eql(u8, command, "show") and expectsValue(words, index, "--output", "")) {
+        try appendFilteredStatic(allocator, &out, &output_values, current);
+        return out;
+    }
+    if (std.mem.eql(u8, command, "show") and expectsValue(words, index, "--field", "")) {
+        try appendFilteredStatic(allocator, &out, &show_field_values, current);
+        return out;
+    }
+    if (std.mem.eql(u8, command, "show") and showExpectsCommitId(words, index)) {
         if (maybe_omohi_dir) |omohi_dir| {
             var ids = try loadCommitIds(allocator, omohi_dir);
             defer freeCandidateList(allocator, &ids);
             try appendFilteredOwned(allocator, &out, ids.items, current);
         }
+        return out;
+    }
+    if (std.mem.eql(u8, command, "show")) {
+        try appendFilteredStatic(allocator, &out, &show_options, current);
         return out;
     }
     if (std.mem.eql(u8, command, "rm") and index == 2) {
@@ -270,7 +308,36 @@ fn appendFilteredOwned(
 fn expectsValue(words: []const []const u8, index: usize, long: []const u8, short: []const u8) bool {
     if (index == 0 or index >= words.len) return false;
     const prev = words[index - 1];
-    return std.mem.eql(u8, prev, long) or std.mem.eql(u8, prev, short);
+    return std.mem.eql(u8, prev, long) or (short.len != 0 and std.mem.eql(u8, prev, short));
+}
+
+// Reports whether the current completion slot is the positional commit id for `show`.
+fn showExpectsCommitId(words: []const []const u8, index: usize) bool {
+    if (index < 2 or index >= words.len) return false;
+    if (!std.mem.eql(u8, words[1], "show")) return false;
+
+    var stop_option = false;
+    var positional_count: usize = 0;
+    var idx: usize = 2;
+    while (idx < index) : (idx += 1) {
+        const token = words[idx];
+        if (!stop_option and std.mem.eql(u8, token, "--")) {
+            stop_option = true;
+            continue;
+        }
+        if (!stop_option) {
+            if (std.mem.eql(u8, token, "--output") or std.mem.eql(u8, token, "--field")) {
+                idx += 1;
+                continue;
+            }
+            if (std.mem.startsWith(u8, token, "--output=") or std.mem.startsWith(u8, token, "--field=")) {
+                continue;
+            }
+        }
+        positional_count += 1;
+    }
+
+    return positional_count == 0 and !expectsValue(words, index, "--output", "") and !expectsValue(words, index, "--field", "");
 }
 
 // Sorts owned strings in ascending byte order.
@@ -393,6 +460,34 @@ test "complete returns no candidates for journal arguments" {
     defer freeCandidateList(allocator, &list);
 
     try std.testing.expectEqual(@as(usize, 0), list.items.len);
+}
+
+test "complete returns reference output and field candidates" {
+    const allocator = std.testing.allocator;
+
+    {
+        const words = [_][]const u8{ "omohi", "tracklist", "--out" };
+        var list = try complete(allocator, null, &words, 2);
+        defer freeCandidateList(allocator, &list);
+        try std.testing.expectEqual(@as(usize, 1), list.items.len);
+        try std.testing.expectEqualStrings("--output", list.items[0]);
+    }
+
+    {
+        const words = [_][]const u8{ "omohi", "find", "--field", "cre" };
+        var list = try complete(allocator, null, &words, 3);
+        defer freeCandidateList(allocator, &list);
+        try std.testing.expectEqual(@as(usize, 1), list.items.len);
+        try std.testing.expectEqualStrings("created_at", list.items[0]);
+    }
+
+    {
+        const words = [_][]const u8{ "omohi", "show", "--output", "j" };
+        var list = try complete(allocator, null, &words, 3);
+        defer freeCandidateList(allocator, &list);
+        try std.testing.expectEqual(@as(usize, 1), list.items.len);
+        try std.testing.expectEqualStrings("json", list.items[0]);
+    }
 }
 
 // TEST-ONLY: Creates a temporary file fixture and returns its resolved absolute path.
