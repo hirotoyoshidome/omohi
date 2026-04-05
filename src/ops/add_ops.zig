@@ -40,6 +40,30 @@ pub fn add(
     return addDirectory(allocator, omohi_dir, absolute_path);
 }
 
+/// Stages all tracked files currently listed in the status changed-tracked section.
+pub fn addAllTracked(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+) !AddOutcome {
+    try add_store.ensureStoreVersion(allocator, omohi_dir);
+
+    var statuses = try status_ops.status(allocator, omohi_dir);
+    defer status_ops.freeStatusList(allocator, &statuses);
+
+    var outcome = AddOutcome.init(allocator);
+    errdefer freeAddOutcome(allocator, &outcome);
+
+    for (statuses.items) |entry| {
+        if (entry.status != .tracked and entry.status != .changed) continue;
+
+        var single = try addSingleFile(allocator, omohi_dir, entry.path);
+        errdefer freeAddOutcome(allocator, &single);
+        try adoptAddOutcome(&outcome, &single);
+    }
+
+    return outcome;
+}
+
 // Releases all owned staged path strings stored in the outcome.
 pub fn freeAddOutcome(allocator: std.mem.Allocator, outcome: *AddOutcome) void {
     for (outcome.staged_paths.items) |path| allocator.free(path);
@@ -97,6 +121,20 @@ fn addDirectory(
     outcome.skipped_no_change = batch.skipped_no_change;
 
     return outcome;
+}
+
+// Moves staged path ownership and counters into one combined add outcome.
+fn adoptAddOutcome(combined: *AddOutcome, outcome: *AddOutcome) !void {
+    combined.skipped_untracked += outcome.skipped_untracked;
+    combined.skipped_non_regular += outcome.skipped_non_regular;
+    combined.skipped_already_staged += outcome.skipped_already_staged;
+    combined.skipped_no_change += outcome.skipped_no_change;
+    try combined.staged_paths.ensureUnusedCapacity(outcome.staged_paths.items.len);
+    for (outcome.staged_paths.items) |path| {
+        combined.staged_paths.appendAssumeCapacity(path);
+    }
+    outcome.staged_paths.items.len = 0;
+    outcome.staged_paths.deinit();
 }
 
 // Recursively collects regular files below the absolute directory path.
@@ -418,4 +456,93 @@ test "add reports no-change when file matches HEAD" {
 
     try std.testing.expectEqual(@as(usize, 0), outcome.staged_paths.items.len);
     try std.testing.expectEqual(@as(usize, 1), outcome.skipped_no_change);
+}
+
+test "addAllTracked stages tracked files from status changed tracked group" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try add_store.initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    {
+        var file = try source_dir.createFile("a.txt", .{});
+        defer file.close();
+        try file.writeAll("a");
+    }
+    try source_dir.makePath("nested");
+    {
+        var file = try source_dir.createFile("nested/b.txt", .{});
+        defer file.close();
+        try file.writeAll("b");
+    }
+
+    const a_path = try source_dir.realpathAlloc(allocator, "a.txt");
+    defer allocator.free(a_path);
+    const b_path = try source_dir.realpathAlloc(allocator, "nested/b.txt");
+    defer allocator.free(b_path);
+
+    _ = try add_store.track(allocator, omohi_dir, a_path);
+    _ = try add_store.track(allocator, omohi_dir, b_path);
+
+    var outcome = try addAllTracked(allocator, omohi_dir);
+    defer freeAddOutcome(allocator, &outcome);
+
+    try std.testing.expectEqual(@as(usize, 2), outcome.staged_paths.items.len);
+    try std.testing.expectEqualStrings(a_path, outcome.staged_paths.items[0]);
+    try std.testing.expectEqualStrings(b_path, outcome.staged_paths.items[1]);
+    try std.testing.expectEqual(@as(usize, 0), outcome.skipped_untracked);
+    try std.testing.expectEqual(@as(usize, 0), outcome.skipped_already_staged);
+    try std.testing.expectEqual(@as(usize, 0), outcome.skipped_no_change);
+}
+
+test "addAllTracked skips committed and already staged files" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try add_store.initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    {
+        var file = try source_dir.createFile("a.txt", .{});
+        defer file.close();
+        try file.writeAll("a");
+    }
+    {
+        var file = try source_dir.createFile("b.txt", .{});
+        defer file.close();
+        try file.writeAll("b");
+    }
+
+    const a_path = try source_dir.realpathAlloc(allocator, "a.txt");
+    defer allocator.free(a_path);
+    const b_path = try source_dir.realpathAlloc(allocator, "b.txt");
+    defer allocator.free(b_path);
+
+    _ = try add_store.track(allocator, omohi_dir, a_path);
+    _ = try add_store.track(allocator, omohi_dir, b_path);
+
+    {
+        var first = try add(allocator, omohi_dir, a_path);
+        defer freeAddOutcome(allocator, &first);
+    }
+    _ = try commit_ops.commit(allocator, omohi_dir, "first");
+
+    try add_store.add(allocator, omohi_dir, b_path);
+
+    var outcome = try addAllTracked(allocator, omohi_dir);
+    defer freeAddOutcome(allocator, &outcome);
+
+    try std.testing.expectEqual(@as(usize, 0), outcome.staged_paths.items.len);
+    try std.testing.expectEqual(@as(usize, 0), outcome.skipped_untracked);
+    try std.testing.expectEqual(@as(usize, 0), outcome.skipped_already_staged);
+    try std.testing.expectEqual(@as(usize, 0), outcome.skipped_no_change);
 }

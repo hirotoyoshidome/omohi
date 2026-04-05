@@ -31,6 +31,7 @@ pub const UntrackArgs = struct {
 };
 
 pub const AddArgs = struct {
+    all: bool,
     paths: []const []const u8,
 };
 

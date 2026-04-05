@@ -63,8 +63,17 @@ _omohi_complete() {
       _omohi_collect_candidates
       return 0
       ;;
-    track|add)
-      compopt -o filenames 2>/dev/null
+    track)
+      compopt -o filenames 2>/dev/null || true
+      COMPREPLY=( $(compgen -f -- "${cur}") )
+      return 0
+      ;;
+    add)
+      compopt -o filenames 2>/dev/null || true
+      if [[ -z "${cur}" || "${cur}" == -* ]]; then
+        _omohi_collect_candidates
+        return 0
+      fi
       COMPREPLY=( $(compgen -f -- "${cur}") )
       return 0
       ;;

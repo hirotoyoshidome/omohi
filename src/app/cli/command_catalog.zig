@@ -56,15 +56,19 @@ pub const all = [_]CommandSpec{
     },
     .{
         .name = "add",
-        .usage = "add <path>...",
-        .summary = "Stage one tracked file or recursively stage tracked files under a directory.",
+        .usage = "add [-a|--all] [<path>...]",
+        .summary = "Stage one tracked file, a tracked directory subtree, or all changed tracked files.",
         .positionals = &.{
-            .{ .name = "path", .required = true, .repeatable = true, .description = "Path to the tracked file or directory to stage." },
+            .{ .name = "path", .required = false, .repeatable = true, .description = "Path to the tracked file or directory to stage." },
         },
-        .options = &.{},
-        .examples = &.{ "omohi add /tmp/note.txt", "omohi add .", "omohi add ./*.md" },
+        .options = &.{
+            .{ .long = "all", .short = 'a', .value_name = null, .required = false, .repeatable = false, .description = "Stage all tracked files currently listed under `Changed tracked files:` in `omohi status`." },
+        },
+        .examples = &.{ "omohi add /tmp/note.txt", "omohi add .", "omohi add ./*.md", "omohi add -a" },
         .notes = &.{
             "When a directory is given, tracked files under it are staged recursively.",
+            "`-a` and `--all` stage every tracked file currently listed in `omohi status` under `Changed tracked files:`.",
+            "`-a` and explicit paths cannot be combined.",
             "Untracked and non-regular entries are skipped.",
             "Shell-expanded multiple paths are accepted and processed in order.",
         },

@@ -8,7 +8,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 | --- | --- | --- |
 | `track` | `track <path>...` | Register one file or recursively track files under a directory. |
 | `untrack` | `untrack <trackedFileId>` | Remove a tracked target by tracked file ID. |
-| `add` | `add <path>...` | Stage one tracked file or recursively stage tracked files under a directory. |
+| `add` | `add [-a|--all] [<path>...]` | Stage one tracked file, a tracked directory subtree, or all changed tracked files. |
 | `rm` | `rm <path>...` | Remove one staged file or recursively unstage staged files under a directory. |
 | `commit` | `commit -m <message> [-t <tag>] [--dry-run]` | Create a commit from staged entries. |
 | `status` | `status` | Show tracked and staged state overview. |
@@ -56,18 +56,21 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 
 ### add
 
-- Usage: `omohi add <path>...`
-- Summary: Stage one tracked file or recursively stage tracked files under a directory.
+- Usage: `omohi add [-a|--all] [<path>...]`
+- Summary: Stage one tracked file, a tracked directory subtree, or all changed tracked files.
 - Positionals:
-  - `path` (required, repeatable): Path to the tracked file or directory to stage.
+  - `path` (optional, repeatable): Path to the tracked file or directory to stage.
 - Options:
-  - None
+  - `-a`, `--all` (optional): Stage all tracked files currently listed under `Changed tracked files:` in `omohi status`.
 - Examples:
   - `omohi add /tmp/note.txt`
   - `omohi add .`
   - `omohi add ./*.md`
+  - `omohi add -a`
 - Notes:
   - When a directory is given, tracked files under it are staged recursively.
+  - `-a` and `--all` stage every tracked file currently listed in `omohi status` under `Changed tracked files:`.
+  - `-a` and explicit paths cannot be combined.
   - Untracked and non-regular entries are skipped.
   - Shell-expanded multiple paths are accepted and processed in order.
 
