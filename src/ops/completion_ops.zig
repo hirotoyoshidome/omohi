@@ -10,6 +10,7 @@ const top_level_commands = [_][]const u8{
 const top_level_aliases = [_][]const u8{ "-h", "--help", "-v", "--version" };
 const tag_commands = [_][]const u8{ "ls", "add", "rm" };
 const commit_options = [_][]const u8{ "-m", "--message", "-t", "--tag", "--dry-run" };
+const add_options = [_][]const u8{ "-a", "--all" };
 const tracklist_options = [_][]const u8{ "--output", "--field" };
 const find_options = [_][]const u8{ "-t", "--tag", "-d", "--date", "--output", "--field" };
 const show_options = [_][]const u8{ "--output", "--field" };
@@ -102,6 +103,10 @@ pub fn complete(
             return out;
         }
         try appendFilteredStatic(allocator, &out, &tracklist_options, current);
+        return out;
+    }
+    if (std.mem.eql(u8, command, "add")) {
+        try appendFilteredStatic(allocator, &out, &add_options, current);
         return out;
     }
     if (std.mem.eql(u8, command, "help")) {
@@ -429,6 +434,17 @@ test "complete returns staged paths for rm" {
     try std.testing.expectEqual(@as(usize, 2), list.items.len);
     try std.testing.expectEqualStrings(a_path, list.items[0]);
     try std.testing.expectEqualStrings(b_path, list.items[1]);
+}
+
+test "complete returns add options" {
+    const allocator = std.testing.allocator;
+    const words = [_][]const u8{ "omohi", "add", "" };
+    var list = try complete(allocator, null, &words, 2);
+    defer freeCandidateList(allocator, &list);
+
+    try std.testing.expectEqual(@as(usize, 2), list.items.len);
+    try std.testing.expectEqualStrings("-a", list.items[0]);
+    try std.testing.expectEqualStrings("--all", list.items[1]);
 }
 
 test "complete returns journal for top-level command and help topic" {
