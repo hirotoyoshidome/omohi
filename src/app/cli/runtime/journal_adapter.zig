@@ -19,7 +19,7 @@ pub fn fromParsedRequest(
     return switch (parsed) {
         .track => |args| try makeEvent(allocator, "track", .{ .paths = args.paths }),
         .untrack => |args| try makeEvent(allocator, "untrack", .{ .trackedFileId = args.tracked_file_id }),
-        .add => |args| try makeEvent(allocator, "add", .{ .paths = args.paths }),
+        .add => |args| try makeEvent(allocator, "add", .{ .all = args.all, .paths = args.paths }),
         .rm => |args| try makeEvent(allocator, "rm", .{ .paths = args.paths }),
         .commit => |args| blk: {
             if (args.dry_run) break :blk null;
@@ -58,11 +58,12 @@ fn makeEvent(
 
 test "fromParsedRequest maps mutating command to event" {
     const paths = [_][]const u8{ "/tmp/a b.txt", "/tmp/c.txt" };
-    const parsed: parser_types.ParsedRequest = .{ .add = .{ .paths = &paths } };
+    const parsed: parser_types.ParsedRequest = .{ .add = .{ .all = false, .paths = &paths } };
     var event = (try fromParsedRequest(std.testing.allocator, parsed)).?;
     defer event.deinit(std.testing.allocator);
 
     try std.testing.expectEqualStrings("add", event.command_type);
+    try std.testing.expect(std.mem.indexOf(u8, event.payload_json, "\"all\":false") != null);
     try std.testing.expect(std.mem.indexOf(u8, event.payload_json, "\"paths\":[\"/tmp/a b.txt\",\"/tmp/c.txt\"]") != null);
 }
 
