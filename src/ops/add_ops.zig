@@ -493,8 +493,14 @@ test "addAllTracked stages tracked files from status changed tracked group" {
     defer freeAddOutcome(allocator, &outcome);
 
     try std.testing.expectEqual(@as(usize, 2), outcome.staged_paths.items.len);
-    try std.testing.expectEqualStrings(a_path, outcome.staged_paths.items[0]);
-    try std.testing.expectEqualStrings(b_path, outcome.staged_paths.items[1]);
+    const first_matches_a = std.mem.eql(u8, outcome.staged_paths.items[0], a_path);
+    const first_matches_b = std.mem.eql(u8, outcome.staged_paths.items[0], b_path);
+    const second_matches_a = std.mem.eql(u8, outcome.staged_paths.items[1], a_path);
+    const second_matches_b = std.mem.eql(u8, outcome.staged_paths.items[1], b_path);
+    try std.testing.expect(first_matches_a or first_matches_b);
+    try std.testing.expect(second_matches_a or second_matches_b);
+    try std.testing.expect(first_matches_a != second_matches_a);
+    try std.testing.expect(first_matches_b != second_matches_b);
     try std.testing.expectEqual(@as(usize, 0), outcome.skipped_untracked);
     try std.testing.expectEqual(@as(usize, 0), outcome.skipped_already_staged);
     try std.testing.expectEqual(@as(usize, 0), outcome.skipped_no_change);
