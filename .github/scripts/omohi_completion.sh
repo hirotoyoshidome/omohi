@@ -49,6 +49,15 @@ case "$*" in
   "omohi commit --m" )
     printf '%s\n' --message
     ;;
+  "omohi add " )
+    printf '%s\n' -a --all
+    ;;
+  "omohi add -" )
+    printf '%s\n' -a --all
+    ;;
+  "omohi add --" )
+    printf '%s\n' --all
+    ;;
   "omohi find " )
     printf '%s\n' -t --tag -d --date
     ;;
@@ -112,6 +121,8 @@ assert_reply "track untrack add rm commit status tracklist version find show tag
 assert_reply "ls add rm" omohi tag ""
 assert_reply "-m --message -t --tag --dry-run" omohi commit ""
 assert_reply "--message" omohi commit --m
+assert_reply "-a --all" omohi add -
+assert_reply "--all" omohi add --
 assert_reply "-t --tag -d --date" omohi find ""
 assert_reply "--date" omohi find --d
 assert_reply "--output --field" omohi tracklist ""
