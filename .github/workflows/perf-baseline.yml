@@ -28,5 +28,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: perf-baseline-report
-          path: /tmp/omohi-perf.*/perf-baseline.txt
+          path: ${{ runner.temp }}/omohi-perf-baseline.txt
           if-no-files-found: error

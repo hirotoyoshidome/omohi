@@ -14,7 +14,9 @@ source "$SCRIPT_DIR/omohi_test_lib.sh"
 init_omohi_test_env "$1" "omohi-perf"
 
 REPORT_PATH="$TEST_TMP_ROOT/perf-baseline.txt"
+PUBLISHED_REPORT_PATH="${PERF_REPORT_OUT:-${RUNNER_TEMP:-/tmp}/omohi-perf-baseline.txt}"
 export REPORT_PATH
+export PUBLISHED_REPORT_PATH
 
 compute_content_hash() {
   python3 -c 'import base64, hashlib, sys; data=sys.argv[1].encode(); print(hashlib.sha256(base64.b64encode(data)).hexdigest())' "$1"
@@ -188,3 +190,7 @@ measure_command "find_10000_commits" "$FIND_HOME" find
 measure_command "status_1000_tracked" "$STATUS_HOME" status
 measure_command "tracklist_1000_tracked" "$STATUS_HOME" tracklist
 measure_command "commit_100_staged" "$COMMIT_HOME" commit -m "bench"
+
+# Preserve the report outside the temp fixture root so CI can upload it after cleanup runs.
+mkdir -p "$(dirname "$PUBLISHED_REPORT_PATH")"
+cp "$REPORT_PATH" "$PUBLISHED_REPORT_PATH"
