@@ -36,23 +36,45 @@ createdAt=$created_at
 EOF
 }
 
+# Generates the large find baseline fixture in one Python process to avoid shell-loop overhead.
+generate_find_fixture() {
+  local root="$1"
+  local snapshot_id="$2"
+
+  python3 - "$root" "$snapshot_id" <<'PY'
+import os
+import sys
+
+root = sys.argv[1]
+snapshot_id = sys.argv[2]
+commits_root = os.path.join(root, "commits")
+os.makedirs(commits_root, exist_ok=True)
+
+for prefix in [f"{value:02x}" for value in range(256)]:
+    os.makedirs(os.path.join(commits_root, prefix), exist_ok=True)
+
+for i in range(10000):
+    commit_id = f"{i:064x}"
+    created_at = f"2026-03-{i % 28 + 1:02d}T00:00:{i % 60:02d}.000Z"
+    path = os.path.join(commits_root, commit_id[:2], commit_id)
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(
+            f"snapshotId={snapshot_id}\n"
+            f"message=bench-find-{i}\n"
+            f"createdAt={created_at}\n"
+        )
+PY
+}
+
 setup_find_fixture() {
   local home_dir="$1"
   local root="$home_dir/.omohi"
   local snapshot_id
-  local commit_id
-  local created_at
-  local i
 
   mkdir -p "$root"
   printf '1\n' > "$root/VERSION"
   snapshot_id="$(printf 'a%.0s' $(seq 1 64))"
-
-  for i in $(seq 0 9999); do
-    commit_id="$(printf '%064x' "$i")"
-    created_at="$(printf '2026-03-%02dT00:00:%02d.000Z' $((i % 28 + 1)) $((i % 60)))"
-    write_commit_file "$root" "$commit_id" "$snapshot_id" "bench-find-$i" "$created_at"
-  done
+  generate_find_fixture "$root" "$snapshot_id"
 }
 
 setup_status_fixture() {
@@ -99,6 +121,7 @@ setup_commit_fixture() {
   local content_hash
   local entry_path
   local object_path
+  local staged_path
 
   mkdir -p "$root/staged/entries" "$root/staged/objects"
   printf '1\n' > "$root/VERSION"
@@ -107,8 +130,10 @@ setup_commit_fixture() {
     content_hash="$(printf '%064x' "$((i + 1))")"
     entry_path="$root/staged/entries/entry-$i"
     object_path="$root/staged/objects/$content_hash"
+    staged_path="/tmp/omohi-perf-commit-$i.txt"
     cat > "$entry_path" <<EOF
-path=/objects/${content_hash:0:2}/$content_hash
+path=$staged_path
+trackedFileId=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 contentHash=$content_hash
 EOF
     printf 'payload-%s\n' "$i" > "$object_path"
