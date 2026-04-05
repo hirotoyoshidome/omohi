@@ -70,17 +70,23 @@ Use `omohi tracklist` to resolve IDs before untrack.
 .SS add
 .TP
 .B Summary
-Stage one tracked file or recursively stage tracked files under a directory.
+Stage one tracked file, a tracked directory subtree, or all changed tracked files.
 .TP
 .B Usage
 .nf
-omohi add <path>...
+omohi add [\-a|\-\-all] [<path>...]
 .fi
 .TP
 .B Positionals
 .RS 4
 .B path
-required, repeatable: Path to the tracked file or directory to stage.
+optional, repeatable: Path to the tracked file or directory to stage.
+.RE
+.TP
+.B Options
+.RS 4
+.B \-a, \-\-all
+optional: Stage all tracked files currently listed under `Changed tracked files:` in `omohi status`.
 .RE
 .TP
 .B Examples
@@ -88,11 +94,18 @@ required, repeatable: Path to the tracked file or directory to stage.
 omohi add /tmp/note.txt
 omohi add .
 omohi add ./*.md
+omohi add \-a
 .fi
 .TP
 .B Notes
 .RS 4
 When a directory is given, tracked files under it are staged recursively.
+.RE
+.RS 4
+`\-a` and `\-\-all` stage every tracked file currently listed in `omohi status` under `Changed tracked files:`.
+.RE
+.RS 4
+`\-a` and explicit paths cannot be combined.
 .RE
 .RS 4
 Untracked and non\-regular entries are skipped.
