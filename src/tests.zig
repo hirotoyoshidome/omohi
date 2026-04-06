@@ -42,6 +42,8 @@ const _app_cli_parser = @import("app/cli/parser/parse.zig");
 const _app_cli_dispatch = @import("app/cli/runtime/dispatch.zig");
 const _app_cli_journal_adapter = @import("app/cli/runtime/journal_adapter.zig");
 const _app_cli_pager = @import("app/cli/runtime/pager.zig");
+const _app_cli_terminal_color = @import("app/cli/runtime/terminal_color.zig");
+const _app_cli_ansi_color = @import("app/cli/presenter/ansi_color.zig");
 const _app_cli_output = @import("app/cli/presenter/output.zig");
 const _app_cli_version = @import("app/cli/command/version.zig");
 const _app_cli_journal = @import("app/cli/command/journal.zig");
@@ -86,6 +88,8 @@ test "load modules" {
     _ = _app_cli_dispatch;
     _ = _app_cli_journal_adapter;
     _ = _app_cli_pager;
+    _ = _app_cli_terminal_color;
+    _ = _app_cli_ansi_color;
     _ = _app_cli_output;
     _ = _app_cli_version;
     _ = _app_cli_journal;
