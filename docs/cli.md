@@ -61,7 +61,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 - Positionals:
   - `path` (optional, repeatable): Path to the tracked file or directory to stage.
 - Options:
-  - `-a`, `--all` (optional): Stage all tracked files currently listed under `Changed tracked files:` in `omohi status`.
+  - `-a`, `--all` (optional): Stage all tracked files shown as `changed: <absolutePath>` in `omohi status`.
 - Examples:
   - `omohi add /tmp/note.txt`
   - `omohi add .`
@@ -69,7 +69,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
   - `omohi add -a`
 - Notes:
   - When a directory is given, tracked files under it are staged recursively.
-  - `-a` and `--all` stage every tracked file currently listed in `omohi status` under `Changed tracked files:`.
+  - `-a` and `--all` stage every tracked file currently shown as `changed: <absolutePath>` in `omohi status`.
   - `-a` and explicit paths cannot be combined.
   - Untracked and non-regular entries are skipped.
   - Shell-expanded multiple paths are accepted and processed in order.
@@ -119,7 +119,8 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 - Examples:
   - `omohi status`
 - Notes:
-  - None
+  - Human-readable text output uses one line per entry: `staged: <absolutePath>` or `changed: <absolutePath>`.
+  - ANSI colors are emitted only when stdout is a TTY.
 
 ### tracklist
 
