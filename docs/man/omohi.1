@@ -67,6 +67,9 @@ omohi untrack 6b2f0b7309d442f6be405d9dd80e4ad8
 .RS 4
 Use `omohi tracklist` to resolve IDs before untrack.
 .RE
+.RS 4
+Use this to explicitly clear tracked targets that appear as `missing: <absolutePath>` in `omohi status`.
+.RE
 .SS add
 .TP
 .B Summary
@@ -103,6 +106,9 @@ When a directory is given, tracked files under it are staged recursively.
 .RE
 .RS 4
 `\-a` and `\-\-all` stage every tracked file currently shown as `changed: <absolutePath>` in `omohi status`.
+.RE
+.RS 4
+Tracked files shown as `missing: <absolutePath>` in `omohi status` are not staged by `add`; resolve them with `omohi untrack` when needed.
 .RE
 .RS 4
 `\-a` and explicit paths cannot be combined.
@@ -181,6 +187,12 @@ omohi commit \-m "check" \-\-dry\-run
 .RS 4
 `\-m` or `\-\-message` is required.
 .RE
+.RS 4
+If a file was already staged and later becomes `missing`, `commit` still uses the staged entry.
+.RE
+.RS 4
+`\-\-dry\-run` shows such staged entries with a `(missing)` marker.
+.RE
 .SS status
 .TP
 .B Summary
@@ -198,7 +210,13 @@ omohi status
 .TP
 .B Notes
 .RS 4
-Human\-readable text output uses one line per entry: `staged: <absolutePath>` or `changed: <absolutePath>`.
+Human\-readable text output uses one line per entry: `staged: <absolutePath>`, `changed: <absolutePath>`, or `missing: <absolutePath>`.
+.RE
+.RS 4
+`missing` means the path is still tracked but the current file is no longer present as a regular file.
+.RE
+.RS 4
+When `missing` appears, use `omohi tracklist` to find the tracked file ID, then run `omohi untrack <trackedFileId>` to clear it explicitly.
 .RE
 .RS 4
 ANSI colors are emitted only when stdout is a TTY.
