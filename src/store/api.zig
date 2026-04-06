@@ -52,6 +52,7 @@ pub const CommitDetails = api_types.CommitDetails;
 pub const TrackedEntry = local_tracked.TrackedEntry;
 pub const TrackedList = local_tracked.TrackedList;
 pub const StagedEntry = local_staged.StagedEntry;
+pub const StagedPathList = StringList;
 
 const StagedPathState = struct {
     file_name: constrained_types.StagedFileId,
@@ -144,10 +145,16 @@ pub fn add(
     const source_name = std.fs.path.basename(absolute_path);
     if (source_name.len == 0) return error.InvalidPath;
 
-    var source_dir = try std.fs.openDirAbsolute(source_parent, .{});
+    var source_dir = std.fs.openDirAbsolute(source_parent, .{}) catch |err| switch (err) {
+        error.FileNotFound, error.NotDir => return error.MissingTrackedFile,
+        else => return err,
+    };
     defer source_dir.close();
 
-    const content_hash = try contentHashFromFile(source_dir, source_name);
+    const content_hash = contentHashFromFile(source_dir, source_name) catch |err| switch (err) {
+        error.FileNotFound, error.NotDir, error.IsDir => return error.MissingTrackedFile,
+        else => return err,
+    };
 
     const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
     var raw_entries = loadRawStagedEntriesOrEmpty(allocator, persistence) catch |err| switch (err) {
@@ -328,47 +335,7 @@ pub fn status(
         const path_owned = try allocator.dupe(u8, tracked_entry.path.asSlice());
         errdefer allocator.free(path_owned);
 
-        var kind: StatusKind = .tracked;
-
-        const file = std.fs.openFileAbsolute(tracked_entry.path.asSlice(), .{}) catch null;
-        if (file) |tracked_file| {
-            var mutable_file = tracked_file;
-            defer mutable_file.close();
-
-            const stat = mutable_file.stat() catch null;
-            if (stat) |file_stat| {
-                if (file_stat.kind == .file) {
-                    const current_hash = try contentHashFromOpenedFile(mutable_file);
-                    if (staged_entries) |list| {
-                        if (local_staged.findByPath(list.items, tracked_entry.path.asSlice())) |entry| {
-                            if (std.mem.eql(u8, entry.content_hash.asSlice(), &current_hash)) {
-                                kind = .staged;
-                            } else {
-                                kind = .changed;
-                            }
-                        } else if (findContentEntryByPath(head_entries, tracked_entry.path.asSlice())) |head_entry| {
-                            const head_hash = head_entry.content_hash;
-                            if (std.mem.eql(u8, head_hash.asSlice(), &current_hash)) {
-                                kind = .committed;
-                            } else {
-                                kind = .changed;
-                            }
-                        } else if (head_entries != null) {
-                            kind = .changed;
-                        }
-                    } else if (findContentEntryByPath(head_entries, tracked_entry.path.asSlice())) |head_entry| {
-                        const head_hash = head_entry.content_hash;
-                        if (std.mem.eql(u8, head_hash.asSlice(), &current_hash)) {
-                            kind = .committed;
-                        } else {
-                            kind = .changed;
-                        }
-                    } else if (head_entries != null) {
-                        kind = .changed;
-                    }
-                }
-            }
-        }
+        const kind = try statusKindForTrackedPath(tracked_entry.path.asSlice(), head_entries, staged_entries);
 
         try results.append(.{
             .id = tracked_entry.id,
@@ -378,6 +345,31 @@ pub fn status(
     }
 
     return results;
+}
+
+/// Loads owned absolute paths for current staged entries.
+/// Memory: owned list, free with freeStringList.
+pub fn stagedPaths(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+) !StagedPathList {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    var entries = loadStagedEntriesOrEmpty(allocator, persistence) catch |err| switch (err) {
+        error.MissingStagedEntries => null,
+        else => return err,
+    };
+    defer if (entries) |*list| local_staged.freeEntries(allocator, list);
+
+    var paths = StagedPathList.init(allocator);
+    errdefer freeStringList(allocator, &paths);
+
+    if (entries) |list| {
+        for (list.items) |entry| {
+            try paths.append(try allocator.dupe(u8, entry.path.asSlice()));
+        }
+    }
+
+    return paths;
 }
 
 // Releases the owned status entry paths returned by `status`.
@@ -805,6 +797,7 @@ fn addDirectoryLocked(
     var outcome: AddBatchOutcome = .{
         .staged_paths = StringList.init(allocator),
         .skipped_untracked = 0,
+        .skipped_missing = 0,
         .skipped_already_staged = 0,
         .skipped_no_change = 0,
     };
@@ -859,10 +852,22 @@ fn addDirectoryLocked(
         const source_name = std.fs.path.basename(absolute_path);
         if (source_name.len == 0) return error.InvalidPath;
 
-        var source_dir = try std.fs.openDirAbsolute(source_parent, .{});
+        var source_dir = std.fs.openDirAbsolute(source_parent, .{}) catch |err| switch (err) {
+            error.FileNotFound, error.NotDir => {
+                outcome.skipped_missing += 1;
+                continue;
+            },
+            else => return err,
+        };
         defer source_dir.close();
 
-        const content_hash = try contentHashFromFile(source_dir, source_name);
+        const content_hash = contentHashFromFile(source_dir, source_name) catch |err| switch (err) {
+            error.FileNotFound, error.NotDir, error.IsDir => {
+                outcome.skipped_missing += 1;
+                continue;
+            },
+            else => return err,
+        };
 
         if (staged_index.get(absolute_path)) |staged_state| {
             if (std.mem.eql(u8, staged_state.content_hash.asSlice(), &content_hash)) {
@@ -899,6 +904,43 @@ fn addDirectoryLocked(
     }
 
     return outcome;
+}
+
+// Derives one status kind for a tracked path from the filesystem, staged entries, and HEAD.
+fn statusKindForTrackedPath(
+    absolute_path: []const u8,
+    head_entries: ?std.array_list.Managed(ContentEntry),
+    staged_entries: ?local_staged.EntryList,
+) !StatusKind {
+    var file = std.fs.openFileAbsolute(absolute_path, .{}) catch |err| switch (err) {
+        error.FileNotFound, error.NotDir, error.IsDir => return .missing,
+        else => return err,
+    };
+    defer file.close();
+
+    const stat = try file.stat();
+    if (stat.kind != .file) return .missing;
+
+    const current_hash = try contentHashFromOpenedFile(file);
+    if (staged_entries) |list| {
+        if (local_staged.findByPath(list.items, absolute_path)) |entry| {
+            if (std.mem.eql(u8, entry.content_hash.asSlice(), &current_hash)) {
+                return .staged;
+            }
+            return .changed;
+        }
+    }
+
+    if (findContentEntryByPath(head_entries, absolute_path)) |head_entry| {
+        const head_hash = head_entry.content_hash;
+        if (std.mem.eql(u8, head_hash.asSlice(), &current_hash)) {
+            return .committed;
+        }
+        return .changed;
+    }
+
+    if (head_entries != null) return .changed;
+    return .tracked;
 }
 
 const ParsedCommit = struct {
@@ -1990,6 +2032,29 @@ test "add requires tracked absolute path" {
     try std.testing.expectError(error.TrackedFileNotFound, add(allocator, omohi_dir, absolute_path));
 }
 
+test "add rejects missing tracked file" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    var source_file = try source_dir.createFile("missing.txt", .{});
+    try source_file.writeAll("payload");
+    source_file.close();
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, "missing.txt");
+    defer allocator.free(absolute_path);
+
+    _ = try track(allocator, omohi_dir, absolute_path);
+    try source_dir.deleteFile("missing.txt");
+
+    try std.testing.expectError(error.MissingTrackedFile, add(allocator, omohi_dir, absolute_path));
+}
+
 test "rm distinguishes tracked-not-found and staged-not-found" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -2229,7 +2294,48 @@ test "addDirectory reuses committed object without rewriting staged object" {
     try expectDirHasNoFiles(omohi_dir, "staged/objects");
 }
 
-test "status tolerates invalid tracked directory entry" {
+test "addDirectory counts missing tracked file separately" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    {
+        var file = try source_dir.createFile("a.txt", .{});
+        defer file.close();
+        try file.writeAll("a");
+    }
+    {
+        var file = try source_dir.createFile("b.txt", .{});
+        defer file.close();
+        try file.writeAll("b");
+    }
+
+    const a_path = try source_dir.realpathAlloc(allocator, "a.txt");
+    defer allocator.free(a_path);
+    const b_path = try source_dir.realpathAlloc(allocator, "b.txt");
+    defer allocator.free(b_path);
+    const paths = [_][]const u8{ a_path, b_path };
+
+    _ = try track(allocator, omohi_dir, a_path);
+    _ = try track(allocator, omohi_dir, b_path);
+    try source_dir.deleteFile("b.txt");
+
+    var outcome = try addDirectory(allocator, omohi_dir, &paths);
+    defer freeAddBatchOutcome(allocator, &outcome);
+
+    try std.testing.expectEqual(@as(usize, 1), outcome.staged_paths.items.len);
+    try std.testing.expectEqualStrings(a_path, outcome.staged_paths.items[0]);
+    try std.testing.expectEqual(@as(usize, 0), outcome.skipped_untracked);
+    try std.testing.expectEqual(@as(usize, 1), outcome.skipped_missing);
+}
+
+test "status treats tracked directory entry as missing" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -2254,8 +2360,64 @@ test "status tolerates invalid tracked directory entry" {
     defer freeStatusList(allocator, &statuses);
 
     try std.testing.expectEqual(@as(usize, 1), statuses.items.len);
-    try std.testing.expectEqual(.tracked, statuses.items[0].status);
+    try std.testing.expectEqual(.missing, statuses.items[0].status);
     try std.testing.expectEqualStrings(directory_path, statuses.items[0].path);
+}
+
+test "status reports missing when tracked file is deleted" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    var source_file = try source_dir.createFile("gone.txt", .{});
+    try source_file.writeAll("payload");
+    source_file.close();
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, "gone.txt");
+    defer allocator.free(absolute_path);
+    _ = try track(allocator, omohi_dir, absolute_path);
+    try source_dir.deleteFile("gone.txt");
+
+    var statuses = try status(allocator, omohi_dir);
+    defer freeStatusList(allocator, &statuses);
+
+    try std.testing.expectEqual(@as(usize, 1), statuses.items.len);
+    try std.testing.expectEqual(.missing, statuses.items[0].status);
+    try std.testing.expectEqualStrings(absolute_path, statuses.items[0].path);
+}
+
+test "status reports missing for staged file deleted after add" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    var source_file = try source_dir.createFile("staged.txt", .{});
+    try source_file.writeAll("payload");
+    source_file.close();
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, "staged.txt");
+    defer allocator.free(absolute_path);
+    _ = try track(allocator, omohi_dir, absolute_path);
+    try add(allocator, omohi_dir, absolute_path);
+    try source_dir.deleteFile("staged.txt");
+
+    var statuses = try status(allocator, omohi_dir);
+    defer freeStatusList(allocator, &statuses);
+
+    try std.testing.expectEqual(@as(usize, 1), statuses.items.len);
+    try std.testing.expectEqual(.missing, statuses.items[0].status);
 }
 
 test "find sorts by createdAt desc and limits to ten commits" {

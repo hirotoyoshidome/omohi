@@ -7,6 +7,7 @@ pub const StatusKind = enum {
     untracked,
     tracked,
     changed,
+    missing,
     staged,
     committed,
 };
@@ -22,6 +23,7 @@ pub const StatusList = std.array_list.Managed(StatusEntry);
 pub const AddBatchOutcome = struct {
     staged_paths: std.array_list.Managed([]u8),
     skipped_untracked: usize,
+    skipped_missing: usize,
     skipped_already_staged: usize,
     skipped_no_change: usize,
 };
