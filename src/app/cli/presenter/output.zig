@@ -20,6 +20,11 @@ pub const TagRemoveOutcome = enum {
     removed,
 };
 
+pub const CommitDryRunEntry = struct {
+    path: []const u8,
+    missing: bool,
+};
+
 // Returns an owned copy of a fixed presenter message.
 pub fn message(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
     return allocator.dupe(u8, text);
@@ -82,6 +87,7 @@ pub fn addResult(
 ) ![]u8 {
     if (outcome.staged_paths.items.len == 1 and
         outcome.skipped_untracked == 0 and
+        outcome.skipped_missing == 0 and
         outcome.skipped_non_regular == 0 and
         outcome.skipped_already_staged == 0 and
         outcome.skipped_no_change == 0 and
@@ -92,6 +98,7 @@ pub fn addResult(
 
     if (outcome.staged_paths.items.len == 0 and
         outcome.skipped_untracked == 0 and
+        outcome.skipped_missing == 0 and
         outcome.skipped_non_regular == 0 and
         outcome.skipped_already_staged == 0 and
         outcome.skipped_no_change == 1)
@@ -109,6 +116,9 @@ pub fn addResult(
     }
     if (outcome.skipped_untracked != 0) {
         try writer.print("Skipped untracked file(s): {d}\n", .{outcome.skipped_untracked});
+    }
+    if (outcome.skipped_missing != 0) {
+        try writer.print("Skipped missing tracked file(s): {d}\n", .{outcome.skipped_missing});
     }
     if (outcome.skipped_already_staged != 0) {
         try writer.print("Skipped already staged file(s): {d}\n", .{outcome.skipped_already_staged});
@@ -135,6 +145,9 @@ pub fn addMultiResult(allocator: std.mem.Allocator, outcome: *const add_ops.AddO
     }
     if (outcome.skipped_untracked != 0) {
         try writer.print("Skipped untracked file(s): {d}\n", .{outcome.skipped_untracked});
+    }
+    if (outcome.skipped_missing != 0) {
+        try writer.print("Skipped missing tracked file(s): {d}\n", .{outcome.skipped_missing});
     }
     if (outcome.skipped_already_staged != 0) {
         try writer.print("Skipped already staged file(s): {d}\n", .{outcome.skipped_already_staged});
@@ -259,8 +272,20 @@ pub fn statusResult(
         try writeStatusLine(writer, "changed:", .red, entry.path, enable_color);
     }
 
+    var missing_count: usize = 0;
+    for (list.items) |entry| {
+        if (entry.status != .missing) continue;
+        rendered_count += 1;
+        missing_count += 1;
+        try writeStatusLine(writer, "missing:", .gray, entry.path, enable_color);
+    }
+
     if (rendered_count == 0) {
-        try writer.writeAll("no staged or changed tracked files\n");
+        try writer.writeAll("no staged, changed, or missing tracked files\n");
+    } else if (missing_count != 0) {
+        try writer.writeAll(
+            "Missing tracked files remain. Use `omohi tracklist` to find IDs, then `omohi untrack <trackedFileId>`.\n",
+        );
     }
 
     return out.toOwnedSlice();
@@ -618,15 +643,23 @@ pub fn tagRmResult(
 }
 
 // Renders dry-run commit output as owned CLI text without mutating store state.
-pub fn commitDryRunResult(allocator: std.mem.Allocator, staged_count: usize, staged_paths: []const []const u8) ![]u8 {
+pub fn commitDryRunResult(
+    allocator: std.mem.Allocator,
+    staged_count: usize,
+    staged_entries: []const CommitDryRunEntry,
+) ![]u8 {
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
     const writer = out.writer();
 
     try writer.writeAll("Dry run: commit prepared but not written.\n");
     try writer.print("dry-run staged count: {d}\n", .{staged_count});
-    for (staged_paths) |path| {
-        try writer.print("- {s}\n", .{path});
+    for (staged_entries) |entry| {
+        if (entry.missing) {
+            try writer.print("- {s} (missing)\n", .{entry.path});
+        } else {
+            try writer.print("- {s}\n", .{entry.path});
+        }
     }
     return out.toOwnedSlice();
 }
@@ -1007,6 +1040,7 @@ test "addResult renders directory summary" {
     defer add_ops.freeAddOutcome(std.testing.allocator, &outcome);
     try outcome.staged_paths.append(try std.testing.allocator.dupe(u8, "/tmp/root/a.txt"));
     outcome.skipped_untracked = 2;
+    outcome.skipped_missing = 1;
     outcome.skipped_already_staged = 1;
     outcome.skipped_no_change = 3;
 
@@ -1017,6 +1051,7 @@ test "addResult renders directory summary" {
         "Staged 1 file(s) under /tmp/root\n" ++
             "- /tmp/root/a.txt\n" ++
             "Skipped untracked file(s): 2\n" ++
+            "Skipped missing tracked file(s): 1\n" ++
             "Skipped already staged file(s): 1\n" ++
             "Skipped unchanged file(s): 3\n",
         output,
@@ -1040,6 +1075,7 @@ test "addMultiResult renders aggregated summary without under-clause" {
     try outcome.staged_paths.append(try std.testing.allocator.dupe(u8, "/tmp/a.txt"));
     try outcome.staged_paths.append(try std.testing.allocator.dupe(u8, "/tmp/b.txt"));
     outcome.skipped_untracked = 2;
+    outcome.skipped_missing = 1;
     outcome.skipped_already_staged = 1;
     outcome.skipped_no_change = 3;
 
@@ -1051,6 +1087,7 @@ test "addMultiResult renders aggregated summary without under-clause" {
             "- /tmp/a.txt\n" ++
             "- /tmp/b.txt\n" ++
             "Skipped untracked file(s): 2\n" ++
+            "Skipped missing tracked file(s): 1\n" ++
             "Skipped already staged file(s): 1\n" ++
             "Skipped unchanged file(s): 3\n",
         output,
@@ -1322,7 +1359,7 @@ test "showResult renders selected fields as json" {
     );
 }
 
-test "statusResult groups staged and changed tracked files" {
+test "statusResult groups staged, changed, and missing tracked files" {
     var list = status_ops.StatusList.init(std.testing.allocator);
     defer {
         for (list.items) |entry| std.testing.allocator.free(entry.path);
@@ -1339,13 +1376,20 @@ test "statusResult groups staged and changed tracked files" {
         .path = try std.testing.allocator.dupe(u8, "/tmp/changed.txt"),
         .status = .changed,
     });
+    try list.append(.{
+        .id = .{ .value = filled32('c') },
+        .path = try std.testing.allocator.dupe(u8, "/tmp/missing.txt"),
+        .status = .missing,
+    });
 
     const output = try statusResult(std.testing.allocator, &list, false);
     defer std.testing.allocator.free(output);
 
     try std.testing.expectEqualStrings(
         "staged: /tmp/staged.txt\n" ++
-            "changed: /tmp/changed.txt\n",
+            "changed: /tmp/changed.txt\n" ++
+            "missing: /tmp/missing.txt\n" ++
+            "Missing tracked files remain. Use `omohi tracklist` to find IDs, then `omohi untrack <trackedFileId>`.\n",
         output,
     );
 }
@@ -1357,7 +1401,7 @@ test "statusResult renders empty text when no tracked files changed" {
     const output = try statusResult(std.testing.allocator, &list, false);
     defer std.testing.allocator.free(output);
 
-    try std.testing.expectEqualStrings("no staged or changed tracked files\n", output);
+    try std.testing.expectEqualStrings("no staged, changed, or missing tracked files\n", output);
 }
 
 test "statusResult colors labels when enabled" {
@@ -1377,13 +1421,20 @@ test "statusResult colors labels when enabled" {
         .path = try std.testing.allocator.dupe(u8, "/tmp/changed.txt"),
         .status = .changed,
     });
+    try list.append(.{
+        .id = .{ .value = filled32('c') },
+        .path = try std.testing.allocator.dupe(u8, "/tmp/missing.txt"),
+        .status = .missing,
+    });
 
     const output = try statusResult(std.testing.allocator, &list, true);
     defer std.testing.allocator.free(output);
 
     try std.testing.expectEqualStrings(
         "\x1b[32mstaged:\x1b[0m /tmp/staged.txt\n" ++
-            "\x1b[31mchanged:\x1b[0m /tmp/changed.txt\n",
+            "\x1b[31mchanged:\x1b[0m /tmp/changed.txt\n" ++
+            "\x1b[90mmissing:\x1b[0m /tmp/missing.txt\n" ++
+            "Missing tracked files remain. Use `omohi tracklist` to find IDs, then `omohi untrack <trackedFileId>`.\n",
         output,
     );
 }
@@ -1458,15 +1509,18 @@ test "tagRmResult renders no-tags branch" {
 }
 
 test "commitDryRunResult starts with migration message" {
-    const paths = [_][]const u8{ "/tmp/a.txt", "/tmp/b.txt" };
-    const output = try commitDryRunResult(std.testing.allocator, paths.len, &paths);
+    const entries = [_]CommitDryRunEntry{
+        .{ .path = "/tmp/a.txt", .missing = false },
+        .{ .path = "/tmp/b.txt", .missing = true },
+    };
+    const output = try commitDryRunResult(std.testing.allocator, entries.len, &entries);
     defer std.testing.allocator.free(output);
 
     try std.testing.expectEqualStrings(
         "Dry run: commit prepared but not written.\n" ++
             "dry-run staged count: 2\n" ++
             "- /tmp/a.txt\n" ++
-            "- /tmp/b.txt\n",
+            "- /tmp/b.txt (missing)\n",
         output,
     );
 }
