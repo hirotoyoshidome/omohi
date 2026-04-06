@@ -1,5 +1,6 @@
 const std = @import("std");
 const parser_types = @import("../parser/types.zig");
+const ansi_color = @import("ansi_color.zig");
 const add_ops = @import("../../../ops/add_ops.zig");
 const rm_ops = @import("../../../ops/rm_ops.zig");
 const track_ops = @import("../../../ops/track_ops.zig");
@@ -236,37 +237,45 @@ pub fn tracklistResult(
     return out.toOwnedSlice();
 }
 
-// Renders staged and tracked status groups as owned CLI output.
-pub fn statusResult(allocator: std.mem.Allocator, list: *const status_ops.StatusList) ![]u8 {
+// Renders staged and changed status entries as owned CLI output.
+pub fn statusResult(
+    allocator: std.mem.Allocator,
+    list: *const status_ops.StatusList,
+    enable_color: bool,
+) ![]u8 {
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
     const writer = out.writer();
-
-    try writer.writeAll("Status retrieved successfully.\n");
-
-    try writer.writeAll("Staged files:\n");
-    var staged_count: usize = 0;
+    var rendered_count: usize = 0;
     for (list.items) |entry| {
         if (entry.status != .staged) continue;
-        staged_count += 1;
-        try writer.print("- {s}\n", .{entry.path});
-    }
-    if (staged_count == 0) {
-        try writer.writeAll("- (none)\n");
+        rendered_count += 1;
+        try writeStatusLine(writer, "staged:", .green, entry.path, enable_color);
     }
 
-    try writer.writeAll("Changed tracked files:\n");
-    var changed_count: usize = 0;
     for (list.items) |entry| {
         if (entry.status != .tracked and entry.status != .changed) continue;
-        changed_count += 1;
-        try writer.print("- {s}\n", .{entry.path});
+        rendered_count += 1;
+        try writeStatusLine(writer, "changed:", .red, entry.path, enable_color);
     }
-    if (changed_count == 0) {
-        try writer.writeAll("- (none)\n");
+
+    if (rendered_count == 0) {
+        try writer.writeAll("no staged or changed tracked files\n");
     }
 
     return out.toOwnedSlice();
+}
+
+// Writes one line of human-readable status output.
+fn writeStatusLine(
+    writer: anytype,
+    label: []const u8,
+    color: ansi_color.Color,
+    path: []const u8,
+    enable_color: bool,
+) !void {
+    try ansi_color.writeColored(writer, label, color, enable_color);
+    try writer.print(" {s}\n", .{path});
 }
 
 // Renders find results as owned CLI output and includes active filter context.
@@ -1331,15 +1340,50 @@ test "statusResult groups staged and changed tracked files" {
         .status = .changed,
     });
 
-    const output = try statusResult(std.testing.allocator, &list);
+    const output = try statusResult(std.testing.allocator, &list, false);
     defer std.testing.allocator.free(output);
 
     try std.testing.expectEqualStrings(
-        "Status retrieved successfully.\n" ++
-            "Staged files:\n" ++
-            "- /tmp/staged.txt\n" ++
-            "Changed tracked files:\n" ++
-            "- /tmp/changed.txt\n",
+        "staged: /tmp/staged.txt\n" ++
+            "changed: /tmp/changed.txt\n",
+        output,
+    );
+}
+
+test "statusResult renders empty text when no tracked files changed" {
+    var list = status_ops.StatusList.init(std.testing.allocator);
+    defer list.deinit();
+
+    const output = try statusResult(std.testing.allocator, &list, false);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings("no staged or changed tracked files\n", output);
+}
+
+test "statusResult colors labels when enabled" {
+    var list = status_ops.StatusList.init(std.testing.allocator);
+    defer {
+        for (list.items) |entry| std.testing.allocator.free(entry.path);
+        list.deinit();
+    }
+
+    try list.append(.{
+        .id = .{ .value = filled32('a') },
+        .path = try std.testing.allocator.dupe(u8, "/tmp/staged.txt"),
+        .status = .staged,
+    });
+    try list.append(.{
+        .id = .{ .value = filled32('b') },
+        .path = try std.testing.allocator.dupe(u8, "/tmp/changed.txt"),
+        .status = .changed,
+    });
+
+    const output = try statusResult(std.testing.allocator, &list, true);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "\x1b[32mstaged:\x1b[0m /tmp/staged.txt\n" ++
+            "\x1b[31mchanged:\x1b[0m /tmp/changed.txt\n",
         output,
     );
 }
