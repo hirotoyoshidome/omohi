@@ -18,7 +18,10 @@ pub fn fromParsedRequest(
 ) !?PreparedJournalEvent {
     return switch (parsed) {
         .track => |args| try makeEvent(allocator, "track", .{ .paths = args.paths }),
-        .untrack => |args| try makeEvent(allocator, "untrack", .{ .trackedFileId = args.tracked_file_id }),
+        .untrack => |args| try makeEvent(allocator, "untrack", .{
+            .trackedFileId = args.tracked_file_id,
+            .missing = args.missing,
+        }),
         .add => |args| try makeEvent(allocator, "add", .{ .all = args.all, .paths = args.paths }),
         .rm => |args| try makeEvent(allocator, "rm", .{ .paths = args.paths }),
         .commit => |args| blk: {
@@ -77,4 +80,18 @@ test "fromParsedRequest skips commit dry-run" {
 
     const maybe_event = try fromParsedRequest(std.testing.allocator, parsed);
     try std.testing.expect(maybe_event == null);
+}
+
+test "fromParsedRequest maps untrack missing command to event" {
+    const parsed: parser_types.ParsedRequest = .{ .untrack = .{
+        .tracked_file_id = null,
+        .missing = true,
+    } };
+
+    var event = (try fromParsedRequest(std.testing.allocator, parsed)).?;
+    defer event.deinit(std.testing.allocator);
+
+    try std.testing.expectEqualStrings("untrack", event.command_type);
+    try std.testing.expect(std.mem.indexOf(u8, event.payload_json, "\"trackedFileId\":null") != null);
+    try std.testing.expect(std.mem.indexOf(u8, event.payload_json, "\"missing\":true") != null);
 }
