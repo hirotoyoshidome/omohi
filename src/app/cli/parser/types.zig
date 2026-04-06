@@ -27,7 +27,8 @@ pub const TrackArgs = struct {
 };
 
 pub const UntrackArgs = struct {
-    tracked_file_id: []const u8,
+    tracked_file_id: ?[]const u8,
+    missing: bool,
 };
 
 pub const AddArgs = struct {
