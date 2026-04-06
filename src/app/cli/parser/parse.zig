@@ -180,10 +180,39 @@ fn parseTracklist(allocator: std.mem.Allocator, args: []const []const u8) !types
     } };
 }
 
-// Parses `untrack <trackedFileId>`.
+// Parses `untrack <trackedFileId>` and `untrack --missing`.
 fn parseUntrack(args: []const []const u8) !types.ParsedRequest {
-    if (args.len != 1) return error.MissingArgument;
-    return .{ .untrack = .{ .tracked_file_id = args[0] } };
+    var missing = false;
+    var tracked_file_id: ?[]const u8 = null;
+    var stop_option = false;
+
+    for (args) |token| {
+        if (!stop_option and std.mem.eql(u8, token, "--")) {
+            stop_option = true;
+            continue;
+        }
+
+        if (!stop_option) {
+            if (parseLongOption(token)) |opt| {
+                if (equalsIgnoreAsciiCase(opt.key, "missing")) {
+                    if (opt.value != null) return error.UnknownOption;
+                    if (missing or tracked_file_id != null) return error.UnexpectedArgument;
+                    missing = true;
+                    continue;
+                }
+                return error.UnknownOption;
+            }
+        }
+
+        if (tracked_file_id != null or missing) return error.UnexpectedArgument;
+        tracked_file_id = token;
+    }
+
+    if (!missing and tracked_file_id == null) return error.MissingArgument;
+    return .{ .untrack = .{
+        .tracked_file_id = tracked_file_id,
+        .missing = missing,
+    } };
 }
 
 // Parses `add <path>...` and `add -a|--all`.
@@ -646,6 +675,46 @@ test "parser rejects add all mixed with paths" {
     try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &.{ "add", "-a", "./a.md" }));
     try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &.{ "add", "--all", "./a.md" }));
     try std.testing.expectError(error.UnknownOption, parseArgs(allocator, &.{ "add", "--all=value" }));
+}
+
+test "parser accepts untrack id and missing option" {
+    const allocator = std.testing.allocator;
+
+    {
+        const argv = [_][]const u8{ "untrack", "abc" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .untrack => |args| {
+                try std.testing.expectEqualStrings("abc", args.tracked_file_id.?);
+                try std.testing.expect(!args.missing);
+            },
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        const argv = [_][]const u8{ "untrack", "--missing" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .untrack => |args| {
+                try std.testing.expect(args.tracked_file_id == null);
+                try std.testing.expect(args.missing);
+            },
+            else => return error.UnexpectedResult,
+        }
+    }
+}
+
+test "parser rejects mixed or invalid untrack missing usage" {
+    const allocator = std.testing.allocator;
+
+    try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &.{ "untrack", "--missing", "abc" }));
+    try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &.{ "untrack", "abc", "--missing" }));
+    try std.testing.expectError(error.UnknownOption, parseArgs(allocator, &.{ "untrack", "--missing=yes" }));
 }
 
 test "parser accepts commit options" {

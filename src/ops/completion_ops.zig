@@ -11,6 +11,7 @@ const top_level_aliases = [_][]const u8{ "-h", "--help", "-v", "--version" };
 const tag_commands = [_][]const u8{ "ls", "add", "rm" };
 const commit_options = [_][]const u8{ "-m", "--message", "-t", "--tag", "--dry-run" };
 const add_options = [_][]const u8{ "-a", "--all" };
+const untrack_options = [_][]const u8{"--missing"};
 const tracklist_options = [_][]const u8{ "--output", "--field" };
 const find_options = [_][]const u8{ "-t", "--tag", "-d", "--date", "--output", "--field" };
 const show_options = [_][]const u8{ "--output", "--field" };
@@ -114,6 +115,7 @@ pub fn complete(
         return out;
     }
     if (std.mem.eql(u8, command, "untrack") and index == 2) {
+        try appendFilteredStatic(allocator, &out, &untrack_options, current);
         if (maybe_omohi_dir) |omohi_dir| {
             var ids = try loadTrackedFileIds(allocator, omohi_dir);
             defer freeCandidateList(allocator, &ids);
@@ -350,7 +352,7 @@ fn isStringAscLessThan(_: void, lhs: []u8, rhs: []u8) bool {
     return std.mem.order(u8, lhs, rhs) == .lt;
 }
 
-test "complete returns tracked file ids for untrack" {
+test "complete returns untrack options and tracked file ids" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -370,7 +372,8 @@ test "complete returns tracked file ids for untrack" {
     var list = try complete(allocator, omohi_dir, &words, 2);
     defer freeCandidateList(allocator, &list);
 
-    try std.testing.expect(list.items.len >= 2);
+    try std.testing.expect(list.items.len >= 3);
+    try std.testing.expect(containsCandidate(list.items, "--missing"));
     try std.testing.expect(containsCandidate(list.items, first.asSlice()));
     try std.testing.expect(containsCandidate(list.items, second.asSlice()));
 }

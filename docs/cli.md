@@ -7,7 +7,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 | Command | Usage | Summary |
 | --- | --- | --- |
 | `track` | `track <path>...` | Register one file or recursively track files under a directory. |
-| `untrack` | `untrack <trackedFileId>` | Remove a tracked target by tracked file ID. |
+| `untrack` | `untrack (<trackedFileId> | --missing)` | Remove one tracked target by ID or clear all missing tracked targets. |
 | `add` | `add [-a|--all] [<path>...]` | Stage one tracked file, a tracked directory subtree, or all changed tracked files. |
 | `rm` | `rm <path>...` | Remove one staged file or recursively unstage staged files under a directory. |
 | `commit` | `commit -m <message> [-t <tag>] [--dry-run]` | Create a commit from staged entries. |
@@ -43,17 +43,19 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 
 ### untrack
 
-- Usage: `omohi untrack <trackedFileId>`
-- Summary: Remove a tracked target by tracked file ID.
+- Usage: `omohi untrack (<trackedFileId> | --missing)`
+- Summary: Remove one tracked target by ID or clear all missing tracked targets.
 - Positionals:
-  - `trackedFileId` (required): Tracked file ID from `omohi tracklist`.
+  - `trackedFileId` (optional): Tracked file ID from `omohi tracklist`.
 - Options:
-  - None
+  - `--missing` (optional): Untrack every tracked entry currently shown as `missing: <absolutePath>` in `omohi status`.
 - Examples:
   - `omohi untrack 6b2f0b7309d442f6be405d9dd80e4ad8`
+  - `omohi untrack --missing`
 - Notes:
-  - Use `omohi tracklist` to resolve IDs before untrack.
-  - Use this to explicitly clear tracked targets that appear as `missing: <absolutePath>` in `omohi status`.
+  - Use `omohi tracklist` to resolve IDs before untracking one specific target.
+  - `--missing` removes all tracked targets that appear as `missing: <absolutePath>` in `omohi status`.
+  - `<trackedFileId>` and `--missing` cannot be combined.
 
 ### add
 
@@ -71,7 +73,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 - Notes:
   - When a directory is given, tracked files under it are staged recursively.
   - `-a` and `--all` stage every tracked file currently shown as `changed: <absolutePath>` in `omohi status`.
-  - Tracked files shown as `missing: <absolutePath>` in `omohi status` are not staged by `add`; resolve them with `omohi untrack` when needed.
+  - Tracked files shown as `missing: <absolutePath>` in `omohi status` are not staged by `add`; resolve them with `omohi untrack --missing` when needed.
   - `-a` and explicit paths cannot be combined.
   - Untracked and non-regular entries are skipped.
   - Shell-expanded multiple paths are accepted and processed in order.
@@ -125,7 +127,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 - Notes:
   - Human-readable text output uses one line per entry: `staged: <absolutePath>`, `changed: <absolutePath>`, or `missing: <absolutePath>`.
   - `missing` means the path is still tracked but the current file is no longer present as a regular file.
-  - When `missing` appears, use `omohi tracklist` to find the tracked file ID, then run `omohi untrack <trackedFileId>` to clear it explicitly.
+  - When `missing` appears, run `omohi untrack --missing` to clear all missing tracked targets explicitly.
   - ANSI colors are emitted only when stdout is a TTY.
 
 ### tracklist

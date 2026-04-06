@@ -45,16 +45,22 @@ pub const all = [_]CommandSpec{
     },
     .{
         .name = "untrack",
-        .usage = "untrack <trackedFileId>",
-        .summary = "Remove a tracked target by tracked file ID.",
+        .usage = "untrack (<trackedFileId> | --missing)",
+        .summary = "Remove one tracked target by ID or clear all missing tracked targets.",
         .positionals = &.{
-            .{ .name = "trackedFileId", .required = true, .repeatable = false, .description = "Tracked file ID from `omohi tracklist`." },
+            .{ .name = "trackedFileId", .required = false, .repeatable = false, .description = "Tracked file ID from `omohi tracklist`." },
         },
-        .options = &.{},
-        .examples = &.{"omohi untrack 6b2f0b7309d442f6be405d9dd80e4ad8"},
+        .options = &.{
+            .{ .long = "missing", .short = null, .value_name = null, .required = false, .repeatable = false, .description = "Untrack every tracked entry currently shown as `missing: <absolutePath>` in `omohi status`." },
+        },
+        .examples = &.{
+            "omohi untrack 6b2f0b7309d442f6be405d9dd80e4ad8",
+            "omohi untrack --missing",
+        },
         .notes = &.{
-            "Use `omohi tracklist` to resolve IDs before untrack.",
-            "Use this to explicitly clear tracked targets that appear as `missing: <absolutePath>` in `omohi status`.",
+            "Use `omohi tracklist` to resolve IDs before untracking one specific target.",
+            "`--missing` removes all tracked targets that appear as `missing: <absolutePath>` in `omohi status`.",
+            "`<trackedFileId>` and `--missing` cannot be combined.",
         },
     },
     .{
@@ -71,7 +77,7 @@ pub const all = [_]CommandSpec{
         .notes = &.{
             "When a directory is given, tracked files under it are staged recursively.",
             "`-a` and `--all` stage every tracked file currently shown as `changed: <absolutePath>` in `omohi status`.",
-            "Tracked files shown as `missing: <absolutePath>` in `omohi status` are not staged by `add`; resolve them with `omohi untrack` when needed.",
+            "Tracked files shown as `missing: <absolutePath>` in `omohi status` are not staged by `add`; resolve them with `omohi untrack --missing` when needed.",
             "`-a` and explicit paths cannot be combined.",
             "Untracked and non-regular entries are skipped.",
             "Shell-expanded multiple paths are accepted and processed in order.",
@@ -123,7 +129,7 @@ pub const all = [_]CommandSpec{
         .notes = &.{
             "Human-readable text output uses one line per entry: `staged: <absolutePath>`, `changed: <absolutePath>`, or `missing: <absolutePath>`.",
             "`missing` means the path is still tracked but the current file is no longer present as a regular file.",
-            "When `missing` appears, use `omohi tracklist` to find the tracked file ID, then run `omohi untrack <trackedFileId>` to clear it explicitly.",
+            "When `missing` appears, run `omohi untrack --missing` to clear all missing tracked targets explicitly.",
             "ANSI colors are emitted only when stdout is a TTY.",
         },
     },
