@@ -16,6 +16,17 @@ pub const TrackOutcome = struct {
     }
 };
 
+pub const UntrackMissingOutcome = struct {
+    untracked_paths: std.array_list.Managed([]u8),
+
+    // Initializes an empty missing-untrack outcome that owns its path list.
+    pub fn init(allocator: std.mem.Allocator) UntrackMissingOutcome {
+        return .{
+            .untracked_paths = std.array_list.Managed([]u8).init(allocator),
+        };
+    }
+};
+
 /// Registers an absolute path as tracked.
 /// Directories are expanded recursively into regular files.
 pub fn track(
@@ -45,6 +56,28 @@ pub fn untrack(
     try store_api.untrack(allocator, omohi_dir, tracked_file_id);
 }
 
+/// Removes every tracked file currently reported as missing by `status`.
+pub fn untrackMissing(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+) !UntrackMissingOutcome {
+    try store_api.ensureStoreVersion(allocator, omohi_dir);
+
+    var statuses = try store_api.status(allocator, omohi_dir);
+    defer store_api.freeStatusList(allocator, &statuses);
+
+    var outcome = UntrackMissingOutcome.init(allocator);
+    errdefer freeUntrackMissingOutcome(allocator, &outcome);
+
+    for (statuses.items) |entry| {
+        if (entry.status != .missing) continue;
+        try store_api.untrack(allocator, omohi_dir, entry.id.asSlice());
+        try outcome.untracked_paths.append(try allocator.dupe(u8, entry.path));
+    }
+
+    return outcome;
+}
+
 /// Returns tracked id/path records.
 pub fn tracklist(
     allocator: std.mem.Allocator,
@@ -57,6 +90,12 @@ pub fn tracklist(
 // Releases the owned tracked id/path records returned by `tracklist`.
 pub fn freeTracklist(allocator: std.mem.Allocator, list: *TrackedList) void {
     store_api.freeTracklist(allocator, list);
+}
+
+// Releases the owned missing tracked paths stored in the outcome.
+pub fn freeUntrackMissingOutcome(allocator: std.mem.Allocator, outcome: *UntrackMissingOutcome) void {
+    for (outcome.untracked_paths.items) |path| allocator.free(path);
+    outcome.untracked_paths.deinit();
 }
 
 // Releases the owned tracked path strings stored in the outcome.
@@ -194,6 +233,77 @@ test "ops untrack removes tracked entry and propagates NotFound" {
     try std.testing.expectEqual(@as(usize, 0), list.items.len);
 
     try std.testing.expectError(error.NotFound, untrack(allocator, omohi_dir, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+}
+
+test "ops untrackMissing removes only missing tracked entries" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    {
+        var file = try source_dir.createFile("missing.txt", .{});
+        defer file.close();
+        try file.writeAll("gone");
+    }
+    {
+        var file = try source_dir.createFile("kept.txt", .{});
+        defer file.close();
+        try file.writeAll("stay");
+    }
+
+    const missing_path = try source_dir.realpathAlloc(allocator, "missing.txt");
+    defer allocator.free(missing_path);
+    const kept_path = try source_dir.realpathAlloc(allocator, "kept.txt");
+    defer allocator.free(kept_path);
+
+    try store_api.initializeVersionForFirstTrack(allocator, omohi_dir);
+    _ = try store_api.track(allocator, omohi_dir, missing_path);
+    _ = try store_api.track(allocator, omohi_dir, kept_path);
+    try source_dir.deleteFile("missing.txt");
+
+    var outcome = try untrackMissing(allocator, omohi_dir);
+    defer freeUntrackMissingOutcome(allocator, &outcome);
+
+    try std.testing.expectEqual(@as(usize, 1), outcome.untracked_paths.items.len);
+    try std.testing.expectEqualStrings(missing_path, outcome.untracked_paths.items[0]);
+
+    var list = try tracklist(allocator, omohi_dir);
+    defer freeTracklist(allocator, &list);
+    try std.testing.expectEqual(@as(usize, 1), list.items.len);
+    try std.testing.expectEqualStrings(kept_path, list.items[0].path.asSlice());
+}
+
+test "ops untrackMissing succeeds when there are no missing tracked entries" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    {
+        var file = try source_dir.createFile("kept.txt", .{});
+        defer file.close();
+        try file.writeAll("stay");
+    }
+
+    const kept_path = try source_dir.realpathAlloc(allocator, "kept.txt");
+    defer allocator.free(kept_path);
+
+    try store_api.initializeVersionForFirstTrack(allocator, omohi_dir);
+    _ = try store_api.track(allocator, omohi_dir, kept_path);
+
+    var outcome = try untrackMissing(allocator, omohi_dir);
+    defer freeUntrackMissingOutcome(allocator, &outcome);
+
+    try std.testing.expectEqual(@as(usize, 0), outcome.untracked_paths.items.len);
 }
 
 test "track fails when VERSION is missing in non-empty store" {
