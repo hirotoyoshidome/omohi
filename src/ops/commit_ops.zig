@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const store_api = @import("../store/api.zig");
+pub const StringList = store_api.StringList;
 
 /// Executes the durable commit transaction: lock -> persist data -> HEAD -> cleanup.
 pub fn commit(
@@ -11,6 +12,17 @@ pub fn commit(
     try store_api.ensureStoreVersion(allocator, omohi_dir);
     const id = try store_api.commit(allocator, omohi_dir, message);
     return id.value;
+}
+
+/// Returns owned staged paths for commit dry-run preview.
+pub fn stagedPaths(allocator: std.mem.Allocator, omohi_dir: std.fs.Dir) !StringList {
+    try store_api.ensureStoreVersion(allocator, omohi_dir);
+    return store_api.stagedPaths(allocator, omohi_dir);
+}
+
+// Releases owned strings returned by `stagedPaths`.
+pub fn freeStringList(allocator: std.mem.Allocator, list: *StringList) void {
+    store_api.freeStringList(allocator, list);
 }
 
 // Returns the value for a `key=value` property line when present.
