@@ -62,7 +62,7 @@ fn missingTrackedFileResult(
 ) !command_types.CommandResult {
     const output = try std.fmt.allocPrint(
         allocator,
-        "Tracked file is missing: {s}\nUse `omohi tracklist` to find IDs, then `omohi untrack <trackedFileId>`.\n",
+        "Tracked file is missing: {s}\nUse `omohi untrack --missing` to clear missing tracked files explicitly.\n",
         .{absolute_path},
     );
     return .{ .output = output, .to_stderr = true, .exit_code = exit_code.use_case_error };
@@ -108,7 +108,7 @@ test "missingTrackedFileResult returns expected message and exit code" {
     try std.testing.expectEqual(exit_code.use_case_error, result.exit_code);
     try std.testing.expectEqualStrings(
         "Tracked file is missing: /tmp/missing.txt\n" ++
-            "Use `omohi tracklist` to find IDs, then `omohi untrack <trackedFileId>`.\n",
+            "Use `omohi untrack --missing` to clear missing tracked files explicitly.\n",
         result.output,
     );
 }
