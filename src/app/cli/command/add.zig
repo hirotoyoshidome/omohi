@@ -26,6 +26,7 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.AddArgs) !command_ty
 
         var outcome = add_ops.add(allocator, omohi.dir, absolute_path) catch |err| switch (err) {
             error.TrackedFileNotFound => return trackedNotFoundResult(allocator, absolute_path),
+            error.MissingTrackedFile => return missingTrackedFileResult(allocator, absolute_path),
             else => return err,
         };
         defer add_ops.freeAddOutcome(allocator, &outcome);
@@ -43,6 +44,7 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.AddArgs) !command_ty
 
         var outcome = add_ops.add(allocator, omohi.dir, absolute_path) catch |err| switch (err) {
             error.TrackedFileNotFound => return trackedNotFoundResult(allocator, absolute_path),
+            error.MissingTrackedFile => return missingTrackedFileResult(allocator, absolute_path),
             else => return err,
         };
         errdefer add_ops.freeAddOutcome(allocator, &outcome);
@@ -51,6 +53,19 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.AddArgs) !command_ty
 
     const output = try presenter.addMultiResult(allocator, &combined);
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
+}
+
+// Builds the owned stderr result for a missing tracked path.
+fn missingTrackedFileResult(
+    allocator: std.mem.Allocator,
+    absolute_path: []const u8,
+) !command_types.CommandResult {
+    const output = try std.fmt.allocPrint(
+        allocator,
+        "Tracked file is missing: {s}\nUse `omohi tracklist` to find IDs, then `omohi untrack <trackedFileId>`.\n",
+        .{absolute_path},
+    );
+    return .{ .output = output, .to_stderr = true, .exit_code = exit_code.use_case_error };
 }
 
 // Moves staged path ownership and counters into the combined result.
@@ -83,4 +98,17 @@ test "trackedNotFoundResult returns expected message and exit code" {
     try std.testing.expect(result.to_stderr);
     try std.testing.expectEqual(exit_code.use_case_error, result.exit_code);
     try std.testing.expectEqualStrings("Tracked file not found: /tmp/not-tracked.txt\n", result.output);
+}
+
+test "missingTrackedFileResult returns expected message and exit code" {
+    const result = try missingTrackedFileResult(std.testing.allocator, "/tmp/missing.txt");
+    defer std.testing.allocator.free(result.output);
+
+    try std.testing.expect(result.to_stderr);
+    try std.testing.expectEqual(exit_code.use_case_error, result.exit_code);
+    try std.testing.expectEqualStrings(
+        "Tracked file is missing: /tmp/missing.txt\n" ++
+            "Use `omohi tracklist` to find IDs, then `omohi untrack <trackedFileId>`.\n",
+        result.output,
+    );
 }
