@@ -1,5 +1,6 @@
 const std = @import("std");
 const command_types = @import("../runtime/types.zig");
+const terminal_color = @import("../runtime/terminal_color.zig");
 const environment = @import("../environment.zig");
 const presenter = @import("../presenter/output.zig");
 const exit_code = @import("../error/exit_code.zig");
@@ -13,6 +14,6 @@ pub fn run(allocator: std.mem.Allocator) !command_types.CommandResult {
     var list = try status_ops.status(allocator, omohi.dir);
     defer status_ops.freeStatusList(allocator, &list);
 
-    const output = try presenter.statusResult(allocator, &list);
+    const output = try presenter.statusResult(allocator, &list, terminal_color.supportsColor(.stdout));
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
 }
