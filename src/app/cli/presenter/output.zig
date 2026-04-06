@@ -79,6 +79,27 @@ pub fn untrackResult(allocator: std.mem.Allocator, absolute_path: []const u8) ![
     return std.fmt.allocPrint(allocator, "Untracked: {s}\n", .{absolute_path});
 }
 
+// Renders the bulk missing-untrack result as owned CLI output.
+pub fn untrackMissingResult(
+    allocator: std.mem.Allocator,
+    outcome: *const track_ops.UntrackMissingOutcome,
+) ![]u8 {
+    if (outcome.untracked_paths.items.len == 0) {
+        return allocator.dupe(u8, "No missing tracked files to untrack.\n");
+    }
+
+    var out = std.array_list.Managed(u8).init(allocator);
+    errdefer out.deinit();
+    const writer = out.writer();
+
+    try writer.print("Untracked {d} missing tracked file(s).\n", .{outcome.untracked_paths.items.len});
+    for (outcome.untracked_paths.items) |path| {
+        try writer.print("- {s}\n", .{path});
+    }
+
+    return out.toOwnedSlice();
+}
+
 // Renders add results as owned CLI output, including skipped-path summaries when needed.
 pub fn addResult(
     allocator: std.mem.Allocator,
@@ -284,7 +305,7 @@ pub fn statusResult(
         try writer.writeAll("no staged, changed, or missing tracked files\n");
     } else if (missing_count != 0) {
         try writer.writeAll(
-            "Missing tracked files remain. Use `omohi tracklist` to find IDs, then `omohi untrack <trackedFileId>`.\n",
+            "Missing tracked files remain. Use `omohi untrack --missing` to clear them explicitly.\n",
         );
     }
 
@@ -1389,7 +1410,7 @@ test "statusResult groups staged, changed, and missing tracked files" {
         "staged: /tmp/staged.txt\n" ++
             "changed: /tmp/changed.txt\n" ++
             "missing: /tmp/missing.txt\n" ++
-            "Missing tracked files remain. Use `omohi tracklist` to find IDs, then `omohi untrack <trackedFileId>`.\n",
+            "Missing tracked files remain. Use `omohi untrack --missing` to clear them explicitly.\n",
         output,
     );
 }
@@ -1434,9 +1455,36 @@ test "statusResult colors labels when enabled" {
         "\x1b[32mstaged:\x1b[0m /tmp/staged.txt\n" ++
             "\x1b[31mchanged:\x1b[0m /tmp/changed.txt\n" ++
             "\x1b[90mmissing:\x1b[0m /tmp/missing.txt\n" ++
-            "Missing tracked files remain. Use `omohi tracklist` to find IDs, then `omohi untrack <trackedFileId>`.\n",
+            "Missing tracked files remain. Use `omohi untrack --missing` to clear them explicitly.\n",
         output,
     );
+}
+
+test "untrackMissingResult renders bulk summary" {
+    var outcome = track_ops.UntrackMissingOutcome.init(std.testing.allocator);
+    defer track_ops.freeUntrackMissingOutcome(std.testing.allocator, &outcome);
+    try outcome.untracked_paths.append(try std.testing.allocator.dupe(u8, "/tmp/a.txt"));
+    try outcome.untracked_paths.append(try std.testing.allocator.dupe(u8, "/tmp/b.txt"));
+
+    const output = try untrackMissingResult(std.testing.allocator, &outcome);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Untracked 2 missing tracked file(s).\n" ++
+            "- /tmp/a.txt\n" ++
+            "- /tmp/b.txt\n",
+        output,
+    );
+}
+
+test "untrackMissingResult renders no-op summary" {
+    var outcome = track_ops.UntrackMissingOutcome.init(std.testing.allocator);
+    defer track_ops.freeUntrackMissingOutcome(std.testing.allocator, &outcome);
+
+    const output = try untrackMissingResult(std.testing.allocator, &outcome);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings("No missing tracked files to untrack.\n", output);
 }
 
 test "tagAddResult renders no-new-tags branch with csv" {
