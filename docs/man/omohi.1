@@ -86,7 +86,7 @@ optional, repeatable: Path to the tracked file or directory to stage.
 .B Options
 .RS 4
 .B \-a, \-\-all
-optional: Stage all tracked files currently listed under `Changed tracked files:` in `omohi status`.
+optional: Stage all tracked files shown as `changed: <absolutePath>` in `omohi status`.
 .RE
 .TP
 .B Examples
@@ -102,7 +102,7 @@ omohi add \-a
 When a directory is given, tracked files under it are staged recursively.
 .RE
 .RS 4
-`\-a` and `\-\-all` stage every tracked file currently listed in `omohi status` under `Changed tracked files:`.
+`\-a` and `\-\-all` stage every tracked file currently shown as `changed: <absolutePath>` in `omohi status`.
 .RE
 .RS 4
 `\-a` and explicit paths cannot be combined.
@@ -195,6 +195,14 @@ omohi status
 .nf
 omohi status
 .fi
+.TP
+.B Notes
+.RS 4
+Human\-readable text output uses one line per entry: `staged: <absolutePath>` or `changed: <absolutePath>`.
+.RE
+.RS 4
+ANSI colors are emitted only when stdout is a TTY.
+.RE
 .SS tracklist
 .TP
 .B Summary

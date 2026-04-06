@@ -62,12 +62,12 @@ pub const all = [_]CommandSpec{
             .{ .name = "path", .required = false, .repeatable = true, .description = "Path to the tracked file or directory to stage." },
         },
         .options = &.{
-            .{ .long = "all", .short = 'a', .value_name = null, .required = false, .repeatable = false, .description = "Stage all tracked files currently listed under `Changed tracked files:` in `omohi status`." },
+            .{ .long = "all", .short = 'a', .value_name = null, .required = false, .repeatable = false, .description = "Stage all tracked files shown as `changed: <absolutePath>` in `omohi status`." },
         },
         .examples = &.{ "omohi add /tmp/note.txt", "omohi add .", "omohi add ./*.md", "omohi add -a" },
         .notes = &.{
             "When a directory is given, tracked files under it are staged recursively.",
-            "`-a` and `--all` stage every tracked file currently listed in `omohi status` under `Changed tracked files:`.",
+            "`-a` and `--all` stage every tracked file currently shown as `changed: <absolutePath>` in `omohi status`.",
             "`-a` and explicit paths cannot be combined.",
             "Untracked and non-regular entries are skipped.",
             "Shell-expanded multiple paths are accepted and processed in order.",
@@ -112,7 +112,10 @@ pub const all = [_]CommandSpec{
         .positionals = &.{},
         .options = &.{},
         .examples = &.{"omohi status"},
-        .notes = &.{},
+        .notes = &.{
+            "Human-readable text output uses one line per entry: `staged: <absolutePath>` or `changed: <absolutePath>`.",
+            "ANSI colors are emitted only when stdout is a TTY.",
+        },
     },
     .{
         .name = "tracklist",
