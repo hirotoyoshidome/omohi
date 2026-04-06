@@ -17,19 +17,20 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.CommitArgs) !command
         var list = try status_ops.status(allocator, omohi.dir);
         defer status_ops.freeStatusList(allocator, &list);
 
-        var staged_paths = std.array_list.Managed([]const u8).init(allocator);
-        defer {
-            for (staged_paths.items) |path| allocator.free(path);
-            staged_paths.deinit();
+        var staged_paths = try commit_ops.stagedPaths(allocator, omohi.dir);
+        defer commit_ops.freeStringList(allocator, &staged_paths);
+
+        var preview_entries = std.array_list.Managed(presenter.CommitDryRunEntry).init(allocator);
+        defer preview_entries.deinit();
+
+        for (staged_paths.items) |path| {
+            try preview_entries.append(.{
+                .path = path,
+                .missing = statusForPath(&list, path) == .missing,
+            });
         }
 
-        for (list.items) |entry| {
-            if (entry.status == .staged) {
-                try staged_paths.append(try allocator.dupe(u8, entry.path));
-            }
-        }
-
-        const output = try presenter.commitDryRunResult(allocator, staged_paths.items.len, staged_paths.items);
+        const output = try presenter.commitDryRunResult(allocator, staged_paths.items.len, preview_entries.items);
         return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
     }
 
@@ -40,4 +41,12 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.CommitArgs) !command
 
     const output = try presenter.commitResult(allocator, commit_id);
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
+}
+
+// Returns the current status for one tracked path when it exists in the list.
+fn statusForPath(list: *const status_ops.StatusList, path: []const u8) status_ops.StatusKind {
+    for (list.items) |entry| {
+        if (std.mem.eql(u8, entry.path, path)) return entry.status;
+    }
+    return .tracked;
 }
