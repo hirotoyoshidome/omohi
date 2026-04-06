@@ -3,6 +3,7 @@ const std = @import("std");
 pub const Color = enum {
     green,
     red,
+    gray,
 };
 
 /// Writes `text` with an ANSI color when enabled.
@@ -28,6 +29,7 @@ fn startCode(color: Color) []const u8 {
     return switch (color) {
         .green => "\x1b[32m",
         .red => "\x1b[31m",
+        .gray => "\x1b[90m",
     };
 }
 
@@ -47,4 +49,13 @@ test "writeColored wraps text with ANSI escapes when enabled" {
     try writeColored(out.writer(), "changed:", .red, true);
 
     try std.testing.expectEqualStrings("\x1b[31mchanged:\x1b[0m", out.items);
+}
+
+test "writeColored supports gray when enabled" {
+    var out = std.array_list.Managed(u8).init(std.testing.allocator);
+    defer out.deinit();
+
+    try writeColored(out.writer(), "missing:", .gray, true);
+
+    try std.testing.expectEqualStrings("\x1b[90mmissing:\x1b[0m", out.items);
 }
