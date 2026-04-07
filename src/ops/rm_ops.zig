@@ -1,24 +1,7 @@
 const std = @import("std");
 
 const store_api = @import("../store/api.zig");
-const status_ops = @import("./status_ops.zig");
-
-pub const RmOutcome = struct {
-    unstaged_paths: std.array_list.Managed([]u8),
-    skipped_untracked: usize,
-    skipped_not_staged: usize,
-    skipped_non_regular: usize,
-
-    // Initializes an empty rm outcome that owns its collected unstaged paths.
-    pub fn init(allocator: std.mem.Allocator) RmOutcome {
-        return .{
-            .unstaged_paths = std.array_list.Managed([]u8).init(allocator),
-            .skipped_untracked = 0,
-            .skipped_not_staged = 0,
-            .skipped_non_regular = 0,
-        };
-    }
-};
+pub const RmOutcome = store_api.RmBatchOutcome;
 
 /// Removes a staged file entry from staging by source path.
 pub fn rm(
@@ -39,8 +22,7 @@ pub fn rm(
 
 // Releases all owned unstaged path strings stored in the outcome.
 pub fn freeRmOutcome(allocator: std.mem.Allocator, outcome: *RmOutcome) void {
-    for (outcome.unstaged_paths.items) |path| allocator.free(path);
-    outcome.unstaged_paths.deinit();
+    store_api.freeRmBatchOutcome(allocator, outcome);
 }
 
 // Unstages one tracked file and returns a single-path outcome.
@@ -63,78 +45,7 @@ fn rmDirectory(
     omohi_dir: std.fs.Dir,
     absolute_path: []const u8,
 ) !RmOutcome {
-    var outcome = RmOutcome.init(allocator);
-    errdefer freeRmOutcome(allocator, &outcome);
-
-    var tracked_statuses = try status_ops.status(allocator, omohi_dir);
-    defer status_ops.freeStatusList(allocator, &tracked_statuses);
-
-    var tracked_paths = std.StringHashMap(void).init(allocator);
-    defer tracked_paths.deinit();
-    var staged_paths = std.StringHashMap(void).init(allocator);
-    defer staged_paths.deinit();
-    for (tracked_statuses.items) |entry| {
-        try tracked_paths.put(entry.path, {});
-        if (entry.status == .staged) try staged_paths.put(entry.path, {});
-    }
-
-    var collected = std.array_list.Managed([]u8).init(allocator);
-    defer {
-        for (collected.items) |path| allocator.free(path);
-        collected.deinit();
-    }
-    try collectRegularFiles(allocator, absolute_path, &collected, &outcome.skipped_non_regular);
-    std.mem.sort([]u8, collected.items, {}, lessThanPath);
-
-    for (collected.items) |path| {
-        if (!tracked_paths.contains(path)) {
-            outcome.skipped_untracked += 1;
-            continue;
-        }
-        if (!staged_paths.contains(path)) {
-            outcome.skipped_not_staged += 1;
-            continue;
-        }
-
-        try store_api.rm(allocator, omohi_dir, path);
-        try outcome.unstaged_paths.append(try allocator.dupe(u8, path));
-    }
-
-    return outcome;
-}
-
-// Recursively collects regular files below the absolute directory path.
-fn collectRegularFiles(
-    allocator: std.mem.Allocator,
-    absolute_dir_path: []const u8,
-    collected: *std.array_list.Managed([]u8),
-    skipped_non_regular: *usize,
-) !void {
-    var dir = try std.fs.openDirAbsolute(absolute_dir_path, .{ .iterate = true, .access_sub_paths = true });
-    defer dir.close();
-
-    var it = dir.iterate();
-    while (try it.next()) |entry| {
-        const child_path = try std.fs.path.resolve(allocator, &.{ absolute_dir_path, entry.name });
-        errdefer allocator.free(child_path);
-
-        switch (entry.kind) {
-            .file => try collected.append(child_path),
-            .directory => {
-                try collectRegularFiles(allocator, child_path, collected, skipped_non_regular);
-                allocator.free(child_path);
-            },
-            else => {
-                skipped_non_regular.* += 1;
-                allocator.free(child_path);
-            },
-        }
-    }
-}
-
-// Sorts collected absolute paths in ascending byte order.
-fn lessThanPath(_: void, lhs: []u8, rhs: []u8) bool {
-    return std.mem.lessThan(u8, lhs, rhs);
+    return store_api.rmTree(allocator, omohi_dir, absolute_path);
 }
 
 test "rm removes staged entry for tracked file" {

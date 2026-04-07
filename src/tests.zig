@@ -17,6 +17,7 @@ const _store_local_snapshot = @import("store/local/snapshot.zig");
 const _store_local_commit_tags = @import("store/local/commit_tags.zig");
 const _store_local_head = @import("store/local/head.zig");
 const _store_local_tags = @import("store/local/tags.zig");
+const _store_local_directory_tree_files = @import("store/local/directory_tree_files.zig");
 const _store_local_trash = @import("store/local/trash.zig");
 const _store_local_version = @import("store/local/version.zig");
 const _store_local_journal = @import("store/local/journal.zig");
@@ -67,6 +68,7 @@ test "load modules" {
     _ = _store_local_commit_tags;
     _ = _store_local_head;
     _ = _store_local_tags;
+    _ = _store_local_directory_tree_files;
     _ = _store_local_trash;
     _ = _store_local_version;
     _ = _store_local_journal;

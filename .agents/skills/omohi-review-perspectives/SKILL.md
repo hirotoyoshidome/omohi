@@ -17,7 +17,7 @@ Before reviewing, read the following.
 Review in the following order.
 
 1. Philosophy alignment: local-first, non-destructive, process logging
-2. Boundary alignment: `app/cli -> ops`, and `ops -> store/api.zig`
+2. Boundary alignment: `app/cli -> ops`, `ops` must not import other `ops`, and `ops -> store/api.zig`
 3. External contract preservation: CLI behavior, exit codes, persistence format
 4. Durability and destructive-operation safety
 5. Ownership, lifetime, allocator, and error handling

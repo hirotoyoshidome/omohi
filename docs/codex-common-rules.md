@@ -16,6 +16,7 @@ The intended workflow is "a normal request message + a reference to this documen
 * If there are directories or files that will not be referenced, explicitly mark them as excluded.
 
 ### 3.2 Layer Boundaries and Dependency Direction
+* `ops` must not import other `ops`; shared behavior needed by multiple ops must be moved into `store`.
 * When `ops` references `store`, access is allowed only through `store/api.zig` (Facade).
 * Upper layers must not depend directly on the internal implementation of lower layers.
 * Whenever adding an import, always verify that it does not break the dependency direction.
@@ -51,6 +52,7 @@ The intended workflow is "a normal request message + a reference to this documen
 * Do not carry temporary PoC-driven structures into the production implementation.
 
 ## 5. Prohibited
+* Direct imports from one `ops` module into another `ops` module
 * Direct imports from `ops` into internal `store` modules
 * Redefining or leaking internal details in the public layer (`api.zig`)
 * Directory placement that does not match responsibility (for example, putting procedures under `store`)

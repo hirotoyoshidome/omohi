@@ -83,6 +83,16 @@ fn validateDependency(
             }
         },
         .ops => {
+            if (target_layer == .ops) {
+                try violations.append(allocator, .{
+                    .source_file = source_file,
+                    .import_literal = import_literal,
+                    .resolved_target = resolved_target,
+                    .reason = "ops must not import other ops modules",
+                });
+                return;
+            }
+
             if (target_layer == .app) {
                 try violations.append(allocator, .{
                     .source_file = source_file,
@@ -290,4 +300,59 @@ fn skipWhitespace(source: []const u8, index: *usize) void {
     while (index.* < source.len and std.ascii.isWhitespace(source[index.*])) {
         index.* += 1;
     }
+}
+
+test "validateDependency rejects ops to ops imports" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var violations = std.ArrayList(Violation){};
+
+    try validateDependency(
+        arena,
+        &violations,
+        "src/ops/add_ops.zig",
+        "./status_ops.zig",
+        "src/ops/status_ops.zig",
+    );
+
+    try std.testing.expectEqual(@as(usize, 1), violations.items.len);
+    try std.testing.expectEqualStrings("ops must not import other ops modules", violations.items[0].reason);
+}
+
+test "validateDependency allows ops to store facade" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var violations = std.ArrayList(Violation){};
+
+    try validateDependency(
+        arena,
+        &violations,
+        "src/ops/add_ops.zig",
+        "../store/api.zig",
+        "src/store/api.zig",
+    );
+
+    try std.testing.expectEqual(@as(usize, 0), violations.items.len);
+}
+
+test "validateDependency allows app to ops imports" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var violations = std.ArrayList(Violation){};
+
+    try validateDependency(
+        arena,
+        &violations,
+        "src/app/cli/command/add.zig",
+        "../../../ops/add_ops.zig",
+        "src/ops/add_ops.zig",
+    );
+
+    try std.testing.expectEqual(@as(usize, 0), violations.items.len);
 }

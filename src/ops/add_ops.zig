@@ -1,29 +1,7 @@
 const std = @import("std");
 
 const add_store = @import("../store/api.zig");
-const commit_ops = @import("./commit_ops.zig");
-const status_ops = @import("./status_ops.zig");
-
-pub const AddOutcome = struct {
-    staged_paths: std.array_list.Managed([]u8),
-    skipped_untracked: usize,
-    skipped_missing: usize,
-    skipped_non_regular: usize,
-    skipped_already_staged: usize,
-    skipped_no_change: usize,
-
-    // Initializes an empty add outcome that owns its collected staged paths.
-    pub fn init(allocator: std.mem.Allocator) AddOutcome {
-        return .{
-            .staged_paths = std.array_list.Managed([]u8).init(allocator),
-            .skipped_untracked = 0,
-            .skipped_missing = 0,
-            .skipped_non_regular = 0,
-            .skipped_already_staged = 0,
-            .skipped_no_change = 0,
-        };
-    }
-};
+pub const AddOutcome = add_store.AddBatchOutcome;
 
 /// Stages a file by writing staged entry/object data.
 pub fn add(
@@ -48,28 +26,12 @@ pub fn addAllTracked(
     omohi_dir: std.fs.Dir,
 ) !AddOutcome {
     try add_store.ensureStoreVersion(allocator, omohi_dir);
-
-    var statuses = try status_ops.status(allocator, omohi_dir);
-    defer status_ops.freeStatusList(allocator, &statuses);
-
-    var outcome = AddOutcome.init(allocator);
-    errdefer freeAddOutcome(allocator, &outcome);
-
-    for (statuses.items) |entry| {
-        if (entry.status != .tracked and entry.status != .changed) continue;
-
-        var single = try addSingleFile(allocator, omohi_dir, entry.path);
-        errdefer freeAddOutcome(allocator, &single);
-        try adoptAddOutcome(&outcome, &single);
-    }
-
-    return outcome;
+    return add_store.addAllTracked(allocator, omohi_dir);
 }
 
 // Releases all owned staged path strings stored in the outcome.
 pub fn freeAddOutcome(allocator: std.mem.Allocator, outcome: *AddOutcome) void {
-    for (outcome.staged_paths.items) |path| allocator.free(path);
-    outcome.staged_paths.deinit();
+    add_store.freeAddBatchOutcome(allocator, outcome);
 }
 
 // Stages one tracked file and reports whether it became staged or was already committed.
@@ -82,7 +44,7 @@ fn addSingleFile(
 
     var outcome = AddOutcome.init(allocator);
     errdefer freeAddOutcome(allocator, &outcome);
-    const status_kind = try statusForPath(allocator, omohi_dir, absolute_path);
+    const status_kind = try add_store.statusForTrackedPath(allocator, omohi_dir, absolute_path);
     if (status_kind == .staged) {
         try outcome.staged_paths.append(try allocator.dupe(u8, absolute_path));
     } else if (status_kind == .committed) {
@@ -97,97 +59,7 @@ fn addDirectory(
     omohi_dir: std.fs.Dir,
     absolute_path: []const u8,
 ) !AddOutcome {
-    var outcome = AddOutcome.init(allocator);
-    errdefer freeAddOutcome(allocator, &outcome);
-
-    var collected = std.array_list.Managed([]u8).init(allocator);
-    defer {
-        for (collected.items) |path| allocator.free(path);
-        collected.deinit();
-    }
-    try collectRegularFiles(allocator, absolute_path, &collected, &outcome.skipped_non_regular);
-    std.mem.sort([]u8, collected.items, {}, lessThanPath);
-
-    const path_views = try allocator.alloc([]const u8, collected.items.len);
-    defer allocator.free(path_views);
-    for (collected.items, 0..) |path, idx| path_views[idx] = path;
-
-    var batch = try add_store.addDirectory(allocator, omohi_dir, path_views);
-    defer add_store.freeAddBatchOutcome(allocator, &batch);
-
-    outcome.staged_paths.deinit();
-    outcome.staged_paths = batch.staged_paths;
-    batch.staged_paths = add_store.StringList.init(allocator);
-    outcome.skipped_untracked = batch.skipped_untracked;
-    outcome.skipped_missing = batch.skipped_missing;
-    outcome.skipped_already_staged = batch.skipped_already_staged;
-    outcome.skipped_no_change = batch.skipped_no_change;
-
-    return outcome;
-}
-
-// Moves staged path ownership and counters into one combined add outcome.
-fn adoptAddOutcome(combined: *AddOutcome, outcome: *AddOutcome) !void {
-    combined.skipped_untracked += outcome.skipped_untracked;
-    combined.skipped_missing += outcome.skipped_missing;
-    combined.skipped_non_regular += outcome.skipped_non_regular;
-    combined.skipped_already_staged += outcome.skipped_already_staged;
-    combined.skipped_no_change += outcome.skipped_no_change;
-    try combined.staged_paths.ensureUnusedCapacity(outcome.staged_paths.items.len);
-    for (outcome.staged_paths.items) |path| {
-        combined.staged_paths.appendAssumeCapacity(path);
-    }
-    outcome.staged_paths.items.len = 0;
-    outcome.staged_paths.deinit();
-}
-
-// Recursively collects regular files below the absolute directory path.
-fn collectRegularFiles(
-    allocator: std.mem.Allocator,
-    absolute_dir_path: []const u8,
-    collected: *std.array_list.Managed([]u8),
-    skipped_non_regular: *usize,
-) !void {
-    var dir = try std.fs.openDirAbsolute(absolute_dir_path, .{ .iterate = true, .access_sub_paths = true });
-    defer dir.close();
-
-    var it = dir.iterate();
-    while (try it.next()) |entry| {
-        const child_path = try std.fs.path.resolve(allocator, &.{ absolute_dir_path, entry.name });
-        errdefer allocator.free(child_path);
-
-        switch (entry.kind) {
-            .file => try collected.append(child_path),
-            .directory => {
-                try collectRegularFiles(allocator, child_path, collected, skipped_non_regular);
-                allocator.free(child_path);
-            },
-            else => {
-                skipped_non_regular.* += 1;
-                allocator.free(child_path);
-            },
-        }
-    }
-}
-
-// Sorts collected absolute paths in ascending byte order.
-fn lessThanPath(_: void, lhs: []u8, rhs: []u8) bool {
-    return std.mem.lessThan(u8, lhs, rhs);
-}
-
-// Loads the current status for one path to classify add outcomes.
-fn statusForPath(
-    allocator: std.mem.Allocator,
-    omohi_dir: std.fs.Dir,
-    absolute_path: []const u8,
-) !status_ops.StatusKind {
-    var statuses = try status_ops.status(allocator, omohi_dir);
-    defer status_ops.freeStatusList(allocator, &statuses);
-
-    for (statuses.items) |entry| {
-        if (std.mem.eql(u8, entry.path, absolute_path)) return entry.status;
-    }
-    return .tracked;
+    return add_store.addTree(allocator, omohi_dir, absolute_path);
 }
 
 // Reads the single file name inside a directory and copies it into the fixed output buffer.
@@ -314,7 +186,7 @@ test "commit can read staged data created by add" {
 
     var outcome = try add(allocator, omohi_dir, absolute_path);
     defer freeAddOutcome(allocator, &outcome);
-    _ = try commit_ops.commit(allocator, omohi_dir, "via add");
+    _ = try add_store.commit(allocator, omohi_dir, "via add");
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
@@ -453,7 +325,7 @@ test "add reports no-change when file matches HEAD" {
     _ = try add_store.track(allocator, omohi_dir, absolute_path);
     var initial_outcome = try add(allocator, omohi_dir, absolute_path);
     defer freeAddOutcome(allocator, &initial_outcome);
-    _ = try commit_ops.commit(allocator, omohi_dir, "first");
+    _ = try add_store.commit(allocator, omohi_dir, "first");
 
     var outcome = try add(allocator, omohi_dir, absolute_path);
     defer freeAddOutcome(allocator, &outcome);
@@ -544,7 +416,7 @@ test "addAllTracked skips committed and already staged files" {
         var first = try add(allocator, omohi_dir, a_path);
         defer freeAddOutcome(allocator, &first);
     }
-    _ = try commit_ops.commit(allocator, omohi_dir, "first");
+    _ = try add_store.commit(allocator, omohi_dir, "first");
 
     try add_store.add(allocator, omohi_dir, b_path);
 
