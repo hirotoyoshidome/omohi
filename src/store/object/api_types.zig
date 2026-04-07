@@ -24,8 +24,38 @@ pub const AddBatchOutcome = struct {
     staged_paths: std.array_list.Managed([]u8),
     skipped_untracked: usize,
     skipped_missing: usize,
+    skipped_non_regular: usize,
     skipped_already_staged: usize,
     skipped_no_change: usize,
+
+    // Initializes an empty add batch outcome that owns collected staged paths.
+    pub fn init(allocator: std.mem.Allocator) AddBatchOutcome {
+        return .{
+            .staged_paths = std.array_list.Managed([]u8).init(allocator),
+            .skipped_untracked = 0,
+            .skipped_missing = 0,
+            .skipped_non_regular = 0,
+            .skipped_already_staged = 0,
+            .skipped_no_change = 0,
+        };
+    }
+};
+
+pub const RmBatchOutcome = struct {
+    unstaged_paths: std.array_list.Managed([]u8),
+    skipped_untracked: usize,
+    skipped_not_staged: usize,
+    skipped_non_regular: usize,
+
+    // Initializes an empty rm batch outcome that owns collected unstaged paths.
+    pub fn init(allocator: std.mem.Allocator) RmBatchOutcome {
+        return .{
+            .unstaged_paths = std.array_list.Managed([]u8).init(allocator),
+            .skipped_untracked = 0,
+            .skipped_not_staged = 0,
+            .skipped_non_regular = 0,
+        };
+    }
 };
 
 pub const CommitSummary = struct {
