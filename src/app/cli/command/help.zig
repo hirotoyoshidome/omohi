@@ -40,3 +40,13 @@ test "help output stays aligned with command catalog usages" {
         try std.testing.expect(std.mem.indexOf(u8, result.output, line) != null);
     }
 }
+
+test "help with topic currently matches full help output" {
+    var without_topic = try run(std.testing.allocator, .{ .topic = null });
+    defer without_topic.deinit(std.testing.allocator);
+
+    var with_topic = try run(std.testing.allocator, .{ .topic = "commit" });
+    defer with_topic.deinit(std.testing.allocator);
+
+    try std.testing.expectEqualStrings(without_topic.output, with_topic.output);
+}
