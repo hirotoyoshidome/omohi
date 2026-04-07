@@ -16,6 +16,7 @@ const local_commit_tags = @import("./local/commit_tags.zig");
 const local_trash = @import("./local/trash.zig");
 const local_head = @import("./local/head.zig");
 const local_journal = @import("./local/journal.zig");
+const local_directory_tree_files = @import("./local/directory_tree_files.zig");
 const local_version = @import("./local/version.zig");
 const version_guard = @import("./storage/version_guard.zig");
 const ContentEntry = @import("./object/content_entry.zig").ContentEntry;
@@ -44,6 +45,7 @@ pub const StatusKind = api_types.StatusKind;
 pub const StatusEntry = api_types.StatusEntry;
 pub const StatusList = api_types.StatusList;
 pub const AddBatchOutcome = api_types.AddBatchOutcome;
+pub const RmBatchOutcome = api_types.RmBatchOutcome;
 pub const CommitSummary = api_types.CommitSummary;
 pub const CommitSummaryList = api_types.CommitSummaryList;
 pub const StringList = api_types.StringList;
@@ -201,6 +203,45 @@ pub fn addDirectory(
     return addDirectoryLocked(allocator, persistence, absolute_paths);
 }
 
+/// Adds every regular tracked file below an absolute directory path.
+/// Memory: owned result, free with freeAddBatchOutcome
+/// Lifetime: valid until caller frees the returned lists
+/// Errors: lock/I/O errors plus constrained type and FileTooLarge errors
+pub fn addTree(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    absolute_dir_path: []const u8,
+) !AddBatchOutcome {
+    var collected = try local_directory_tree_files.collectAbsoluteRegularFiles(allocator, absolute_dir_path);
+    defer local_directory_tree_files.freeCollection(allocator, &collected);
+
+    var outcome = try addDirectory(allocator, omohi_dir, collected.paths.items);
+    outcome.skipped_non_regular = collected.skipped_non_regular;
+    return outcome;
+}
+
+/// Adds tracked paths that are currently `.tracked` or `.changed`.
+/// Memory: owned result, free with freeAddBatchOutcome
+/// Lifetime: valid until caller frees the returned lists
+/// Errors: I/O and validation errors from status and add processing
+pub fn addAllTracked(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+) !AddBatchOutcome {
+    var statuses = try status(allocator, omohi_dir);
+    defer freeStatusList(allocator, &statuses);
+
+    var path_views = std.array_list.Managed([]const u8).init(allocator);
+    defer path_views.deinit();
+
+    for (statuses.items) |entry| {
+        if (entry.status != .tracked and entry.status != .changed) continue;
+        try path_views.append(entry.path);
+    }
+
+    return addDirectory(allocator, omohi_dir, path_views.items);
+}
+
 /// Removes a staged entry/object pair by file path.
 /// Memory: borrowed
 /// Errors: error{TrackedFileNotFound, StagedFileNotFound} plus lock/I/O and constrained type errors.
@@ -230,6 +271,27 @@ pub fn rm(
     }
 
     return error.StagedFileNotFound;
+}
+
+/// Removes staged entries for every regular tracked file below an absolute directory path.
+/// Memory: owned result, free with freeRmBatchOutcome
+/// Lifetime: valid until caller frees the returned lists
+/// Errors: lock/I/O errors plus constrained type validation errors
+pub fn rmTree(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    absolute_dir_path: []const u8,
+) !RmBatchOutcome {
+    var collected = try local_directory_tree_files.collectAbsoluteRegularFiles(allocator, absolute_dir_path);
+    defer local_directory_tree_files.freeCollection(allocator, &collected);
+
+    try lock.acquireLock(omohi_dir);
+    defer lock.releaseLock(omohi_dir);
+
+    const persistence = PersistenceLayout.init(omohi_dir);
+    var outcome = try rmPathsLocked(allocator, persistence, collected.paths.items);
+    outcome.skipped_non_regular = collected.skipped_non_regular;
+    return outcome;
 }
 
 /// Registers an absolute file path under tracked/<TrackedFileId>.
@@ -347,6 +409,26 @@ pub fn status(
     return results;
 }
 
+/// Computes status for one tracked absolute path.
+/// Memory: borrowed
+/// Errors: error{TrackedFileNotFound} plus I/O and validation errors
+pub fn statusForTrackedPath(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    absolute_path: []const u8,
+) !StatusKind {
+    const persistence = PersistenceLayout.init(omohi_dir);
+    _ = try requireTrackedEntryByPath(allocator, persistence, absolute_path);
+
+    var head_entries = try loadHeadSnapshotEntries(allocator, omohi_dir, persistence);
+    defer if (head_entries) |*list| freeContentEntryList(allocator, list);
+
+    var staged_entries = try loadStagedEntriesOrEmpty(allocator, persistence);
+    defer if (staged_entries) |*list| local_staged.freeEntries(allocator, list);
+
+    return statusKindForTrackedPath(absolute_path, head_entries, staged_entries);
+}
+
 /// Loads owned absolute paths for current staged entries.
 /// Memory: owned list, free with freeStringList.
 pub fn stagedPaths(
@@ -381,6 +463,11 @@ pub fn freeStatusList(allocator: std.mem.Allocator, list: *StatusList) void {
 // Releases owned path strings held by a batched add outcome.
 pub fn freeAddBatchOutcome(allocator: std.mem.Allocator, outcome: *AddBatchOutcome) void {
     freeStringList(allocator, &outcome.staged_paths);
+}
+
+// Releases owned path strings held by a batched rm outcome.
+pub fn freeRmBatchOutcome(allocator: std.mem.Allocator, outcome: *RmBatchOutcome) void {
+    freeStringList(allocator, &outcome.unstaged_paths);
 }
 
 /// Finds commits with optional tag and date filters.
@@ -794,13 +881,7 @@ fn addDirectoryLocked(
     persistence: PersistenceLayout,
     absolute_paths: []const []const u8,
 ) !AddBatchOutcome {
-    var outcome: AddBatchOutcome = .{
-        .staged_paths = StringList.init(allocator),
-        .skipped_untracked = 0,
-        .skipped_missing = 0,
-        .skipped_already_staged = 0,
-        .skipped_no_change = 0,
-    };
+    var outcome = AddBatchOutcome.init(allocator);
     errdefer freeAddBatchOutcome(allocator, &outcome);
 
     var tracked = try loadTrackedOrEmpty(allocator, persistence);
@@ -901,6 +982,63 @@ fn addDirectoryLocked(
         });
         try incrementHashCount(&staged_hash_counts, entry.content_hash);
         try outcome.staged_paths.append(try allocator.dupe(u8, absolute_path));
+    }
+
+    return outcome;
+}
+
+// Removes multiple staged absolute paths while the caller already holds the store lock.
+fn rmPathsLocked(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    absolute_paths: []const []const u8,
+) !RmBatchOutcome {
+    var outcome = RmBatchOutcome.init(allocator);
+    errdefer freeRmBatchOutcome(allocator, &outcome);
+
+    var tracked = try loadTrackedOrEmpty(allocator, persistence);
+    defer if (tracked) |*list| local_tracked.freeTrackedList(allocator, list);
+
+    var raw_entries = try loadRawStagedEntriesOrEmpty(allocator, persistence);
+    defer if (raw_entries) |*list| local_staged.freeRawEntries(allocator, list);
+
+    var tracked_paths = std.StringHashMap(void).init(allocator);
+    defer tracked_paths.deinit();
+    if (tracked) |list| {
+        for (list.items) |entry| try tracked_paths.put(entry.path.asSlice(), {});
+    }
+
+    var staged_paths = std.StringHashMap(StagedPathState).init(allocator);
+    defer staged_paths.deinit();
+    var staged_hash_counts = std.AutoHashMap([64]u8, usize).init(allocator);
+    defer staged_hash_counts.deinit();
+    if (raw_entries) |list| {
+        for (list.items) |entry| {
+            const path = entry.path orelse continue;
+            const content_hash = entry.content_hash orelse continue;
+            try staged_paths.put(path, .{
+                .file_name = try constrained_types.StagedFileId.init(entry.file_name),
+                .content_hash = content_hash,
+            });
+            try incrementHashCount(&staged_hash_counts, content_hash);
+        }
+    }
+
+    for (absolute_paths) |absolute_path| {
+        _ = try constrained_types.TrackedFilePath.init(absolute_path);
+
+        if (!tracked_paths.contains(absolute_path)) {
+            outcome.skipped_untracked += 1;
+            continue;
+        }
+
+        if (!staged_paths.contains(absolute_path)) {
+            outcome.skipped_not_staged += 1;
+            continue;
+        }
+
+        try removeStagedPathState(allocator, persistence, &staged_paths, &staged_hash_counts, absolute_path);
+        try outcome.unstaged_paths.append(try allocator.dupe(u8, absolute_path));
     }
 
     return outcome;
@@ -2335,6 +2473,47 @@ test "addDirectory counts missing tracked file separately" {
     try std.testing.expectEqual(@as(usize, 1), outcome.skipped_missing);
 }
 
+test "addTree stages tracked files recursively and counts non-regular entries" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    try source_dir.makePath("nested");
+    {
+        var file = try source_dir.createFile("a.txt", .{});
+        defer file.close();
+        try file.writeAll("a");
+    }
+    {
+        var file = try source_dir.createFile("nested/b.txt", .{});
+        defer file.close();
+        try file.writeAll("b");
+    }
+    try source_dir.symLink("a.txt", "link.txt", .{});
+
+    const a_path = try source_dir.realpathAlloc(allocator, "a.txt");
+    defer allocator.free(a_path);
+    const b_path = try source_dir.realpathAlloc(allocator, "nested/b.txt");
+    defer allocator.free(b_path);
+    const root_path = try source_dir.realpathAlloc(allocator, ".");
+    defer allocator.free(root_path);
+
+    _ = try track(allocator, omohi_dir, a_path);
+    _ = try track(allocator, omohi_dir, b_path);
+
+    var outcome = try addTree(allocator, omohi_dir, root_path);
+    defer freeAddBatchOutcome(allocator, &outcome);
+
+    try std.testing.expectEqual(@as(usize, 2), outcome.staged_paths.items.len);
+    try std.testing.expectEqual(@as(usize, 1), outcome.skipped_non_regular);
+}
+
 test "status treats tracked directory entry as missing" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -2418,6 +2597,77 @@ test "status reports missing for staged file deleted after add" {
 
     try std.testing.expectEqual(@as(usize, 1), statuses.items.len);
     try std.testing.expectEqual(.missing, statuses.items[0].status);
+}
+
+test "statusForTrackedPath reports staged and committed states" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    {
+        var file = try source_dir.createFile("memo.txt", .{});
+        defer file.close();
+        try file.writeAll("memo");
+    }
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, "memo.txt");
+    defer allocator.free(absolute_path);
+    _ = try track(allocator, omohi_dir, absolute_path);
+
+    try add(allocator, omohi_dir, absolute_path);
+    try std.testing.expectEqual(.staged, try statusForTrackedPath(allocator, omohi_dir, absolute_path));
+
+    _ = try commit(allocator, omohi_dir, "first");
+    try std.testing.expectEqual(.committed, try statusForTrackedPath(allocator, omohi_dir, absolute_path));
+}
+
+test "rmTree removes staged files recursively and counts non-regular entries" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    try source_dir.makePath("nested");
+    {
+        var file = try source_dir.createFile("a.txt", .{});
+        defer file.close();
+        try file.writeAll("a");
+    }
+    {
+        var file = try source_dir.createFile("nested/b.txt", .{});
+        defer file.close();
+        try file.writeAll("b");
+    }
+    try source_dir.symLink("a.txt", "link.txt", .{});
+
+    const a_path = try source_dir.realpathAlloc(allocator, "a.txt");
+    defer allocator.free(a_path);
+    const b_path = try source_dir.realpathAlloc(allocator, "nested/b.txt");
+    defer allocator.free(b_path);
+    const root_path = try source_dir.realpathAlloc(allocator, ".");
+    defer allocator.free(root_path);
+
+    _ = try track(allocator, omohi_dir, a_path);
+    _ = try track(allocator, omohi_dir, b_path);
+    try add(allocator, omohi_dir, a_path);
+    try add(allocator, omohi_dir, b_path);
+
+    var outcome = try rmTree(allocator, omohi_dir, root_path);
+    defer freeRmBatchOutcome(allocator, &outcome);
+
+    try std.testing.expectEqual(@as(usize, 2), outcome.unstaged_paths.items.len);
+    try std.testing.expectEqual(@as(usize, 1), outcome.skipped_non_regular);
 }
 
 test "find sorts by createdAt desc and limits to ten commits" {
