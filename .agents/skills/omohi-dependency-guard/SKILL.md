@@ -10,6 +10,7 @@ Always preserve the following.
 
 - `app/cli -> ops`
 - `ops -> store/api.zig`
+- `ops` must not import other `ops`; move shared behavior into `store`.
 - `store` must not depend on upper layers.
 - References from `ops` to `store` must go only through `store/api.zig`.
 

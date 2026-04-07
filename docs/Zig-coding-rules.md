@@ -272,6 +272,7 @@ Add the following as needed.
 * Separate responsibilities by file (roughly one file, one responsibility)
 * Make the `pub` API the entry point and keep internal implementation private
 * Keep dependency direction one-way (higher layers use lower layers)
+* Do not let `ops` import other `ops`; move shared cross-op behavior into `store`
 * Do not leak `build.zig` dependency constraints into the business-logic layer
 
 ## `build.zig` / Dependency Management Rules

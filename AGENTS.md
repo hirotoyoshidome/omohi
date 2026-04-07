@@ -33,6 +33,7 @@ Agents should also refer to directories under `docs/` when they are relevant to 
 - Dependency direction:
   - `app/cli -> ops -> store`
   - `store` must not depend on upper layers.
+  - `ops` must not depend on other `ops`; shared behavior used by multiple ops must move into `store`.
 - Expose `store` only through the Facade (`store/api.zig`).
 - Avoid unnecessary abstraction; abstract only where required.
 - DI policy:

@@ -29,6 +29,7 @@ Before writing code, determine the following.
 - Do not return `[]u8` / `[]const u8` with ambiguous ownership.
 - Confine `@ptrCast` / `*anyopaque` to boundaries.
 - As a rule, do not use dynamic DI (vtable / `*anyopaque`).
+- Do not import one `ops` module from another `ops` module; move shared behavior into `store`.
 - References from `ops -> store` must go only through `store/api.zig`.
 - Prefer whole-system optimization over local optimization.
 - Judge changes by their impact on architectural boundaries, durability, clarity, and testability, not only by local simplification or micro-performance.
