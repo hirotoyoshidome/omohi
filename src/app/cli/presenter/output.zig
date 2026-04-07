@@ -1215,6 +1215,66 @@ test "tracklistResult renders selected fields as json" {
     try std.testing.expectEqualStrings("[{\"path\":\"/tmp/tracked.txt\"}]", output);
 }
 
+test "tracklistResult renders no tracked files message" {
+    var list = track_ops.TrackedList.init(std.testing.allocator);
+    defer list.deinit();
+
+    const output = try tracklistResult(std.testing.allocator, &list, .{
+        .output = .text,
+        .fields = &.{},
+    });
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings("no tracked files\n", output);
+}
+
+test "tracklistResult renders selected id field as text" {
+    var list = track_ops.TrackedList.init(std.testing.allocator);
+    defer {
+        for (list.items) |entry| std.testing.allocator.free(@constCast(entry.path.asSlice()));
+        list.deinit();
+    }
+
+    const path = try std.testing.allocator.dupe(u8, "/tmp/tracked.txt");
+    try list.append(.{
+        .id = .{ .value = filled32('a') },
+        .path = .{ .value = path },
+    });
+
+    const output = try tracklistResult(std.testing.allocator, &list, .{
+        .output = .text,
+        .fields = &.{.id},
+    });
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n", output);
+}
+
+test "tracklistResult renders selected id and path fields as text" {
+    var list = track_ops.TrackedList.init(std.testing.allocator);
+    defer {
+        for (list.items) |entry| std.testing.allocator.free(@constCast(entry.path.asSlice()));
+        list.deinit();
+    }
+
+    const path = try std.testing.allocator.dupe(u8, "/tmp/tracked.txt");
+    try list.append(.{
+        .id = .{ .value = filled32('a') },
+        .path = .{ .value = path },
+    });
+
+    const output = try tracklistResult(std.testing.allocator, &list, .{
+        .output = .text,
+        .fields = &.{ .id, .path },
+    });
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa /tmp/tracked.txt\n",
+        output,
+    );
+}
+
 test "findResult renders heading and commit blocks" {
     var list = find_ops.CommitSummaryList.init(std.testing.allocator);
     defer {
@@ -1266,6 +1326,115 @@ test "findResult renders selected fields as text rows" {
 
     try std.testing.expectEqualStrings(
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2026-03-10T09:00:00.000+09:00\n",
+        output,
+    );
+}
+
+test "findResult renders no commits message" {
+    var list = find_ops.CommitSummaryList.init(std.testing.allocator);
+    defer find_ops.freeCommitSummaryList(std.testing.allocator, &list);
+
+    const output = try findResult(std.testing.allocator, &list, .{
+        .tag = null,
+        .date = null,
+        .output = .text,
+        .fields = &.{},
+    });
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings("no commits\n", output);
+}
+
+test "findResult renders date heading" {
+    var list = find_ops.CommitSummaryList.init(std.testing.allocator);
+    defer find_ops.freeCommitSummaryList(std.testing.allocator, &list);
+
+    try list.append(.{
+        .commit_id = .{ .value = filled64('a') },
+        .message = try std.testing.allocator.dupe(u8, "first"),
+        .created_at = try std.testing.allocator.dupe(u8, "2026-03-10T00:00:00.000Z"),
+        .local_created_at = try std.testing.allocator.dupe(u8, "2026-03-10T09:00:00.000+09:00"),
+    });
+
+    const output = try findResult(std.testing.allocator, &list, .{
+        .tag = null,
+        .date = "2026-03-10",
+        .output = .text,
+        .fields = &.{},
+    });
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expect(std.mem.startsWith(u8, output, "Found 1 commit(s) for date 2026-03-10.\n"));
+}
+
+test "findResult renders tag and date heading" {
+    var list = find_ops.CommitSummaryList.init(std.testing.allocator);
+    defer find_ops.freeCommitSummaryList(std.testing.allocator, &list);
+
+    try list.append(.{
+        .commit_id = .{ .value = filled64('a') },
+        .message = try std.testing.allocator.dupe(u8, "first"),
+        .created_at = try std.testing.allocator.dupe(u8, "2026-03-10T00:00:00.000Z"),
+        .local_created_at = try std.testing.allocator.dupe(u8, "2026-03-10T09:00:00.000+09:00"),
+    });
+
+    const output = try findResult(std.testing.allocator, &list, .{
+        .tag = "release",
+        .date = "2026-03-10",
+        .output = .text,
+        .fields = &.{},
+    });
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expect(std.mem.startsWith(u8, output, "Found 1 commit(s) for tag release and date 2026-03-10.\n"));
+}
+
+test "findResult renders json output" {
+    var list = find_ops.CommitSummaryList.init(std.testing.allocator);
+    defer find_ops.freeCommitSummaryList(std.testing.allocator, &list);
+
+    try list.append(.{
+        .commit_id = .{ .value = filled64('a') },
+        .message = try std.testing.allocator.dupe(u8, "first"),
+        .created_at = try std.testing.allocator.dupe(u8, "2026-03-10T00:00:00.000Z"),
+        .local_created_at = try std.testing.allocator.dupe(u8, "2026-03-10T09:00:00.000+09:00"),
+    });
+
+    const output = try findResult(std.testing.allocator, &list, .{
+        .tag = null,
+        .date = null,
+        .output = .json,
+        .fields = &.{},
+    });
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "[{\"commit_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"message\":\"first\",\"created_at\":\"2026-03-10T09:00:00.000+09:00\"}]",
+        output,
+    );
+}
+
+test "findResult renders selected fields as json" {
+    var list = find_ops.CommitSummaryList.init(std.testing.allocator);
+    defer find_ops.freeCommitSummaryList(std.testing.allocator, &list);
+
+    try list.append(.{
+        .commit_id = .{ .value = filled64('a') },
+        .message = try std.testing.allocator.dupe(u8, "first"),
+        .created_at = try std.testing.allocator.dupe(u8, "2026-03-10T00:00:00.000Z"),
+        .local_created_at = try std.testing.allocator.dupe(u8, "2026-03-10T09:00:00.000+09:00"),
+    });
+
+    const output = try findResult(std.testing.allocator, &list, .{
+        .tag = null,
+        .date = null,
+        .output = .json,
+        .fields = &.{.commit_id},
+    });
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "[{\"commit_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]",
         output,
     );
 }
@@ -1380,6 +1549,32 @@ test "showResult renders selected fields as json" {
     );
 }
 
+test "showResult renders selected fields as text" {
+    var details = try initTestCommitDetails(
+        std.testing.allocator,
+        filled64('a'),
+        filled64('b'),
+        "fix README.md",
+        "2026-04-01T12:27:39.914Z",
+    );
+    defer show_ops.freeCommitDetails(std.testing.allocator, &details);
+
+    try details.tags.append(try std.testing.allocator.dupe(u8, "tag1"));
+    try details.tags.append(try std.testing.allocator.dupe(u8, "tag2"));
+
+    const output = try showResult(std.testing.allocator, &details, .{
+        .commit_id = details.commit_id.asSlice(),
+        .output = .text,
+        .fields = &.{ .commit_id, .tags },
+    });
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa tag1,tag2\n",
+        output,
+    );
+}
+
 test "statusResult groups staged, changed, and missing tracked files" {
     var list = status_ops.StatusList.init(std.testing.allocator);
     defer {
@@ -1423,6 +1618,153 @@ test "statusResult renders empty text when no tracked files changed" {
     defer std.testing.allocator.free(output);
 
     try std.testing.expectEqualStrings("no staged, changed, or missing tracked files\n", output);
+}
+
+test "statusResult renders staged only" {
+    var list = status_ops.StatusList.init(std.testing.allocator);
+    defer {
+        for (list.items) |entry| std.testing.allocator.free(entry.path);
+        list.deinit();
+    }
+
+    try list.append(.{
+        .id = .{ .value = filled32('a') },
+        .path = try std.testing.allocator.dupe(u8, "/tmp/staged.txt"),
+        .status = .staged,
+    });
+
+    const output = try statusResult(std.testing.allocator, &list, false);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings("staged: /tmp/staged.txt\n", output);
+}
+
+test "statusResult renders changed only" {
+    var list = status_ops.StatusList.init(std.testing.allocator);
+    defer {
+        for (list.items) |entry| std.testing.allocator.free(entry.path);
+        list.deinit();
+    }
+
+    try list.append(.{
+        .id = .{ .value = filled32('a') },
+        .path = try std.testing.allocator.dupe(u8, "/tmp/changed.txt"),
+        .status = .changed,
+    });
+
+    const output = try statusResult(std.testing.allocator, &list, false);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings("changed: /tmp/changed.txt\n", output);
+}
+
+test "statusResult renders missing only with warning" {
+    var list = status_ops.StatusList.init(std.testing.allocator);
+    defer {
+        for (list.items) |entry| std.testing.allocator.free(entry.path);
+        list.deinit();
+    }
+
+    try list.append(.{
+        .id = .{ .value = filled32('a') },
+        .path = try std.testing.allocator.dupe(u8, "/tmp/missing.txt"),
+        .status = .missing,
+    });
+
+    const output = try statusResult(std.testing.allocator, &list, false);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "missing: /tmp/missing.txt\n" ++
+            "Missing tracked files remain. Use `omohi untrack --missing` to clear them explicitly.\n",
+        output,
+    );
+}
+
+test "statusResult renders staged and changed without warning" {
+    var list = status_ops.StatusList.init(std.testing.allocator);
+    defer {
+        for (list.items) |entry| std.testing.allocator.free(entry.path);
+        list.deinit();
+    }
+
+    try list.append(.{
+        .id = .{ .value = filled32('a') },
+        .path = try std.testing.allocator.dupe(u8, "/tmp/staged.txt"),
+        .status = .staged,
+    });
+    try list.append(.{
+        .id = .{ .value = filled32('b') },
+        .path = try std.testing.allocator.dupe(u8, "/tmp/changed.txt"),
+        .status = .changed,
+    });
+
+    const output = try statusResult(std.testing.allocator, &list, false);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "staged: /tmp/staged.txt\n" ++
+            "changed: /tmp/changed.txt\n",
+        output,
+    );
+}
+
+test "statusResult renders staged and missing with warning" {
+    var list = status_ops.StatusList.init(std.testing.allocator);
+    defer {
+        for (list.items) |entry| std.testing.allocator.free(entry.path);
+        list.deinit();
+    }
+
+    try list.append(.{
+        .id = .{ .value = filled32('a') },
+        .path = try std.testing.allocator.dupe(u8, "/tmp/staged.txt"),
+        .status = .staged,
+    });
+    try list.append(.{
+        .id = .{ .value = filled32('b') },
+        .path = try std.testing.allocator.dupe(u8, "/tmp/missing.txt"),
+        .status = .missing,
+    });
+
+    const output = try statusResult(std.testing.allocator, &list, false);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "staged: /tmp/staged.txt\n" ++
+            "missing: /tmp/missing.txt\n" ++
+            "Missing tracked files remain. Use `omohi untrack --missing` to clear them explicitly.\n",
+        output,
+    );
+}
+
+test "statusResult renders changed and missing with warning" {
+    var list = status_ops.StatusList.init(std.testing.allocator);
+    defer {
+        for (list.items) |entry| std.testing.allocator.free(entry.path);
+        list.deinit();
+    }
+
+    try list.append(.{
+        .id = .{ .value = filled32('a') },
+        .path = try std.testing.allocator.dupe(u8, "/tmp/changed.txt"),
+        .status = .changed,
+    });
+    try list.append(.{
+        .id = .{ .value = filled32('b') },
+        .path = try std.testing.allocator.dupe(u8, "/tmp/missing.txt"),
+        .status = .missing,
+    });
+
+    const output = try statusResult(std.testing.allocator, &list, false);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "changed: /tmp/changed.txt\n" ++
+            "missing: /tmp/missing.txt\n" ++
+            "Missing tracked files remain. Use `omohi untrack --missing` to clear them explicitly.\n",
+        output,
+    );
 }
 
 test "statusResult colors labels when enabled" {
@@ -1512,6 +1854,31 @@ test "tagAddResult renders no-new-tags branch with csv" {
     );
 }
 
+test "tagAddResult renders added tags branch with csv" {
+    var tags = tag_ops.TagList.init(std.testing.allocator);
+    defer {
+        for (tags.items) |tag_name| std.testing.allocator.free(tag_name);
+        tags.deinit();
+    }
+
+    try tags.append(try std.testing.allocator.dupe(u8, "mobile"));
+    try tags.append(try std.testing.allocator.dupe(u8, "release"));
+
+    const output = try tagAddResult(
+        std.testing.allocator,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        2,
+        &tags,
+    );
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Added 2 tag(s) to commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.\n" ++
+            "mobile,release\n",
+        output,
+    );
+}
+
 test "tagListResult renders count and csv line" {
     var tags = tag_ops.TagList.init(std.testing.allocator);
     defer {
@@ -1552,6 +1919,75 @@ test "tagRmResult renders no-tags branch" {
     try std.testing.expectEqualStrings(
         "Commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa has no tags to remove.\n" ++
             "(none)\n",
+        output,
+    );
+}
+
+test "tagListResult renders none when no tags exist" {
+    var tags = tag_ops.TagList.init(std.testing.allocator);
+    defer tags.deinit();
+
+    const output = try tagListResult(
+        std.testing.allocator,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        &tags,
+    );
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Found 0 tag(s) for commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.\n" ++
+            "(none)\n",
+        output,
+    );
+}
+
+test "tagRmResult renders no-matching branch" {
+    var tags = tag_ops.TagList.init(std.testing.allocator);
+    defer {
+        for (tags.items) |tag_name| std.testing.allocator.free(tag_name);
+        tags.deinit();
+    }
+
+    try tags.append(try std.testing.allocator.dupe(u8, "mobile"));
+    try tags.append(try std.testing.allocator.dupe(u8, "release"));
+
+    const output = try tagRmResult(
+        std.testing.allocator,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        0,
+        .no_matching,
+        &tags,
+    );
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "No matching tags found to remove from commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.\n" ++
+            "mobile,release\n",
+        output,
+    );
+}
+
+test "tagRmResult renders removed branch" {
+    var tags = tag_ops.TagList.init(std.testing.allocator);
+    defer {
+        for (tags.items) |tag_name| std.testing.allocator.free(tag_name);
+        tags.deinit();
+    }
+
+    try tags.append(try std.testing.allocator.dupe(u8, "release"));
+
+    const output = try tagRmResult(
+        std.testing.allocator,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        1,
+        .removed,
+        &tags,
+    );
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Removed 1 tag(s) from commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.\n" ++
+            "release\n",
         output,
     );
 }
