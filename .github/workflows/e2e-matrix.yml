@@ -1,0 +1,25 @@
+name: E2E Matrix
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  e2e-matrix:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build CLI binary
+        run: zig build -Doptimize=ReleaseSafe
+
+      - name: Run full CLI e2e matrix
+        run: ./.github/scripts/omohi_e2e_matrix.sh ./zig-out/bin/omohi
