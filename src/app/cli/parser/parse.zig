@@ -735,6 +735,22 @@ test "parser accepts commit options" {
     }
 }
 
+test "parser accepts commit long message option" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{ "commit", "--message", "msg" };
+    var parsed = try parseArgs(allocator, &argv);
+    defer types.deinitParsedRequest(allocator, &parsed);
+
+    switch (parsed) {
+        .commit => |args| {
+            try std.testing.expectEqualStrings("msg", args.message);
+            try std.testing.expect(!args.dry_run);
+            try std.testing.expectEqual(@as(usize, 0), args.tags.len);
+        },
+        else => return error.UnexpectedResult,
+    }
+}
+
 test "parser resolves help from help aliases and accepts topic" {
     const allocator = std.testing.allocator;
 
@@ -923,6 +939,11 @@ test "parser normalizes option keys for find" {
             else => return error.UnexpectedResult,
         }
     }
+}
+
+test "parser rejects invalid find date format" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.InvalidDate, parseArgs(allocator, &.{ "find", "--date", "2026/03/12" }));
 }
 
 test "parser accepts tracklist output and repeated fields" {

@@ -52,3 +52,16 @@ fn commitNotFoundResult(
     const output = try std.fmt.allocPrint(allocator, "Commit not found: {s}\n", .{commit_id});
     return .{ .output = output, .to_stderr = true, .exit_code = exit_code.use_case_error };
 }
+
+test "commitNotFoundResult includes commit id and use-case exit code" {
+    const commit_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const result = try commitNotFoundResult(std.testing.allocator, commit_id);
+    defer std.testing.allocator.free(result.output);
+
+    try std.testing.expect(result.to_stderr);
+    try std.testing.expectEqual(exit_code.use_case_error, result.exit_code);
+    try std.testing.expectEqualStrings(
+        "Commit not found: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        result.output,
+    );
+}
