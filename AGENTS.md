@@ -111,6 +111,14 @@ Agents should also refer to directories under `docs/` when they are relevant to 
 - Highest priority: `store` layer.
 - `ops` / `app/cli`: minimum required tests.
 - Focus on destructive operations, ID generation, persistence consistency, and exit-code regressions.
+- CI split:
+  - `main-smoke`: keep this limited to the must-not-break CLI path for major commands after merge to `main`.
+  - `e2e-matrix`: use this for broad CLI pattern coverage, including option combinations, aliases, parser boundaries, output modes, no-op cases, and regression scenarios.
+  - `perf-baseline`: performance-only; do not place functional E2E coverage there.
+- When command behavior, options, aliases, or output contracts change:
+  - Update `main-smoke` only if the change affects the must-not-break major-command path.
+  - Update `e2e-matrix` when the change adds or changes CLI patterns, parser combinations, or output contracts that should remain covered over time.
+- Accept intentional overlap between smoke and matrix tests when it reduces maintenance cost and keeps the major-command path obvious.
 
 ## 10. Change Decision Criteria
 - First, check alignment with philosophy (local-first / process logging / non-destructive).
@@ -121,6 +129,8 @@ Agents should also refer to directories under `docs/` when they are relevant to 
 ## 11. Change Verification Checklist
 - Confirm the change delivers the intended behavior.
 - Ensure all relevant tests pass. Use `make test` as the default baseline, and run broader checks when the change touches related contracts.
+- Run `make test-smoke` when changing the must-not-break major-command path or post-merge smoke coverage.
+- Run `make test-e2e-matrix` when changing CLI options, parser behavior, aliases, output formats, or broad command-pattern coverage.
 - Ensure Bash Completion still works. Use `make test-completion` when commands, subcommands, or options may be affected.
 - If commands, subcommands, or options are added or changed, update completion behavior accordingly.
 - Avoid introducing significant performance regressions. When behavior may affect command cost or traversal size, verify that performance is not materially worse.

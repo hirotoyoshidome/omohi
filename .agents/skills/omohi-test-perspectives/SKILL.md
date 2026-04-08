@@ -29,6 +29,11 @@ Prefer coverage in the following order.
 - Prefer tests that validate durability invariants such as atomic write order, logical deletion behavior, and `HEAD` update ordering where relevant.
 - Verify ownership and cleanup responsibilities when allocation or staged objects are involved.
 - Mark test-only helper functions with `// TEST-ONLY: <reason>`.
+- For omohi CI placement:
+  - Keep `main-smoke` focused on the must-not-break major-command path after merge to `main`.
+  - Put broad CLI pattern coverage in the scheduled `e2e-matrix` job, including option combinations, aliases, parser boundaries, output modes, no-op behavior, and regression scenarios.
+  - Do not put functional E2E coverage into `perf-baseline`.
+  - Allow overlap between smoke and matrix tests when that makes the major-command path simpler to maintain.
 
 ## Minimum Scenario Checklist
 - Happy path
@@ -39,4 +44,6 @@ Prefer coverage in the following order.
 
 ## Completion Criteria
 - Add or update only the tests needed to protect the changed contract.
+- When a change affects major-command survivability, check whether `main-smoke` should move with it.
+- When a change affects CLI patterns or output contracts, update the matrix E2E coverage in the same change.
 - State uncovered risks explicitly if some scenarios are not tested.
