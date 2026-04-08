@@ -6,11 +6,13 @@ FMT ?= $(ZIG) fmt
 #   make test OPTIMIZE=ReleaseSafe
 OPTIMIZE ?= Debug
 
-.PHONY: help test test-contract test-reliability test-completion perf-baseline fmt fmt-check lint build docs docs-check check clean
+.PHONY: help test test-smoke test-e2e-matrix test-contract test-reliability test-completion perf-baseline fmt fmt-check lint build docs docs-check check clean
 
 help:
 	@echo "Targets:"
 	@echo "  make test       - run tests (zig build test)"
+	@echo "  make test-smoke - run the post-merge smoke CLI scenario"
+	@echo "  make test-e2e-matrix - run the full scheduled CLI matrix"
 	@echo "  make test-contract - run CLI exit-code and parser contract checks"
 	@echo "  make test-reliability - run CLI reliability checks for LOCK and staged corruption"
 	@echo "  make test-completion - run shell completion checks"
@@ -26,6 +28,12 @@ help:
 
 test:
 	$(BUILD) test -Doptimize=$(OPTIMIZE) --summary all
+
+test-smoke: build
+	./.github/scripts/omohi_smoke.sh ./zig-out/bin/omohi
+
+test-e2e-matrix: build
+	./.github/scripts/omohi_e2e_matrix.sh ./zig-out/bin/omohi
 
 test-contract: build
 	./.github/scripts/omohi_contract.sh ./zig-out/bin/omohi
