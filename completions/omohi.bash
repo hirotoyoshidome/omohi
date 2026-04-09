@@ -38,7 +38,7 @@ _omohi_complete() {
       ;;
     find)
       case "${prev}" in
-        -t|--tag|-d|--date)
+        -t|--tag|-s|--since|-u|--until)
           _omohi_collect_candidates
           return 0
           ;;
