@@ -11,7 +11,7 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.FindArgs) !command_t
     var omohi = try environment.openOmohiDir(allocator, false);
     defer omohi.deinit(allocator);
 
-    var list = try find_ops.find(allocator, omohi.dir, args.tag, args.date);
+    var list = try find_ops.find(allocator, omohi.dir, args.tag, args.since_millis, args.until_millis);
     defer find_ops.freeCommitSummaryList(allocator, &list);
 
     const output = try presenter.findResult(allocator, &list, args);
