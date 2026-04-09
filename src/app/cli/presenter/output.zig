@@ -1317,6 +1317,7 @@ test "findResult renders heading and commit blocks" {
         .until = null,
         .since_millis = null,
         .until_millis = null,
+        .limit = null,
         .output = .text,
         .fields = &.{},
     });
@@ -1348,6 +1349,7 @@ test "findResult renders selected fields as text rows" {
         .until = null,
         .since_millis = null,
         .until_millis = null,
+        .limit = null,
         .output = .text,
         .fields = &.{ .commit_id, .created_at },
     });
@@ -1369,6 +1371,7 @@ test "findResult renders no commits message" {
         .until = null,
         .since_millis = null,
         .until_millis = null,
+        .limit = null,
         .output = .text,
         .fields = &.{},
     });
@@ -1394,6 +1397,7 @@ test "findResult renders since heading" {
         .until = null,
         .since_millis = 0,
         .until_millis = null,
+        .limit = null,
         .output = .text,
         .fields = &.{},
     });
@@ -1419,6 +1423,7 @@ test "findResult renders tag and range heading" {
         .until = "2026-03-11",
         .since_millis = 0,
         .until_millis = 1,
+        .limit = null,
         .output = .text,
         .fields = &.{},
     });
@@ -1444,6 +1449,7 @@ test "findResult renders json output" {
         .until = null,
         .since_millis = null,
         .until_millis = null,
+        .limit = null,
         .output = .json,
         .fields = &.{},
     });
@@ -1472,6 +1478,7 @@ test "findResult renders selected fields as json" {
         .until = null,
         .since_millis = null,
         .until_millis = null,
+        .limit = null,
         .output = .json,
         .fields = &.{.commit_id},
     });

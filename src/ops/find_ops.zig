@@ -12,9 +12,10 @@ pub fn find(
     tag_name: ?[]const u8,
     since_millis: ?i64,
     until_millis: ?i64,
+    limit: usize,
 ) !CommitSummaryList {
     try store_api.ensureStoreVersion(allocator, omohi_dir);
-    return store_api.find(allocator, omohi_dir, tag_name, since_millis, until_millis);
+    return store_api.find(allocator, omohi_dir, tag_name, since_millis, until_millis, limit);
 }
 
 // Releases the owned commit summary strings returned by `find`.

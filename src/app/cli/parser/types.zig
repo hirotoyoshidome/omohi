@@ -57,6 +57,7 @@ pub const FindArgs = struct {
     until: ?[]const u8,
     since_millis: ?i64,
     until_millis: ?i64,
+    limit: ?usize,
     output: OutputFormat,
     fields: []const FindField,
 };
