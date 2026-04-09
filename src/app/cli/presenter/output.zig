@@ -342,20 +342,7 @@ pub fn findResult(
         return out.toOwnedSlice();
     }
 
-    if (args.tag) |tag_name| {
-        if (args.date) |date_value| {
-            try writer.print(
-                "Found {d} commit(s) for tag {s} and date {s}.\n",
-                .{ list.items.len, tag_name, date_value },
-            );
-        } else {
-            try writer.print("Found {d} commit(s) for tag {s}.\n", .{ list.items.len, tag_name });
-        }
-    } else if (args.date) |date_value| {
-        try writer.print("Found {d} commit(s) for date {s}.\n", .{ list.items.len, date_value });
-    } else {
-        try writer.print("Found {d} commit(s).\n", .{list.items.len});
-    }
+    try writeFindHeading(writer, list.items.len, args);
 
     for (list.items) |entry| {
         try writer.print("- {s}\n", .{entry.commit_id.asSlice()});
@@ -363,6 +350,42 @@ pub fn findResult(
         try writer.print("  {s}\n\n", .{entry.message});
     }
     return out.toOwnedSlice();
+}
+
+// Writes the summary heading for a `find` text result with active filters.
+fn writeFindHeading(writer: anytype, count: usize, args: parser_types.FindArgs) !void {
+    if (args.tag) |tag_name| {
+        if (args.since) |since_value| {
+            if (args.until) |until_value| {
+                try writer.print("Found {d} commit(s) for tag {s} from {s} until {s}.\n", .{ count, tag_name, since_value, until_value });
+                return;
+            }
+            try writer.print("Found {d} commit(s) for tag {s} since {s}.\n", .{ count, tag_name, since_value });
+            return;
+        }
+        if (args.until) |until_value| {
+            try writer.print("Found {d} commit(s) for tag {s} until {s}.\n", .{ count, tag_name, until_value });
+            return;
+        }
+        try writer.print("Found {d} commit(s) for tag {s}.\n", .{ count, tag_name });
+        return;
+    }
+
+    if (args.since) |since_value| {
+        if (args.until) |until_value| {
+            try writer.print("Found {d} commit(s) from {s} until {s}.\n", .{ count, since_value, until_value });
+            return;
+        }
+        try writer.print("Found {d} commit(s) since {s}.\n", .{ count, since_value });
+        return;
+    }
+
+    if (args.until) |until_value| {
+        try writer.print("Found {d} commit(s) until {s}.\n", .{ count, until_value });
+        return;
+    }
+
+    try writer.print("Found {d} commit(s).\n", .{count});
 }
 
 // Renders commit details and related tags as owned CLI output.
@@ -1290,7 +1313,10 @@ test "findResult renders heading and commit blocks" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = "release",
-        .date = null,
+        .since = null,
+        .until = null,
+        .since_millis = null,
+        .until_millis = null,
         .output = .text,
         .fields = &.{},
     });
@@ -1318,7 +1344,10 @@ test "findResult renders selected fields as text rows" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = null,
-        .date = null,
+        .since = null,
+        .until = null,
+        .since_millis = null,
+        .until_millis = null,
         .output = .text,
         .fields = &.{ .commit_id, .created_at },
     });
@@ -1336,7 +1365,10 @@ test "findResult renders no commits message" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = null,
-        .date = null,
+        .since = null,
+        .until = null,
+        .since_millis = null,
+        .until_millis = null,
         .output = .text,
         .fields = &.{},
     });
@@ -1345,7 +1377,7 @@ test "findResult renders no commits message" {
     try std.testing.expectEqualStrings("no commits\n", output);
 }
 
-test "findResult renders date heading" {
+test "findResult renders since heading" {
     var list = find_ops.CommitSummaryList.init(std.testing.allocator);
     defer find_ops.freeCommitSummaryList(std.testing.allocator, &list);
 
@@ -1358,16 +1390,19 @@ test "findResult renders date heading" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = null,
-        .date = "2026-03-10",
+        .since = "2026-03-10",
+        .until = null,
+        .since_millis = 0,
+        .until_millis = null,
         .output = .text,
         .fields = &.{},
     });
     defer std.testing.allocator.free(output);
 
-    try std.testing.expect(std.mem.startsWith(u8, output, "Found 1 commit(s) for date 2026-03-10.\n"));
+    try std.testing.expect(std.mem.startsWith(u8, output, "Found 1 commit(s) since 2026-03-10.\n"));
 }
 
-test "findResult renders tag and date heading" {
+test "findResult renders tag and range heading" {
     var list = find_ops.CommitSummaryList.init(std.testing.allocator);
     defer find_ops.freeCommitSummaryList(std.testing.allocator, &list);
 
@@ -1380,13 +1415,16 @@ test "findResult renders tag and date heading" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = "release",
-        .date = "2026-03-10",
+        .since = "2026-03-10",
+        .until = "2026-03-11",
+        .since_millis = 0,
+        .until_millis = 1,
         .output = .text,
         .fields = &.{},
     });
     defer std.testing.allocator.free(output);
 
-    try std.testing.expect(std.mem.startsWith(u8, output, "Found 1 commit(s) for tag release and date 2026-03-10.\n"));
+    try std.testing.expect(std.mem.startsWith(u8, output, "Found 1 commit(s) for tag release from 2026-03-10 until 2026-03-11.\n"));
 }
 
 test "findResult renders json output" {
@@ -1402,7 +1440,10 @@ test "findResult renders json output" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = null,
-        .date = null,
+        .since = null,
+        .until = null,
+        .since_millis = null,
+        .until_millis = null,
         .output = .json,
         .fields = &.{},
     });
@@ -1427,7 +1468,10 @@ test "findResult renders selected fields as json" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = null,
-        .date = null,
+        .since = null,
+        .until = null,
+        .since_millis = null,
+        .until_millis = null,
         .output = .json,
         .fields = &.{.commit_id},
     });
