@@ -14,7 +14,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 | `status` | `status` | Show tracked and staged state overview. |
 | `tracklist` | `tracklist [--output <text|json>] [--field <id|path>]...` | List tracked targets with tracked file IDs. |
 | `version` | `version` | Print application version and build target. |
-| `find` | `find [--tag <tag>] [--date YYYY-MM-DD] [--output <text|json>] [--field <commit_id|message|created_at>]...` | Search commits by optional tag and date filters. |
+| `find` | `find [--tag <tag>] [--since <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--until <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--output <text|json>] [--field <commit_id|message|created_at>]...` | Search commits by optional tag and local-time range filters. |
 | `show` | `show [--output <text|json>] [--field <commit_id|message|created_at|paths|tags>]... <commitId>` | Show one commit details payload. |
 | `journal` | `journal` | Show recent journal logs in reverse chronological order. |
 | `tag ls` | `tag ls <commitId>` | List tags for one commit. |
@@ -162,24 +162,27 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 
 ### find
 
-- Usage: `omohi find [--tag <tag>] [--date YYYY-MM-DD] [--output <text|json>] [--field <commit_id|message|created_at>]...`
-- Summary: Search commits by optional tag and date filters.
+- Usage: `omohi find [--tag <tag>] [--since <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--until <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--output <text|json>] [--field <commit_id|message|created_at>]...`
+- Summary: Search commits by optional tag and local-time range filters.
 - Positionals:
   - None
 - Options:
   - `-t`, `--tag` `<tag>` (optional): Filter commits by tag name.
-  - `-d`, `--date` `<YYYY-MM-DD>` (optional): Filter commits by local date prefix.
+  - `-s`, `--since` `<YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>` (optional): Filter commits created at or after the given local date/time.
+  - `-u`, `--until` `<YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>` (optional): Filter commits created at or before the given local date/time.
   - `--output` `<text|json>` (optional): Choose human-readable text or JSON output.
   - `--field` `<commit_id|message|created_at>` (optional, repeatable): Select one or more result fields. Repeat to keep field order.
 - Examples:
   - `omohi find`
   - `omohi find --tag release`
-  - `omohi find --date 2026-03-17`
-  - `omohi find --tag release --date 2026-03-17`
+  - `omohi find --since 2026-03-17`
+  - `omohi find --tag release --since 2026-03-17 --until 2026-03-17T23:59:59`
   - `omohi find --field commit_id --field created_at`
   - `omohi find --output json --tag release`
 - Notes:
-  - When both filters are set, intersection is returned.
+  - When tag and time filters are set, intersection is returned.
+  - Date-only and datetime values are interpreted in the local timezone.
+  - `--since` and `--until` are inclusive bounds.
   - Each result is shown as commit ID, local timestamp, and commit message in a multi-line block.
   - The public `created_at` field is rendered in the local timezone.
 
@@ -284,7 +287,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 - Parse `InvalidCommand`: Invalid command. Run `omohi help` to see available commands.
 - Parse `MissingArgument`: Missing required argument. Check command usage with `omohi help`.
 - Parse `UnknownOption`: Unknown option. Run `omohi help` to see supported options.
-- Parse `InvalidDate`: Invalid date format. Use YYYY-MM-DD.
+- Parse `InvalidDate`: Invalid date/time input. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS, and ensure --since is not later than --until.
 - Runtime `NothingToCommit`: No staged files to commit.
 - Runtime `OmohiNotInitialized`: Store is not initialized. Run `omohi track <path>` to create ~/.omohi.
 - Runtime `CommitNotFound`: Commit not found. Check the commit ID with `omohi find`.

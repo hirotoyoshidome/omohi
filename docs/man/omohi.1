@@ -287,11 +287,11 @@ omohi version
 .SS find
 .TP
 .B Summary
-Search commits by optional tag and date filters.
+Search commits by optional tag and local\-time range filters.
 .TP
 .B Usage
 .nf
-omohi find [\-\-tag <tag>] [\-\-date YYYY\-MM\-DD] [\-\-output <text|json>] [\-\-field <commit_id|message|created_at>]...
+omohi find [\-\-tag <tag>] [\-\-since <YYYY\-MM\-DD|YYYY\-MM\-DDTHH:MM:SS>] [\-\-until <YYYY\-MM\-DD|YYYY\-MM\-DDTHH:MM:SS>] [\-\-output <text|json>] [\-\-field <commit_id|message|created_at>]...
 .fi
 .TP
 .B Options
@@ -300,8 +300,12 @@ omohi find [\-\-tag <tag>] [\-\-date YYYY\-MM\-DD] [\-\-output <text|json>] [\-\
 optional: Filter commits by tag name.
 .RE
 .RS 4
-.B \-d, \-\-date <YYYY\-MM\-DD>
-optional: Filter commits by local date prefix.
+.B \-s, \-\-since <YYYY\-MM\-DD|YYYY\-MM\-DDTHH:MM:SS>
+optional: Filter commits created at or after the given local date/time.
+.RE
+.RS 4
+.B \-u, \-\-until <YYYY\-MM\-DD|YYYY\-MM\-DDTHH:MM:SS>
+optional: Filter commits created at or before the given local date/time.
 .RE
 .RS 4
 .B \-\-output <text|json>
@@ -316,15 +320,21 @@ optional, repeatable: Select one or more result fields. Repeat to keep field ord
 .nf
 omohi find
 omohi find \-\-tag release
-omohi find \-\-date 2026\-03\-17
-omohi find \-\-tag release \-\-date 2026\-03\-17
+omohi find \-\-since 2026\-03\-17
+omohi find \-\-tag release \-\-since 2026\-03\-17 \-\-until 2026\-03\-17T23:59:59
 omohi find \-\-field commit_id \-\-field created_at
 omohi find \-\-output json \-\-tag release
 .fi
 .TP
 .B Notes
 .RS 4
-When both filters are set, intersection is returned.
+When tag and time filters are set, intersection is returned.
+.RE
+.RS 4
+Date\-only and datetime values are interpreted in the local timezone.
+.RE
+.RS 4
+`\-\-since` and `\-\-until` are inclusive bounds.
 .RE
 .RS 4
 Each result is shown as commit ID, local timestamp, and commit message in a multi\-line block.
