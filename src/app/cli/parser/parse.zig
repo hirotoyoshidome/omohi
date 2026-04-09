@@ -380,10 +380,13 @@ fn parseCommit(allocator: std.mem.Allocator, args: []const []const u8) !types.Pa
     } };
 }
 
-// Parses `find` options and validates any provided date filter.
+// Parses `find` options and validates any provided local-time range filters.
 fn parseFind(allocator: std.mem.Allocator, args: []const []const u8) !types.ParsedRequest {
     var tag_name: ?[]const u8 = null;
-    var date: ?[]const u8 = null;
+    var since: ?[]const u8 = null;
+    var until: ?[]const u8 = null;
+    var since_millis: ?i64 = null;
+    var until_millis: ?i64 = null;
     var output: types.OutputFormat = .text;
     var fields = std.array_list.Managed(types.FindField).init(allocator);
     errdefer fields.deinit();
@@ -411,16 +414,29 @@ fn parseFind(allocator: std.mem.Allocator, args: []const []const u8) !types.Pars
                     continue;
                 }
 
-                if (equalsIgnoreAsciiCase(opt.key, "date")) {
+                if (equalsIgnoreAsciiCase(opt.key, "since")) {
                     if (opt.value) |value| {
-                        try date_validation.validateDateYmd(value);
-                        date = value;
+                        since_millis = try date_validation.parseFindBoundaryMillis(value, .since);
+                        since = value;
                         continue;
                     }
                     idx += 1;
                     if (idx >= args.len) return error.MissingValue;
-                    try date_validation.validateDateYmd(args[idx]);
-                    date = args[idx];
+                    since_millis = try date_validation.parseFindBoundaryMillis(args[idx], .since);
+                    since = args[idx];
+                    continue;
+                }
+
+                if (equalsIgnoreAsciiCase(opt.key, "until")) {
+                    if (opt.value) |value| {
+                        until_millis = try date_validation.parseFindBoundaryMillis(value, .until);
+                        until = value;
+                        continue;
+                    }
+                    idx += 1;
+                    if (idx >= args.len) return error.MissingValue;
+                    until_millis = try date_validation.parseFindBoundaryMillis(args[idx], .until);
+                    until = args[idx];
                     continue;
                 }
 
@@ -455,11 +471,18 @@ fn parseFind(allocator: std.mem.Allocator, args: []const []const u8) !types.Pars
                 tag_name = args[idx];
                 continue;
             }
-            if (equalsIgnoreAsciiCase(token, "-d")) {
+            if (equalsIgnoreAsciiCase(token, "-s")) {
                 idx += 1;
                 if (idx >= args.len) return error.MissingValue;
-                try date_validation.validateDateYmd(args[idx]);
-                date = args[idx];
+                since_millis = try date_validation.parseFindBoundaryMillis(args[idx], .since);
+                since = args[idx];
+                continue;
+            }
+            if (equalsIgnoreAsciiCase(token, "-u")) {
+                idx += 1;
+                if (idx >= args.len) return error.MissingValue;
+                until_millis = try date_validation.parseFindBoundaryMillis(args[idx], .until);
+                until = args[idx];
                 continue;
             }
             return error.UnknownOption;
@@ -468,9 +491,16 @@ fn parseFind(allocator: std.mem.Allocator, args: []const []const u8) !types.Pars
         return error.UnexpectedArgument;
     }
 
+    if (since_millis != null and until_millis != null and since_millis.? > until_millis.?) {
+        return error.InvalidDate;
+    }
+
     return .{ .find = .{
         .tag = tag_name,
-        .date = date,
+        .since = since,
+        .until = until,
+        .since_millis = since_millis,
+        .until_millis = until_millis,
         .output = output,
         .fields = try fields.toOwnedSlice(),
     } };
@@ -915,26 +945,28 @@ test "parser normalizes option keys for find" {
     const allocator = std.testing.allocator;
 
     {
-        const argv = [_][]const u8{ "find", "--TAG", "release", "--DATE=2026-03-12" };
+        const argv = [_][]const u8{ "find", "--TAG", "release", "--SINCE=2026-03-12", "--UNTIL", "2026-03-13" };
         var parsed = try parseArgs(allocator, &argv);
         defer types.deinitParsedRequest(allocator, &parsed);
         switch (parsed) {
             .find => |args| {
                 try std.testing.expectEqualStrings("release", args.tag.?);
-                try std.testing.expectEqualStrings("2026-03-12", args.date.?);
+                try std.testing.expectEqualStrings("2026-03-12", args.since.?);
+                try std.testing.expectEqualStrings("2026-03-13", args.until.?);
             },
             else => return error.UnexpectedResult,
         }
     }
 
     {
-        const argv = [_][]const u8{ "find", "-T", "release", "-D", "2026-03-12" };
+        const argv = [_][]const u8{ "find", "-T", "release", "-S", "2026-03-12", "-U", "2026-03-13T12:00:00" };
         var parsed = try parseArgs(allocator, &argv);
         defer types.deinitParsedRequest(allocator, &parsed);
         switch (parsed) {
             .find => |args| {
                 try std.testing.expectEqualStrings("release", args.tag.?);
-                try std.testing.expectEqualStrings("2026-03-12", args.date.?);
+                try std.testing.expectEqualStrings("2026-03-12", args.since.?);
+                try std.testing.expectEqualStrings("2026-03-13T12:00:00", args.until.?);
             },
             else => return error.UnexpectedResult,
         }
@@ -943,7 +975,13 @@ test "parser normalizes option keys for find" {
 
 test "parser rejects invalid find date format" {
     const allocator = std.testing.allocator;
-    try std.testing.expectError(error.InvalidDate, parseArgs(allocator, &.{ "find", "--date", "2026/03/12" }));
+    try std.testing.expectError(error.InvalidDate, parseArgs(allocator, &.{ "find", "--since", "2026/03/12" }));
+    try std.testing.expectError(error.InvalidDate, parseArgs(allocator, &.{ "find", "--until", "2026-03-12T00:00:00Z" }));
+}
+
+test "parser rejects reversed find time range" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.InvalidDate, parseArgs(allocator, &.{ "find", "--since", "2026-03-13", "--until", "2026-03-12" }));
 }
 
 test "parser accepts tracklist output and repeated fields" {

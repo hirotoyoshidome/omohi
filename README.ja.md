@@ -145,7 +145,7 @@ omohi commit -m "capture decision background"
 omohi status
 
 # 5) 履歴の検索と参照
-omohi find --tag architecture --date 2026-03-18
+omohi find --tag architecture --since 2025-03-26 --until 2026-03-26
 omohi show <commitId>
 ```
 

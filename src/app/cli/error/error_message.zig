@@ -8,7 +8,7 @@ pub fn forParseError(err: anyerror) []const u8 {
         error.UnexpectedArgument => "Unexpected argument. Check command usage with `omohi help`.",
         error.MissingValue => "Missing option value. Use `--key=value` or `--key value`.",
         error.UnknownOption => "Unknown option. Run `omohi help` to see supported options.",
-        error.InvalidDate => "Invalid date format. Use YYYY-MM-DD.",
+        error.InvalidDate => "Invalid date/time input. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS, and ensure --since is not later than --until.",
         else => "Invalid CLI input. Run `omohi help` to check usage.",
     };
 }
