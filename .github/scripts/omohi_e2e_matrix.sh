@@ -846,18 +846,18 @@ case_061_find_by_tag() {
   assert_contains "$RUN_STDOUT" "Found 2 commit(s) for tag release." "find should report tag filter"
 }
 
-case_062_find_by_date() {
+case_062_find_by_since() {
   setup_two_commits_for_find
-  run_omohi_capture find --date "$FIND_DATE"
-  assert_eq "0" "$RUN_CODE" "find --date should succeed"
-  assert_contains "$RUN_STDOUT" "Found 2 commit(s) for date $FIND_DATE." "find should report date filter"
+  run_omohi_capture find --since "$FIND_DATE"
+  assert_eq "0" "$RUN_CODE" "find --since should succeed"
+  assert_contains "$RUN_STDOUT" "Found 2 commit(s) since $FIND_DATE." "find should report since filter"
 }
 
-case_063_find_by_tag_and_date() {
+case_063_find_by_tag_and_range() {
   setup_two_commits_for_find
-  run_omohi_capture find --tag release --date "$FIND_DATE"
-  assert_eq "0" "$RUN_CODE" "find with tag and date should succeed"
-  assert_contains "$RUN_STDOUT" "Found 2 commit(s) for tag release and date $FIND_DATE." "find should report both filters"
+  run_omohi_capture find --tag release --since "$FIND_DATE" --until "${FIND_DATE}T23:59:59"
+  assert_eq "0" "$RUN_CODE" "find with tag and range should succeed"
+  assert_contains "$RUN_STDOUT" "Found 2 commit(s) for tag release from $FIND_DATE until ${FIND_DATE}T23:59:59." "find should report both filters"
 }
 
 case_064_find_empty() {
@@ -908,16 +908,16 @@ case_068_find_unknown_field() {
 
 case_069_find_invalid_date() {
   setup_two_commits_for_find
-  run_omohi_capture find --date 2026/03/12
+  run_omohi_capture find --since 2026/03/12
   assert_eq "2" "$RUN_CODE" "find invalid date should be rejected"
-  assert_contains "$RUN_STDERR" "Invalid date format. Use YYYY-MM-DD." "find should report invalid date"
+  assert_contains "$RUN_STDERR" "Invalid date/time input. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS" "find should report invalid date"
 }
 
 case_070_find_uppercase_option_keys() {
   setup_two_commits_for_find
-  run_omohi_capture find --TAG release --DATE="$FIND_DATE"
+  run_omohi_capture find --TAG release --SINCE="$FIND_DATE" --UNTIL "${FIND_DATE}T23:59:59"
   assert_eq "0" "$RUN_CODE" "find should accept uppercase option keys"
-  assert_contains "$RUN_STDOUT" "Found 2 commit(s) for tag release and date $FIND_DATE." "uppercase options should behave normally"
+  assert_contains "$RUN_STDOUT" "Found 2 commit(s) for tag release from $FIND_DATE until ${FIND_DATE}T23:59:59." "uppercase options should behave normally"
 }
 
 case_071_find_double_dash_extra_args() {
@@ -1223,8 +1223,8 @@ run_case "version long alias" case_058_version_long_alias
 run_case "version rejects extra args" case_059_version_rejects_extra_args
 run_case "find all commits text" case_060_find_all_commits_text
 run_case "find by tag" case_061_find_by_tag
-run_case "find by date" case_062_find_by_date
-run_case "find by tag and date" case_063_find_by_tag_and_date
+run_case "find by since" case_062_find_by_since
+run_case "find by tag and range" case_063_find_by_tag_and_range
 run_case "find empty" case_064_find_empty
 run_case "find json output" case_065_find_json_output
 run_case "find text fields" case_066_find_text_fields
