@@ -470,13 +470,13 @@ pub fn freeRmBatchOutcome(allocator: std.mem.Allocator, outcome: *RmBatchOutcome
     freeStringList(allocator, &outcome.unstaged_paths);
 }
 
-/// Finds commits with optional tag and date filters.
-/// Date format is YYYY-MM-DD and compared against createdAt in local timezone.
+/// Finds commits with optional tag and epoch-millis range filters.
 pub fn find(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     tag_name: ?[]const u8,
-    date_ymd: ?[]const u8,
+    since_millis: ?i64,
+    until_millis: ?i64,
 ) !CommitSummaryList {
     var out = CommitSummaryList.init(allocator);
     errdefer freeCommitSummaryList(allocator, &out);
@@ -496,11 +496,15 @@ pub fn find(
             error.InvalidTimestamp, error.TimestampBeforeEpoch, error.TimestampOutOfRange => return error.InvalidCommit,
         };
 
-        if (date_ymd) |target_date| {
-            const local_ymd = local_date.utcIso8601ToLocalYmd(parsed.created_at) catch |err| switch (err) {
-                error.InvalidTimestamp, error.TimestampBeforeEpoch, error.TimestampOutOfRange, error.LocaltimeFailed => return error.InvalidCommit,
-            };
-            if (!std.mem.eql(u8, local_ymd[0..], target_date)) {
+        if (since_millis) |lower_bound| {
+            if (created_at_millis < lower_bound) {
+                freeParsedCommit(allocator, &parsed);
+                continue;
+            }
+        }
+
+        if (until_millis) |upper_bound| {
+            if (created_at_millis > upper_bound) {
                 freeParsedCommit(allocator, &parsed);
                 continue;
             }
@@ -2693,7 +2697,7 @@ test "find sorts by createdAt desc and limits to ten commits" {
         try writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], message, created_at);
     }
 
-    var list = try find(allocator, omohi_dir, null, null);
+    var list = try find(allocator, omohi_dir, null, null, null);
     defer freeCommitSummaryList(allocator, &list);
 
     try std.testing.expectEqual(@as(usize, 10), list.items.len);
@@ -2703,7 +2707,7 @@ test "find sorts by createdAt desc and limits to ten commits" {
     try std.testing.expectEqual(@as(usize, 29), list.items[0].local_created_at.len);
 }
 
-test "find applies tag and date filters as intersection" {
+test "find applies tag and time range filters as intersection" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -2722,24 +2726,24 @@ test "find applies tag and date filters as intersection" {
     try writeFindFixtureTags(allocator, omohi_dir, commit_a[0..], &release_tags);
     try writeFindFixtureTags(allocator, omohi_dir, commit_b[0..], &prod_tags);
 
-    var by_tag = try find(allocator, omohi_dir, "release", null);
+    var by_tag = try find(allocator, omohi_dir, "release", null, null);
     defer freeCommitSummaryList(allocator, &by_tag);
     try std.testing.expectEqual(@as(usize, 1), by_tag.items.len);
     try std.testing.expectEqualStrings("release-a", by_tag.items[0].message);
 
-    const date_a = try local_date.utcIso8601ToLocalYmd("2026-03-10T18:00:00.000Z");
-    var by_date = try find(allocator, omohi_dir, null, date_a[0..]);
-    defer freeCommitSummaryList(allocator, &by_date);
-    try std.testing.expectEqual(@as(usize, 1), by_date.items.len);
-    try std.testing.expectEqualStrings("release-a", by_date.items[0].message);
-    try std.testing.expectEqual(@as(usize, 29), by_date.items[0].local_created_at.len);
+    const created_a = try local_date.parseUtcIso8601Millis("2026-03-10T18:00:00.000Z");
+    var by_range = try find(allocator, omohi_dir, null, created_a, created_a);
+    defer freeCommitSummaryList(allocator, &by_range);
+    try std.testing.expectEqual(@as(usize, 1), by_range.items.len);
+    try std.testing.expectEqualStrings("release-a", by_range.items[0].message);
+    try std.testing.expectEqual(@as(usize, 29), by_range.items[0].local_created_at.len);
 
-    var by_tag_and_date = try find(allocator, omohi_dir, "release", date_a[0..]);
-    defer freeCommitSummaryList(allocator, &by_tag_and_date);
-    try std.testing.expectEqual(@as(usize, 1), by_tag_and_date.items.len);
-    try std.testing.expectEqualStrings("release-a", by_tag_and_date.items[0].message);
+    var by_tag_and_range = try find(allocator, omohi_dir, "release", created_a, created_a);
+    defer freeCommitSummaryList(allocator, &by_tag_and_range);
+    try std.testing.expectEqual(@as(usize, 1), by_tag_and_range.items.len);
+    try std.testing.expectEqualStrings("release-a", by_tag_and_range.items[0].message);
 
-    var no_intersection = try find(allocator, omohi_dir, "prod", date_a[0..]);
+    var no_intersection = try find(allocator, omohi_dir, "prod", created_a, created_a);
     defer freeCommitSummaryList(allocator, &no_intersection);
     try std.testing.expectEqual(@as(usize, 0), no_intersection.items.len);
 }
@@ -2774,7 +2778,7 @@ test "find returns local createdAt in user timezone" {
     const commit_id = filledHexId('a');
     try writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], "tokyo", "2026-03-10T18:00:00.123Z");
 
-    var list = try find(allocator, omohi_dir, null, null);
+    var list = try find(allocator, omohi_dir, null, null, null);
     defer freeCommitSummaryList(allocator, &list);
 
     try std.testing.expectEqual(@as(usize, 1), list.items.len);
