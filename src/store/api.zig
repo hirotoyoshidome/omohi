@@ -477,6 +477,7 @@ pub fn find(
     tag_name: ?[]const u8,
     since_millis: ?i64,
     until_millis: ?i64,
+    limit: usize,
 ) !CommitSummaryList {
     var out = CommitSummaryList.init(allocator);
     errdefer freeCommitSummaryList(allocator, &out);
@@ -525,8 +526,7 @@ pub fn find(
 
     std.mem.sort(FindCandidate, matches.items, {}, isFindCandidateDescLessThan);
 
-    const max_results: usize = 10;
-    const keep_count = @min(matches.items.len, max_results);
+    const keep_count = @min(matches.items.len, limit);
     var idx: usize = 0;
     while (idx < keep_count) : (idx += 1) {
         const candidate = matches.items[idx];
@@ -2674,7 +2674,7 @@ test "rmTree removes staged files recursively and counts non-regular entries" {
     try std.testing.expectEqual(@as(usize, 1), outcome.skipped_non_regular);
 }
 
-test "find sorts by createdAt desc and limits to ten commits" {
+test "find sorts by createdAt desc and applies the requested limit" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -2697,7 +2697,7 @@ test "find sorts by createdAt desc and limits to ten commits" {
         try writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], message, created_at);
     }
 
-    var list = try find(allocator, omohi_dir, null, null, null);
+    var list = try find(allocator, omohi_dir, null, null, null, 10);
     defer freeCommitSummaryList(allocator, &list);
 
     try std.testing.expectEqual(@as(usize, 10), list.items.len);
@@ -2726,24 +2726,24 @@ test "find applies tag and time range filters as intersection" {
     try writeFindFixtureTags(allocator, omohi_dir, commit_a[0..], &release_tags);
     try writeFindFixtureTags(allocator, omohi_dir, commit_b[0..], &prod_tags);
 
-    var by_tag = try find(allocator, omohi_dir, "release", null, null);
+    var by_tag = try find(allocator, omohi_dir, "release", null, null, 10);
     defer freeCommitSummaryList(allocator, &by_tag);
     try std.testing.expectEqual(@as(usize, 1), by_tag.items.len);
     try std.testing.expectEqualStrings("release-a", by_tag.items[0].message);
 
     const created_a = try local_date.parseUtcIso8601Millis("2026-03-10T18:00:00.000Z");
-    var by_range = try find(allocator, omohi_dir, null, created_a, created_a);
+    var by_range = try find(allocator, omohi_dir, null, created_a, created_a, 10);
     defer freeCommitSummaryList(allocator, &by_range);
     try std.testing.expectEqual(@as(usize, 1), by_range.items.len);
     try std.testing.expectEqualStrings("release-a", by_range.items[0].message);
     try std.testing.expectEqual(@as(usize, 29), by_range.items[0].local_created_at.len);
 
-    var by_tag_and_range = try find(allocator, omohi_dir, "release", created_a, created_a);
+    var by_tag_and_range = try find(allocator, omohi_dir, "release", created_a, created_a, 10);
     defer freeCommitSummaryList(allocator, &by_tag_and_range);
     try std.testing.expectEqual(@as(usize, 1), by_tag_and_range.items.len);
     try std.testing.expectEqualStrings("release-a", by_tag_and_range.items[0].message);
 
-    var no_intersection = try find(allocator, omohi_dir, "prod", created_a, created_a);
+    var no_intersection = try find(allocator, omohi_dir, "prod", created_a, created_a, 10);
     defer freeCommitSummaryList(allocator, &no_intersection);
     try std.testing.expectEqual(@as(usize, 0), no_intersection.items.len);
 }
@@ -2778,7 +2778,7 @@ test "find returns local createdAt in user timezone" {
     const commit_id = filledHexId('a');
     try writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], "tokyo", "2026-03-10T18:00:00.123Z");
 
-    var list = try find(allocator, omohi_dir, null, null, null);
+    var list = try find(allocator, omohi_dir, null, null, null, 10);
     defer freeCommitSummaryList(allocator, &list);
 
     try std.testing.expectEqual(@as(usize, 1), list.items.len);
