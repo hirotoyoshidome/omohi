@@ -5,15 +5,16 @@ const store_api = @import("../store/api.zig");
 pub const CommitSummary = store_api.CommitSummary;
 pub const CommitSummaryList = store_api.CommitSummaryList;
 
-/// Finds commits by optional tag/date filters.
+/// Finds commits by optional tag and local-time range filters.
 pub fn find(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     tag_name: ?[]const u8,
-    date_prefix: ?[]const u8,
+    since_millis: ?i64,
+    until_millis: ?i64,
 ) !CommitSummaryList {
     try store_api.ensureStoreVersion(allocator, omohi_dir);
-    return store_api.find(allocator, omohi_dir, tag_name, date_prefix);
+    return store_api.find(allocator, omohi_dir, tag_name, since_millis, until_millis);
 }
 
 // Releases the owned commit summary strings returned by `find`.
