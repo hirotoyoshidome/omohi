@@ -387,6 +387,7 @@ fn parseFind(allocator: std.mem.Allocator, args: []const []const u8) !types.Pars
     var until: ?[]const u8 = null;
     var since_millis: ?i64 = null;
     var until_millis: ?i64 = null;
+    var limit: ?usize = null;
     var output: types.OutputFormat = .text;
     var fields = std.array_list.Managed(types.FindField).init(allocator);
     errdefer fields.deinit();
@@ -460,6 +461,16 @@ fn parseFind(allocator: std.mem.Allocator, args: []const []const u8) !types.Pars
                     continue;
                 }
 
+                if (equalsIgnoreAsciiCase(opt.key, "limit")) {
+                    const value = opt.value orelse blk: {
+                        idx += 1;
+                        if (idx >= args.len) return error.MissingValue;
+                        break :blk args[idx];
+                    };
+                    limit = try parseFindLimit(value);
+                    continue;
+                }
+
                 return error.UnknownOption;
             }
         }
@@ -501,6 +512,7 @@ fn parseFind(allocator: std.mem.Allocator, args: []const []const u8) !types.Pars
         .until = until,
         .since_millis = since_millis,
         .until_millis = until_millis,
+        .limit = limit,
         .output = output,
         .fields = try fields.toOwnedSlice(),
     } };
@@ -578,6 +590,13 @@ fn parseFindField(value: []const u8) !types.FindField {
     if (equalsIgnoreAsciiCase(value, "message")) return .message;
     if (equalsIgnoreAsciiCase(value, "created_at")) return .created_at;
     return error.InvalidArgument;
+}
+
+// Parses a `find` limit and enforces the supported 1..500 range.
+fn parseFindLimit(value: []const u8) !usize {
+    const parsed = std.fmt.parseInt(usize, value, 10) catch return error.InvalidArgument;
+    if (parsed < 1 or parsed > 500) return error.InvalidArgument;
+    return parsed;
 }
 
 // Parses a `show` field name into its enum form.
@@ -1016,6 +1035,40 @@ test "parser accepts find output and repeated fields" {
         },
         else => return error.UnexpectedResult,
     }
+}
+
+test "parser accepts find limit values" {
+    const allocator = std.testing.allocator;
+
+    {
+        const argv = [_][]const u8{ "find", "--limit", "25" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .find => |args| try std.testing.expectEqual(@as(?usize, 25), args.limit),
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        const argv = [_][]const u8{ "find", "--limit=500" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .find => |args| try std.testing.expectEqual(@as(?usize, 500), args.limit),
+            else => return error.UnexpectedResult,
+        }
+    }
+}
+
+test "parser rejects invalid find limit values" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.MissingValue, parseArgs(allocator, &.{ "find", "--limit" }));
+    try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "find", "--limit", "0" }));
+    try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "find", "--limit", "501" }));
+    try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "find", "--limit", "abc" }));
 }
 
 test "parser accepts show options before commit id" {
