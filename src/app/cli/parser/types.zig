@@ -53,7 +53,10 @@ pub const TracklistArgs = struct {
 
 pub const FindArgs = struct {
     tag: ?[]const u8,
-    date: ?[]const u8,
+    since: ?[]const u8,
+    until: ?[]const u8,
+    since_millis: ?i64,
+    until_millis: ?i64,
     output: OutputFormat,
     fields: []const FindField,
 };
