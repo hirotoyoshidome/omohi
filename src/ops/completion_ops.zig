@@ -13,7 +13,7 @@ const commit_options = [_][]const u8{ "-m", "--message", "-t", "--tag", "--dry-r
 const add_options = [_][]const u8{ "-a", "--all" };
 const untrack_options = [_][]const u8{"--missing"};
 const tracklist_options = [_][]const u8{ "--output", "--field" };
-const find_options = [_][]const u8{ "-t", "--tag", "-s", "--since", "-u", "--until", "--output", "--field" };
+const find_options = [_][]const u8{ "-t", "--tag", "-s", "--since", "-u", "--until", "--limit", "--output", "--field" };
 const show_options = [_][]const u8{ "--output", "--field" };
 const output_values = [_][]const u8{ "text", "json" };
 const tracklist_field_values = [_][]const u8{ "id", "path" };
@@ -87,6 +87,7 @@ pub fn complete(
             try appendFilteredStatic(allocator, &out, &output_values, current);
             return out;
         }
+        if (expectsValue(words, index, "--limit", "")) return out;
         if (expectsValue(words, index, "--field", "")) {
             try appendFilteredStatic(allocator, &out, &find_field_values, current);
             return out;
@@ -490,6 +491,14 @@ test "complete returns reference output and field candidates" {
         defer freeCandidateList(allocator, &list);
         try std.testing.expectEqual(@as(usize, 1), list.items.len);
         try std.testing.expectEqualStrings("--output", list.items[0]);
+    }
+
+    {
+        const words = [_][]const u8{ "omohi", "find", "--li" };
+        var list = try complete(allocator, null, &words, 2);
+        defer freeCandidateList(allocator, &list);
+        try std.testing.expectEqual(@as(usize, 1), list.items.len);
+        try std.testing.expectEqualStrings("--limit", list.items[0]);
     }
 
     {
