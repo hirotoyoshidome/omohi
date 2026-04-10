@@ -1323,7 +1323,7 @@ test "findResult renders selected fields as json" {
 }
 
 test "showResult renders readable commit details without internal ids" {
-    var tz_guard = try local_time_text.initTimezoneGuard(std.testing.allocator, "Asia/Tokyo");
+    var tz_guard = try local_time_text.testOnlyInitTimezoneGuard(std.testing.allocator, "Asia/Tokyo");
     defer tz_guard.deinit(std.testing.allocator);
 
     var details = try initTestCommitDetails(
@@ -1365,7 +1365,7 @@ test "showResult renders readable commit details without internal ids" {
 }
 
 test "showResult renders empty tags as none" {
-    var tz_guard = try local_time_text.initTimezoneGuard(std.testing.allocator, "Asia/Tokyo");
+    var tz_guard = try local_time_text.testOnlyInitTimezoneGuard(std.testing.allocator, "Asia/Tokyo");
     defer tz_guard.deinit(std.testing.allocator);
 
     var details = try initTestCommitDetails(
@@ -1402,7 +1402,7 @@ test "showResult renders empty tags as none" {
 }
 
 test "showResult renders selected fields as json" {
-    var tz_guard = try local_time_text.initTimezoneGuard(std.testing.allocator, "Asia/Tokyo");
+    var tz_guard = try local_time_text.testOnlyInitTimezoneGuard(std.testing.allocator, "Asia/Tokyo");
     defer tz_guard.deinit(std.testing.allocator);
 
     var details = try initTestCommitDetails(
