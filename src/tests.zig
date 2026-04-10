@@ -21,6 +21,8 @@ const _store_local_directory_tree_files = @import("store/local/directory_tree_fi
 const _store_local_trash = @import("store/local/trash.zig");
 const _store_local_version = @import("store/local/version.zig");
 const _store_local_journal = @import("store/local/journal.zig");
+// testing
+const _store_testing_persistence_fixture_inspector = @import("store/testing/persistence_fixture_inspector.zig");
 
 // ops tests
 const _ops_track = @import("ops/track_ops.zig");
@@ -72,6 +74,7 @@ test "load modules" {
     _ = _store_local_trash;
     _ = _store_local_version;
     _ = _store_local_journal;
+    _ = _store_testing_persistence_fixture_inspector;
     _ = _ops_track;
     _ = _ops_add;
     _ = _ops_rm;
