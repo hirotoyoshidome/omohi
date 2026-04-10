@@ -113,7 +113,7 @@ pub const ParsedRequest = union(enum) {
 };
 
 // Releases any owned fields stored inside a parsed request union.
-pub fn deinitParsedRequest(allocator: anytype, parsed: *ParsedRequest) void {
+pub fn deinitParsedRequest(allocator: std.mem.Allocator, parsed: *ParsedRequest) void {
     switch (parsed.*) {
         .commit => |args| allocator.free(args.tags),
         .tracklist => |args| allocator.free(args.fields),
@@ -122,3 +122,4 @@ pub fn deinitParsedRequest(allocator: anytype, parsed: *ParsedRequest) void {
         else => {},
     }
 }
+const std = @import("std");

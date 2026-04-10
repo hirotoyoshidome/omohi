@@ -27,6 +27,26 @@ pub const CommandSpec = struct {
     notes: []const []const u8,
 };
 
+const ParsedRequestTag = std.meta.Tag(parser_types.ParsedRequest);
+
+pub const public_command_tags = [_]ParsedRequestTag{
+    .track,
+    .untrack,
+    .add,
+    .rm,
+    .commit,
+    .status,
+    .tracklist,
+    .version,
+    .find,
+    .show,
+    .journal,
+    .tag_ls,
+    .tag_add,
+    .tag_rm,
+    .help,
+};
+
 pub const all = [_]CommandSpec{
     .{
         .name = "track",
@@ -271,42 +291,195 @@ pub const all = [_]CommandSpec{
     },
 };
 
-// Reports whether the catalog contains a command with the exact internal name.
-fn hasCommandName(name: []const u8) bool {
-    for (all) |spec| {
-        if (std.mem.eql(u8, spec.name, name)) return true;
-    }
-    return false;
+comptime {
+    @setEvalBranchQuota(10_000);
+    assertCatalogParity();
+    assertUniqueCommandNames();
+    assertUniqueOptionNames();
+    assertOutputValueSpecs();
+    assertFieldValueSpecs();
 }
 
-test "command catalog command names are unique" {
-    for (all, 0..) |lhs, lhs_idx| {
-        for (all, 0..) |rhs, rhs_idx| {
-            if (lhs_idx == rhs_idx) continue;
-            try std.testing.expect(!std.mem.eql(u8, lhs.name, rhs.name));
+// Returns the public catalog name for a parsed request tag.
+fn commandNameForTag(tag: ParsedRequestTag) []const u8 {
+    return switch (tag) {
+        .tag_ls => "tag ls",
+        .tag_add => "tag add",
+        .tag_rm => "tag rm",
+        else => @tagName(tag),
+    };
+}
+
+// Verifies that the public command list matches the catalog order and excludes internal commands.
+fn assertCatalogParity() void {
+    if (all.len != public_command_tags.len) {
+        @compileError("command catalog and public parser command list must have the same length");
+    }
+
+    for (public_command_tags, 0..) |tag, idx| {
+        const expected_name = commandNameForTag(tag);
+        if (!std.mem.eql(u8, all[idx].name, expected_name)) {
+            @compileError(std.fmt.comptimePrint(
+                "command catalog name mismatch at index {d}: expected '{s}', found '{s}'",
+                .{ idx, expected_name, all[idx].name },
+            ));
         }
     }
 }
 
-test "command catalog includes every public parser command" {
-    try std.testing.expect(hasCommandName("track"));
-    try std.testing.expect(hasCommandName("untrack"));
-    try std.testing.expect(hasCommandName("add"));
-    try std.testing.expect(hasCommandName("rm"));
-    try std.testing.expect(hasCommandName("commit"));
-    try std.testing.expect(hasCommandName("status"));
-    try std.testing.expect(hasCommandName("tracklist"));
-    try std.testing.expect(hasCommandName("version"));
-    try std.testing.expect(hasCommandName("find"));
-    try std.testing.expect(hasCommandName("show"));
-    try std.testing.expect(hasCommandName("journal"));
-    try std.testing.expect(hasCommandName("tag ls"));
-    try std.testing.expect(hasCommandName("tag add"));
-    try std.testing.expect(hasCommandName("tag rm"));
-    try std.testing.expect(hasCommandName("help"));
-    try std.testing.expectEqual(@as(usize, 15), all.len);
+// Verifies that public command names are globally unique.
+fn assertUniqueCommandNames() void {
+    for (all, 0..) |lhs, lhs_idx| {
+        for (all, 0..) |rhs, rhs_idx| {
+            if (lhs_idx == rhs_idx) continue;
+            if (std.mem.eql(u8, lhs.name, rhs.name)) {
+                @compileError(std.fmt.comptimePrint("duplicate command name: '{s}'", .{lhs.name}));
+            }
+        }
+    }
+}
 
-    // Internal parser-only commands may exist, but they must not leak into the public catalog.
-    const parsed_field_count = std.meta.fields(parser_types.ParsedRequest).len;
-    try std.testing.expect(parsed_field_count >= all.len);
+// Verifies that each command has unique long and short option names with consistent value declarations.
+fn assertUniqueOptionNames() void {
+    for (all) |spec| {
+        for (spec.options, 0..) |lhs, lhs_idx| {
+            if (lhs.long.len == 0) {
+                @compileError(std.fmt.comptimePrint("command '{s}' has an option with an empty long name", .{spec.name}));
+            }
+            if ((lhs.value_name != null) != optionTakesValue(spec.name, lhs.long)) {
+                @compileError(std.fmt.comptimePrint(
+                    "command '{s}' option '--{s}' value declaration does not match parser behavior",
+                    .{ spec.name, lhs.long },
+                ));
+            }
+
+            for (spec.options, 0..) |rhs, rhs_idx| {
+                if (lhs_idx == rhs_idx) continue;
+                if (std.mem.eql(u8, lhs.long, rhs.long)) {
+                    @compileError(std.fmt.comptimePrint(
+                        "command '{s}' declares duplicate long option '--{s}'",
+                        .{ spec.name, lhs.long },
+                    ));
+                }
+                if (lhs.short != null and rhs.short != null and lhs.short.? == rhs.short.?) {
+                    @compileError(std.fmt.comptimePrint(
+                        "command '{s}' declares duplicate short option '-{c}'",
+                        .{ spec.name, lhs.short.? },
+                    ));
+                }
+            }
+        }
+    }
+}
+
+// Verifies that output option value_name strings match the output format enum.
+fn assertOutputValueSpecs() void {
+    assertOptionValueSpecForCommand("tracklist", "output", parser_types.OutputFormat);
+    assertOptionValueSpecForCommand("find", "output", parser_types.OutputFormat);
+    assertOptionValueSpecForCommand("show", "output", parser_types.OutputFormat);
+}
+
+// Verifies that field option value_name strings match the corresponding field enums.
+fn assertFieldValueSpecs() void {
+    assertOptionValueSpecForCommand("tracklist", "field", parser_types.TracklistField);
+    assertOptionValueSpecForCommand("find", "field", parser_types.FindField);
+    assertOptionValueSpecForCommand("show", "field", parser_types.ShowField);
+}
+
+// Verifies that a command option's allowed values match an enum's tag names.
+fn assertOptionValueSpecForCommand(comptime command_name: []const u8, comptime option_long: []const u8, comptime EnumType: type) void {
+    const spec = commandSpecByName(command_name);
+    const option = optionSpecByLong(spec, option_long);
+    const value_name = option.value_name orelse @compileError(std.fmt.comptimePrint(
+        "command '{s}' option '--{s}' must declare a value_name",
+        .{ command_name, option_long },
+    ));
+    assertDelimitedValuesMatchEnum(value_name, EnumType, command_name, option_long);
+}
+
+// Returns the command spec with the given public name.
+fn commandSpecByName(comptime command_name: []const u8) CommandSpec {
+    for (all) |spec| {
+        if (std.mem.eql(u8, spec.name, command_name)) return spec;
+    }
+    @compileError(std.fmt.comptimePrint("missing command catalog entry for '{s}'", .{command_name}));
+}
+
+// Returns the option spec with the given long name within one command.
+fn optionSpecByLong(comptime spec: CommandSpec, comptime option_long: []const u8) OptionArgSpec {
+    for (spec.options) |opt| {
+        if (std.mem.eql(u8, opt.long, option_long)) return opt;
+    }
+    @compileError(std.fmt.comptimePrint(
+        "missing option '--{s}' in command '{s}'",
+        .{ option_long, spec.name },
+    ));
+}
+
+// Verifies a `foo|bar|baz` value_name against an enum's tag names.
+fn assertDelimitedValuesMatchEnum(
+    comptime value_name: []const u8,
+    comptime EnumType: type,
+    comptime command_name: []const u8,
+    comptime option_long: []const u8,
+) void {
+    const fields = std.meta.fields(EnumType);
+    var iter = std.mem.splitScalar(u8, value_name, '|');
+    var idx: usize = 0;
+    while (iter.next()) |part| : (idx += 1) {
+        if (idx >= fields.len) {
+            @compileError(std.fmt.comptimePrint(
+                "command '{s}' option '--{s}' declares too many values in '{s}'",
+                .{ command_name, option_long, value_name },
+            ));
+        }
+        if (!std.mem.eql(u8, part, fields[idx].name)) {
+            @compileError(std.fmt.comptimePrint(
+                "command '{s}' option '--{s}' value mismatch at index {d}: expected '{s}', found '{s}'",
+                .{ command_name, option_long, idx, fields[idx].name, part },
+            ));
+        }
+    }
+    if (idx != fields.len) {
+        @compileError(std.fmt.comptimePrint(
+            "command '{s}' option '--{s}' value list count mismatch for '{s}'",
+            .{ command_name, option_long, value_name },
+        ));
+    }
+}
+
+// Reports whether a public command option should take a value according to parser behavior.
+fn optionTakesValue(comptime command_name: []const u8, comptime option_long: []const u8) bool {
+    if (std.mem.eql(u8, command_name, "untrack") and std.mem.eql(u8, option_long, "missing")) return false;
+    if (std.mem.eql(u8, command_name, "add") and std.mem.eql(u8, option_long, "all")) return false;
+    if (std.mem.eql(u8, command_name, "commit") and std.mem.eql(u8, option_long, "dry-run")) return false;
+    if (std.mem.eql(u8, command_name, "commit") and std.mem.eql(u8, option_long, "message")) return true;
+    if (std.mem.eql(u8, command_name, "commit") and std.mem.eql(u8, option_long, "tag")) return true;
+    if (std.mem.eql(u8, command_name, "tracklist") and std.mem.eql(u8, option_long, "output")) return true;
+    if (std.mem.eql(u8, command_name, "tracklist") and std.mem.eql(u8, option_long, "field")) return true;
+    if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "tag")) return true;
+    if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "since")) return true;
+    if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "until")) return true;
+    if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "limit")) return true;
+    if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "output")) return true;
+    if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "field")) return true;
+    if (std.mem.eql(u8, command_name, "show") and std.mem.eql(u8, option_long, "output")) return true;
+    if (std.mem.eql(u8, command_name, "show") and std.mem.eql(u8, option_long, "field")) return true;
+    @compileError(std.fmt.comptimePrint(
+        "missing parser option behavior mapping for command '{s}' option '--{s}'",
+        .{ command_name, option_long },
+    ));
+}
+
+test "command catalog public command order matches parser tags" {
+    try std.testing.expectEqual(@as(usize, public_command_tags.len), all.len);
+    try std.testing.expectEqualStrings("tag ls", commandNameForTag(.tag_ls));
+    try std.testing.expectEqualStrings("tag add", commandNameForTag(.tag_add));
+    try std.testing.expectEqualStrings("tag rm", commandNameForTag(.tag_rm));
+}
+
+test "command catalog excludes internal complete command from public list" {
+    for (public_command_tags) |tag| {
+        try std.testing.expect(tag != .complete);
+    }
 }
