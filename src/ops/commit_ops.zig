@@ -25,37 +25,6 @@ pub fn freeStringList(allocator: std.mem.Allocator, list: *StringList) void {
     store_api.freeStringList(allocator, list);
 }
 
-// Returns the value for a `key=value` property line when present.
-fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
-    var iter = std.mem.splitScalar(u8, bytes, '\n');
-    while (iter.next()) |raw| {
-        const line = std.mem.trim(u8, std.mem.trimRight(u8, raw, "\r"), " \t");
-        if (line.len <= key.len or line[key.len] != '=') continue;
-        if (!std.mem.startsWith(u8, line, key)) continue;
-        return line[key.len + 1 ..];
-    }
-    return null;
-}
-
-// Returns the first non-empty HEAD line from the stored file bytes.
-fn headValue(bytes: []const u8) ?[]const u8 {
-    var iter = std.mem.splitScalar(u8, bytes, '\n');
-    while (iter.next()) |raw| {
-        const line = std.mem.trim(u8, std.mem.trimRight(u8, raw, "\r"), " \t");
-        if (line.len == 0) continue;
-        return line;
-    }
-    return null;
-}
-
-// TEST-ONLY: Asserts that the target directory fixture contains no entries.
-fn expectDirEmpty(dir: std.fs.Dir, path: []const u8) !void {
-    var target = try dir.openDir(path, .{ .iterate = true });
-    defer target.close();
-    var it = target.iterate();
-    try std.testing.expect((try it.next()) == null);
-}
-
 test "commit writes immutable data and cleans staged" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -95,7 +64,7 @@ test "commit writes immutable data and cleans staged" {
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
-    const head_value = headValue(head_bytes);
+    const head_value = store_api.testOnlyHeadValue(head_bytes);
     try std.testing.expect(head_value != null);
     const head_id = head_value.?;
     try std.testing.expectEqualSlices(u8, &commit_id, head_id);
@@ -105,10 +74,10 @@ test "commit writes immutable data and cleans staged" {
     defer allocator.free(commit_path);
     const commit_bytes = try omohi_dir.readFileAlloc(allocator, commit_path, 512);
     defer allocator.free(commit_bytes);
-    const snapshot_value = propertyValue(commit_bytes, "snapshotId");
+    const snapshot_value = store_api.testOnlyPropertyValue(commit_bytes, "snapshotId");
     try std.testing.expect(snapshot_value != null);
     const snapshot_id = snapshot_value.?;
-    const message_value = propertyValue(commit_bytes, "message");
+    const message_value = store_api.testOnlyPropertyValue(commit_bytes, "message");
     try std.testing.expect(message_value != null);
     try std.testing.expectEqualStrings(message, message_value.?);
     try std.testing.expectEqual(@as(usize, 64), snapshot_id.len);
@@ -131,8 +100,8 @@ test "commit writes immutable data and cleans staged" {
     defer allocator.free(stored_object);
     try std.testing.expectEqualStrings(payload, stored_object);
 
-    try expectDirEmpty(omohi_dir, "staged/entries");
-    try expectDirEmpty(omohi_dir, "staged/objects");
+    try store_api.testOnlyExpectDirEmpty(omohi_dir, "staged/entries");
+    try store_api.testOnlyExpectDirEmpty(omohi_dir, "staged/objects");
     try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("LOCK", .{}));
 }
 
