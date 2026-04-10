@@ -1,20 +1,21 @@
 const std = @import("std");
 const types = @import("types.zig");
+const scan = @import("scan.zig");
 const date_validation = @import("../validation/date.zig");
 
 // Parses CLI argv tokens into a typed request; commit requests may allocate owned tag slices.
 pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.ParsedRequest {
     if (argv.len == 0) return .{ .help = .{ .topic = null } };
 
-    if (equalsIgnoreAsciiCase(argv[0], "-h") or equalsIgnoreAsciiCase(argv[0], "--help")) {
+    if (scan.equalsIgnoreAsciiCase(argv[0], "-h") or scan.equalsIgnoreAsciiCase(argv[0], "--help")) {
         return try parseHelp(argv[1..]);
     }
 
-    if (equalsIgnoreAsciiCase(argv[0], "-v") or equalsIgnoreAsciiCase(argv[0], "--version")) {
+    if (scan.equalsIgnoreAsciiCase(argv[0], "-v") or scan.equalsIgnoreAsciiCase(argv[0], "--version")) {
         return try parseNoArgsCommand(.version, argv[1..]);
     }
 
-    if (equalsIgnoreAsciiCase(argv[0], "help")) {
+    if (scan.equalsIgnoreAsciiCase(argv[0], "help")) {
         return try parseHelp(argv[1..]);
     }
 
@@ -59,20 +60,16 @@ fn parseComplete(args: []const []const u8) !types.ParsedRequest {
     while (idx < args.len) : (idx += 1) {
         const token = args[idx];
 
-        if (!stop_option and std.mem.eql(u8, token, "--")) {
+        if (!stop_option and scan.isDoubleDash(token)) {
             stop_option = true;
             idx += 1;
             break;
         }
 
         if (!stop_option) {
-            if (parseLongOption(token)) |opt| {
-                if (equalsIgnoreAsciiCase(opt.key, "index")) {
-                    const value = opt.value orelse blk: {
-                        idx += 1;
-                        if (idx >= args.len) return error.MissingValue;
-                        break :blk args[idx];
-                    };
+            if (scan.parseLongOption(token)) |opt| {
+                if (scan.equalsIgnoreAsciiCase(opt.key, "index")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
                     index = std.fmt.parseInt(usize, value, 10) catch return error.InvalidArgument;
                     continue;
                 }
@@ -102,27 +99,6 @@ fn parseNoArgsCommand(comptime tag: anytype, args: []const []const u8) !types.Pa
     return @unionInit(types.ParsedRequest, @tagName(tag), {});
 }
 
-// Compares tokens case-insensitively for CLI aliases and option keys.
-fn equalsIgnoreAsciiCase(lhs: []const u8, rhs: []const u8) bool {
-    return std.ascii.eqlIgnoreCase(lhs, rhs);
-}
-
-// Parses a `--key` or `--key=value` token and returns null for non-long options.
-fn parseLongOption(token: []const u8) ?struct { key: []const u8, value: ?[]const u8 } {
-    if (!std.mem.startsWith(u8, token, "--")) return null;
-    const body = token[2..];
-    if (body.len == 0) return null;
-
-    if (std.mem.indexOfScalar(u8, body, '=')) |eq| {
-        const key = body[0..eq];
-        const value = body[eq + 1 ..];
-        if (key.len == 0) return null;
-        return .{ .key = key, .value = value };
-    }
-
-    return .{ .key = body, .value = null };
-}
-
 // Parses `track <path>...`.
 fn parseTrack(args: []const []const u8) !types.ParsedRequest {
     if (args.len == 0) return error.MissingArgument;
@@ -140,29 +116,21 @@ fn parseTracklist(allocator: std.mem.Allocator, args: []const []const u8) !types
     while (idx < args.len) : (idx += 1) {
         const token = args[idx];
 
-        if (!stop_option and std.mem.eql(u8, token, "--")) {
+        if (!stop_option and scan.isDoubleDash(token)) {
             stop_option = true;
             continue;
         }
 
         if (!stop_option) {
-            if (parseLongOption(token)) |opt| {
-                if (equalsIgnoreAsciiCase(opt.key, "output")) {
-                    const value = opt.value orelse blk: {
-                        idx += 1;
-                        if (idx >= args.len) return error.MissingValue;
-                        break :blk args[idx];
-                    };
+            if (scan.parseLongOption(token)) |opt| {
+                if (scan.equalsIgnoreAsciiCase(opt.key, "output")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
                     output = try parseOutputFormat(value);
                     continue;
                 }
 
-                if (equalsIgnoreAsciiCase(opt.key, "field")) {
-                    const value = opt.value orelse blk: {
-                        idx += 1;
-                        if (idx >= args.len) return error.MissingValue;
-                        break :blk args[idx];
-                    };
+                if (scan.equalsIgnoreAsciiCase(opt.key, "field")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
                     try fields.append(try parseTracklistField(value));
                     continue;
                 }
@@ -187,14 +155,14 @@ fn parseUntrack(args: []const []const u8) !types.ParsedRequest {
     var stop_option = false;
 
     for (args) |token| {
-        if (!stop_option and std.mem.eql(u8, token, "--")) {
+        if (!stop_option and scan.isDoubleDash(token)) {
             stop_option = true;
             continue;
         }
 
         if (!stop_option) {
-            if (parseLongOption(token)) |opt| {
-                if (equalsIgnoreAsciiCase(opt.key, "missing")) {
+            if (scan.parseLongOption(token)) |opt| {
+                if (scan.equalsIgnoreAsciiCase(opt.key, "missing")) {
                     if (opt.value != null) return error.UnknownOption;
                     if (missing or tracked_file_id != null) return error.UnexpectedArgument;
                     missing = true;
@@ -225,15 +193,15 @@ fn parseAdd(args: []const []const u8) !types.ParsedRequest {
     while (idx < args.len) : (idx += 1) {
         const token = args[idx];
 
-        if (!stop_option and std.mem.eql(u8, token, "--")) {
+        if (!stop_option and scan.isDoubleDash(token)) {
             stop_option = true;
             if (positional_start == null) positional_start = idx + 1;
             continue;
         }
 
         if (!stop_option) {
-            if (parseLongOption(token)) |opt| {
-                if (equalsIgnoreAsciiCase(opt.key, "all")) {
+            if (scan.parseLongOption(token)) |opt| {
+                if (scan.equalsIgnoreAsciiCase(opt.key, "all")) {
                     if (opt.value != null) return error.UnknownOption;
                     if (all) return error.UnexpectedArgument;
                     all = true;
@@ -242,7 +210,7 @@ fn parseAdd(args: []const []const u8) !types.ParsedRequest {
                 return error.UnknownOption;
             }
 
-            if (std.mem.eql(u8, token, "-a")) {
+            if (scan.isShortOption(token, 'a')) {
                 if (all) return error.UnexpectedArgument;
                 all = true;
                 continue;
@@ -310,38 +278,26 @@ fn parseCommit(allocator: std.mem.Allocator, args: []const []const u8) !types.Pa
     while (idx < args.len) : (idx += 1) {
         const token = args[idx];
 
-        if (!stop_option and std.mem.eql(u8, token, "--")) {
+        if (!stop_option and scan.isDoubleDash(token)) {
             stop_option = true;
             continue;
         }
 
         if (!stop_option) {
-            if (parseLongOption(token)) |opt| {
-                if (equalsIgnoreAsciiCase(opt.key, "dry-run")) {
+            if (scan.parseLongOption(token)) |opt| {
+                if (scan.equalsIgnoreAsciiCase(opt.key, "dry-run")) {
                     if (opt.value != null) return error.UnknownOption;
                     dry_run = true;
                     continue;
                 }
 
-                if (equalsIgnoreAsciiCase(opt.key, "message")) {
-                    if (opt.value) |value| {
-                        message = value;
-                        continue;
-                    }
-                    idx += 1;
-                    if (idx >= args.len) return error.MissingValue;
-                    message = args[idx];
+                if (scan.equalsIgnoreAsciiCase(opt.key, "message")) {
+                    message = try scan.optionValue(args, &idx, opt.value);
                     continue;
                 }
 
-                if (equalsIgnoreAsciiCase(opt.key, "tag")) {
-                    if (opt.value) |value| {
-                        try tags.append(value);
-                        continue;
-                    }
-                    idx += 1;
-                    if (idx >= args.len) return error.MissingValue;
-                    try tags.append(args[idx]);
+                if (scan.equalsIgnoreAsciiCase(opt.key, "tag")) {
+                    try tags.append(try scan.optionValue(args, &idx, opt.value));
                     continue;
                 }
 
@@ -350,17 +306,13 @@ fn parseCommit(allocator: std.mem.Allocator, args: []const []const u8) !types.Pa
         }
 
         if (!stop_option and std.mem.startsWith(u8, token, "-") and token.len > 1) {
-            if (equalsIgnoreAsciiCase(token, "-m")) {
-                idx += 1;
-                if (idx >= args.len) return error.MissingValue;
-                message = args[idx];
+            if (scan.isShortOption(token, 'm')) {
+                message = try scan.optionValue(args, &idx, null);
                 continue;
             }
 
-            if (equalsIgnoreAsciiCase(token, "-t")) {
-                idx += 1;
-                if (idx >= args.len) return error.MissingValue;
-                try tags.append(args[idx]);
+            if (scan.isShortOption(token, 't')) {
+                try tags.append(try scan.optionValue(args, &idx, null));
                 continue;
             }
 
@@ -397,76 +349,46 @@ fn parseFind(allocator: std.mem.Allocator, args: []const []const u8) !types.Pars
     while (idx < args.len) : (idx += 1) {
         const token = args[idx];
 
-        if (!stop_option and std.mem.eql(u8, token, "--")) {
+        if (!stop_option and scan.isDoubleDash(token)) {
             stop_option = true;
             continue;
         }
 
         if (!stop_option) {
-            if (parseLongOption(token)) |opt| {
-                if (equalsIgnoreAsciiCase(opt.key, "tag")) {
-                    if (opt.value) |value| {
-                        tag_name = value;
-                        continue;
-                    }
-                    idx += 1;
-                    if (idx >= args.len) return error.MissingValue;
-                    tag_name = args[idx];
+            if (scan.parseLongOption(token)) |opt| {
+                if (scan.equalsIgnoreAsciiCase(opt.key, "tag")) {
+                    tag_name = try scan.optionValue(args, &idx, opt.value);
                     continue;
                 }
 
-                if (equalsIgnoreAsciiCase(opt.key, "since")) {
-                    if (opt.value) |value| {
-                        since_millis = try date_validation.parseFindBoundaryMillis(value, .since);
-                        since = value;
-                        continue;
-                    }
-                    idx += 1;
-                    if (idx >= args.len) return error.MissingValue;
-                    since_millis = try date_validation.parseFindBoundaryMillis(args[idx], .since);
-                    since = args[idx];
+                if (scan.equalsIgnoreAsciiCase(opt.key, "since")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
+                    since_millis = try date_validation.parseFindBoundaryMillis(value, .since);
+                    since = value;
                     continue;
                 }
 
-                if (equalsIgnoreAsciiCase(opt.key, "until")) {
-                    if (opt.value) |value| {
-                        until_millis = try date_validation.parseFindBoundaryMillis(value, .until);
-                        until = value;
-                        continue;
-                    }
-                    idx += 1;
-                    if (idx >= args.len) return error.MissingValue;
-                    until_millis = try date_validation.parseFindBoundaryMillis(args[idx], .until);
-                    until = args[idx];
+                if (scan.equalsIgnoreAsciiCase(opt.key, "until")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
+                    until_millis = try date_validation.parseFindBoundaryMillis(value, .until);
+                    until = value;
                     continue;
                 }
 
-                if (equalsIgnoreAsciiCase(opt.key, "output")) {
-                    const value = opt.value orelse blk: {
-                        idx += 1;
-                        if (idx >= args.len) return error.MissingValue;
-                        break :blk args[idx];
-                    };
+                if (scan.equalsIgnoreAsciiCase(opt.key, "output")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
                     output = try parseOutputFormat(value);
                     continue;
                 }
 
-                if (equalsIgnoreAsciiCase(opt.key, "field")) {
-                    const value = opt.value orelse blk: {
-                        idx += 1;
-                        if (idx >= args.len) return error.MissingValue;
-                        break :blk args[idx];
-                    };
+                if (scan.equalsIgnoreAsciiCase(opt.key, "field")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
                     try fields.append(try parseFindField(value));
                     continue;
                 }
 
-                if (equalsIgnoreAsciiCase(opt.key, "limit")) {
-                    const value = opt.value orelse blk: {
-                        idx += 1;
-                        if (idx >= args.len) return error.MissingValue;
-                        break :blk args[idx];
-                    };
+                if (scan.equalsIgnoreAsciiCase(opt.key, "limit")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
                     limit = try parseFindLimit(value);
                     continue;
                 }
@@ -476,24 +398,20 @@ fn parseFind(allocator: std.mem.Allocator, args: []const []const u8) !types.Pars
         }
 
         if (!stop_option and std.mem.startsWith(u8, token, "-") and token.len > 1) {
-            if (equalsIgnoreAsciiCase(token, "-t")) {
-                idx += 1;
-                if (idx >= args.len) return error.MissingValue;
-                tag_name = args[idx];
+            if (scan.isShortOption(token, 't')) {
+                tag_name = try scan.optionValue(args, &idx, null);
                 continue;
             }
-            if (equalsIgnoreAsciiCase(token, "-s")) {
-                idx += 1;
-                if (idx >= args.len) return error.MissingValue;
-                since_millis = try date_validation.parseFindBoundaryMillis(args[idx], .since);
-                since = args[idx];
+            if (scan.isShortOption(token, 's')) {
+                const value = try scan.optionValue(args, &idx, null);
+                since_millis = try date_validation.parseFindBoundaryMillis(value, .since);
+                since = value;
                 continue;
             }
-            if (equalsIgnoreAsciiCase(token, "-u")) {
-                idx += 1;
-                if (idx >= args.len) return error.MissingValue;
-                until_millis = try date_validation.parseFindBoundaryMillis(args[idx], .until);
-                until = args[idx];
+            if (scan.isShortOption(token, 'u')) {
+                const value = try scan.optionValue(args, &idx, null);
+                until_millis = try date_validation.parseFindBoundaryMillis(value, .until);
+                until = value;
                 continue;
             }
             return error.UnknownOption;
@@ -530,29 +448,21 @@ fn parseShow(allocator: std.mem.Allocator, args: []const []const u8) !types.Pars
     while (idx < args.len) : (idx += 1) {
         const token = args[idx];
 
-        if (!stop_option and std.mem.eql(u8, token, "--")) {
+        if (!stop_option and scan.isDoubleDash(token)) {
             stop_option = true;
             continue;
         }
 
         if (!stop_option) {
-            if (parseLongOption(token)) |opt| {
-                if (equalsIgnoreAsciiCase(opt.key, "output")) {
-                    const value = opt.value orelse blk: {
-                        idx += 1;
-                        if (idx >= args.len) return error.MissingValue;
-                        break :blk args[idx];
-                    };
+            if (scan.parseLongOption(token)) |opt| {
+                if (scan.equalsIgnoreAsciiCase(opt.key, "output")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
                     output = try parseOutputFormat(value);
                     continue;
                 }
 
-                if (equalsIgnoreAsciiCase(opt.key, "field")) {
-                    const value = opt.value orelse blk: {
-                        idx += 1;
-                        if (idx >= args.len) return error.MissingValue;
-                        break :blk args[idx];
-                    };
+                if (scan.equalsIgnoreAsciiCase(opt.key, "field")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
                     try fields.append(try parseShowField(value));
                     continue;
                 }
@@ -572,23 +482,23 @@ fn parseShow(allocator: std.mem.Allocator, args: []const []const u8) !types.Pars
 
 // Parses supported output formats for reference-style commands.
 fn parseOutputFormat(value: []const u8) !types.OutputFormat {
-    if (equalsIgnoreAsciiCase(value, "text")) return .text;
-    if (equalsIgnoreAsciiCase(value, "json")) return .json;
+    if (scan.equalsIgnoreAsciiCase(value, "text")) return .text;
+    if (scan.equalsIgnoreAsciiCase(value, "json")) return .json;
     return error.InvalidArgument;
 }
 
 // Parses a `tracklist` field name into its enum form.
 fn parseTracklistField(value: []const u8) !types.TracklistField {
-    if (equalsIgnoreAsciiCase(value, "id")) return .id;
-    if (equalsIgnoreAsciiCase(value, "path")) return .path;
+    if (scan.equalsIgnoreAsciiCase(value, "id")) return .id;
+    if (scan.equalsIgnoreAsciiCase(value, "path")) return .path;
     return error.InvalidArgument;
 }
 
 // Parses a `find` field name into its enum form.
 fn parseFindField(value: []const u8) !types.FindField {
-    if (equalsIgnoreAsciiCase(value, "commit_id")) return .commit_id;
-    if (equalsIgnoreAsciiCase(value, "message")) return .message;
-    if (equalsIgnoreAsciiCase(value, "created_at")) return .created_at;
+    if (scan.equalsIgnoreAsciiCase(value, "commit_id")) return .commit_id;
+    if (scan.equalsIgnoreAsciiCase(value, "message")) return .message;
+    if (scan.equalsIgnoreAsciiCase(value, "created_at")) return .created_at;
     return error.InvalidArgument;
 }
 
@@ -601,12 +511,24 @@ fn parseFindLimit(value: []const u8) !usize {
 
 // Parses a `show` field name into its enum form.
 fn parseShowField(value: []const u8) !types.ShowField {
-    if (equalsIgnoreAsciiCase(value, "commit_id")) return .commit_id;
-    if (equalsIgnoreAsciiCase(value, "message")) return .message;
-    if (equalsIgnoreAsciiCase(value, "created_at")) return .created_at;
-    if (equalsIgnoreAsciiCase(value, "paths")) return .paths;
-    if (equalsIgnoreAsciiCase(value, "tags")) return .tags;
+    if (scan.equalsIgnoreAsciiCase(value, "commit_id")) return .commit_id;
+    if (scan.equalsIgnoreAsciiCase(value, "message")) return .message;
+    if (scan.equalsIgnoreAsciiCase(value, "created_at")) return .created_at;
+    if (scan.equalsIgnoreAsciiCase(value, "paths")) return .paths;
+    if (scan.equalsIgnoreAsciiCase(value, "tags")) return .tags;
     return error.InvalidArgument;
+}
+
+test "parser preserves show unknown long option behavior" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{ "show", "--bogus" };
+    var parsed = try parseArgs(allocator, &argv);
+    defer types.deinitParsedRequest(allocator, &parsed);
+
+    switch (parsed) {
+        .show => |args| try std.testing.expectEqualStrings("--bogus", args.commit_id),
+        else => return error.UnexpectedResult,
+    }
 }
 
 test "parser resolves longest command match for tag subcommands" {
