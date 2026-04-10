@@ -5,7 +5,7 @@ const c = @cImport({
     @cInclude("time.h");
 });
 
-pub const TimestampParseError = error{
+const TimestampParseError = error{
     InvalidTimestamp,
     TimestampBeforeEpoch,
     TimestampOutOfRange,
@@ -133,11 +133,11 @@ fn mulI64(lhs: i64, rhs: i64) TimestampParseError!i64 {
     return std.math.mul(i64, lhs, rhs) catch error.TimestampOutOfRange;
 }
 
-pub const TimezoneGuard = struct {
+pub const TestTimezoneGuard = struct {
     previous: ?[]u8,
 
     // TEST-ONLY: Restores the previous `TZ` value and releases owned storage.
-    pub fn deinit(self: *TimezoneGuard, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *TestTimezoneGuard, allocator: std.mem.Allocator) void {
         if (self.previous) |value| {
             const value_z = allocator.dupeZ(u8, value) catch {
                 allocator.free(value);
@@ -157,8 +157,12 @@ pub const TimezoneGuard = struct {
     }
 };
 
-// TEST-ONLY: Sets `TZ` for a test and returns a guard that restores the previous value.
-pub fn initTimezoneGuard(allocator: std.mem.Allocator, tz_name: []const u8) !TimezoneGuard {
+/// TEST-ONLY: Sets `TZ` for tests and returns a guard that restores the previous value.
+/// Memory: owned guard state.
+/// Lifetime: valid until `deinit`.
+/// Errors: environment access/allocation failures and test assertion failures from `setenv`.
+/// Caller responsibilities: call `deinit` on the returned guard.
+pub fn testOnlyInitTimezoneGuard(allocator: std.mem.Allocator, tz_name: []const u8) !TestTimezoneGuard {
     const previous = std.process.getEnvVarOwned(allocator, "TZ") catch null;
     const tz_name_z = try allocator.dupeZ(u8, tz_name);
     defer allocator.free(tz_name_z);
@@ -170,7 +174,7 @@ pub fn initTimezoneGuard(allocator: std.mem.Allocator, tz_name: []const u8) !Tim
 }
 
 test "dupeLocalTimestampOrOriginal converts UTC to local text" {
-    var tz_guard = try initTimezoneGuard(std.testing.allocator, "Asia/Tokyo");
+    var tz_guard = try testOnlyInitTimezoneGuard(std.testing.allocator, "Asia/Tokyo");
     defer tz_guard.deinit(std.testing.allocator);
 
     const output = try dupeLocalTimestampOrOriginal(std.testing.allocator, "2026-04-01T12:27:39.914Z");
