@@ -134,13 +134,8 @@ fn trackDirectory(
         try tracked_paths.put(entry.path.asSlice(), {});
     }
 
-    var collected = std.array_list.Managed([]u8).init(allocator);
-    defer {
-        for (collected.items) |path| allocator.free(path);
-        collected.deinit();
-    }
-    try collectTrackableFiles(allocator, absolute_path, &collected);
-    std.mem.sort([]u8, collected.items, {}, lessThanPath);
+    var collected = try store_api.collectTrackableAbsoluteFiles(allocator, absolute_path);
+    defer store_api.freeStringList(allocator, &collected);
 
     var outcome = TrackOutcome.init(allocator);
     errdefer freeTrackOutcome(allocator, &outcome);
@@ -157,36 +152,6 @@ fn trackDirectory(
     }
 
     return outcome;
-}
-
-// Recursively collects regular files below the absolute directory path.
-fn collectTrackableFiles(
-    allocator: std.mem.Allocator,
-    absolute_dir_path: []const u8,
-    collected: *std.array_list.Managed([]u8),
-) !void {
-    var dir = try std.fs.openDirAbsolute(absolute_dir_path, .{ .iterate = true, .access_sub_paths = true });
-    defer dir.close();
-
-    var it = dir.iterate();
-    while (try it.next()) |entry| {
-        const child_path = try std.fs.path.resolve(allocator, &.{ absolute_dir_path, entry.name });
-        errdefer allocator.free(child_path);
-
-        switch (entry.kind) {
-            .file => try collected.append(child_path),
-            .directory => {
-                try collectTrackableFiles(allocator, child_path, collected);
-                allocator.free(child_path);
-            },
-            else => allocator.free(child_path),
-        }
-    }
-}
-
-// Sorts collected absolute paths in ascending byte order.
-fn lessThanPath(_: void, lhs: []u8, rhs: []u8) bool {
-    return std.mem.lessThan(u8, lhs, rhs);
 }
 
 test "ops track and tracklist round-trip" {

@@ -242,6 +242,18 @@ pub fn addAllTracked(
     return addDirectory(allocator, omohi_dir, path_views.items);
 }
 
+/// Collects every regular file below an absolute directory path.
+/// Memory: owned result, free with freeStringList
+/// Lifetime: valid until caller frees the returned list
+/// Errors: I/O and path resolution errors from directory traversal
+pub fn collectTrackableAbsoluteFiles(
+    allocator: std.mem.Allocator,
+    absolute_dir_path: []const u8,
+) !StringList {
+    const collected = try local_directory_tree_files.collectAbsoluteRegularFiles(allocator, absolute_dir_path);
+    return collected.paths;
+}
+
 /// Removes a staged entry/object pair by file path.
 /// Memory: borrowed
 /// Errors: error{TrackedFileNotFound, StagedFileNotFound} plus lock/I/O and constrained type errors.
