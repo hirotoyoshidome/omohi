@@ -1,5 +1,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const persistence_fixture_inspector = if (builtin.is_test)
+    @import("./testing/persistence_fixture_inspector.zig")
+else
+    struct {};
 
 const c = @cImport({
     @cInclude("stdlib.h");
@@ -55,6 +59,46 @@ pub const TrackedEntry = local_tracked.TrackedEntry;
 pub const TrackedList = local_tracked.TrackedList;
 pub const StagedEntry = local_staged.StagedEntry;
 pub const StagedPathList = StringList;
+
+/// TEST-ONLY: Returns the value for a `key=value` property line when present.
+/// Memory: borrowed.
+/// Lifetime: valid while `bytes` remains valid.
+/// Errors: none.
+/// Caller responsibilities: keep `bytes` alive while using the returned slice.
+pub fn testOnlyPropertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
+    if (!builtin.is_test) unreachable;
+    return persistence_fixture_inspector.propertyValue(bytes, key);
+}
+
+/// TEST-ONLY: Returns the first non-empty HEAD line from stored file bytes.
+/// Memory: borrowed.
+/// Lifetime: valid while `bytes` remains valid.
+/// Errors: none.
+/// Caller responsibilities: keep `bytes` alive while using the returned slice.
+pub fn testOnlyHeadValue(bytes: []const u8) ?[]const u8 {
+    if (!builtin.is_test) unreachable;
+    return persistence_fixture_inspector.headValue(bytes);
+}
+
+/// TEST-ONLY: Reads the single file name inside a fixture directory into the caller-owned buffer.
+/// Memory: borrowed via `out`.
+/// Lifetime: writes into `out` during the call only.
+/// Errors: helper directory I/O and validation errors.
+/// Caller responsibilities: provide a fixed-size output buffer matching the expected file name length.
+pub fn testOnlyOnlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
+    if (!builtin.is_test) unreachable;
+    try persistence_fixture_inspector.onlyFileNameInDir(dir, path, out);
+}
+
+/// TEST-ONLY: Asserts that a fixture directory contains no entries.
+/// Memory: none.
+/// Lifetime: n/a.
+/// Errors: helper directory I/O and assertion errors.
+/// Caller responsibilities: pass an existing directory path.
+pub fn testOnlyExpectDirEmpty(dir: std.fs.Dir, path: []const u8) !void {
+    if (!builtin.is_test) unreachable;
+    try persistence_fixture_inspector.expectDirEmpty(dir, path);
+}
 
 const StagedPathState = struct {
     file_name: constrained_types.StagedFileId,
@@ -1736,19 +1780,6 @@ fn loadTrackedOrEmpty(
     };
 }
 
-// Reads the single file name inside a directory and copies it into the fixed output buffer.
-fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
-    var target = try dir.openDir(path, .{ .iterate = true });
-    defer target.close();
-
-    var it = target.iterate();
-    const first = (try it.next()) orelse return error.MissingFile;
-    if (first.kind != .file) return error.InvalidEntry;
-    if ((try it.next()) != null) return error.TooManyFiles;
-    if (first.name.len != out.len) return error.InvalidHashLength;
-    @memcpy(out, first.name);
-}
-
 // TEST-ONLY: Fills a 64-byte id buffer with the requested byte.
 fn filledHexId(ch: u8) [64]u8 {
     var value: [64]u8 = undefined;
@@ -1904,26 +1935,6 @@ fn setCommitFailurePoint(point: CommitFailurePoint) void {
 fn clearCommitFailurePoint() void {
     if (!builtin.is_test) return;
     commit_failure_point = .none;
-}
-
-// TEST-ONLY: Asserts that a directory fixture contains no entries.
-fn expectDirEmpty(dir: std.fs.Dir, path: []const u8) !void {
-    var target = try dir.openDir(path, .{ .iterate = true });
-    defer target.close();
-
-    var it = target.iterate();
-    try std.testing.expect((try it.next()) == null);
-}
-
-// TEST-ONLY: Asserts that a directory fixture contains no file entries.
-fn expectDirHasNoFiles(dir: std.fs.Dir, path: []const u8) !void {
-    var target = try dir.openDir(path, .{ .iterate = true });
-    defer target.close();
-
-    var it = target.iterate();
-    while (try it.next()) |entry| {
-        if (entry.kind == .file) return error.ExpectedNoFiles;
-    }
 }
 
 // TEST-ONLY: Writes staged entry and object fixtures for commit-related tests.
@@ -2254,7 +2265,7 @@ test "add uses absolute path when generating staged file id" {
     const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
 
     var staged_entry_id: [64]u8 = undefined;
-    try onlyFileNameInDir(omohi_dir, "staged/entries", &staged_entry_id);
+    try persistence_fixture_inspector.onlyFileNameInDir(omohi_dir, "staged/entries", &staged_entry_id);
     try std.testing.expectEqualSlices(u8, staged_file_id[0..], staged_entry_id[0..]);
 
     const stored_path = try std.fmt.allocPrint(allocator, "staged/entries/{s}", .{staged_file_id[0..]});
@@ -2288,8 +2299,8 @@ test "add does not stage file when content matches HEAD" {
     _ = try commit(allocator, omohi_dir, "first");
     try add(allocator, omohi_dir, absolute_path);
 
-    try expectDirHasNoFiles(omohi_dir, "staged/entries");
-    try expectDirHasNoFiles(omohi_dir, "staged/objects");
+    try persistence_fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/entries");
+    try persistence_fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/objects");
 }
 
 test "add removes staged entry when file returns to HEAD content" {
@@ -2323,8 +2334,8 @@ test "add removes staged entry when file returns to HEAD content" {
     source_file.close();
     try add(allocator, omohi_dir, absolute_path);
 
-    try expectDirHasNoFiles(omohi_dir, "staged/entries");
-    try expectDirHasNoFiles(omohi_dir, "staged/objects");
+    try persistence_fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/entries");
+    try persistence_fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/objects");
 }
 
 test "add reconstructs target staged entry after entry corruption" {
@@ -2402,7 +2413,7 @@ test "addDirectory reuses one staged object for duplicate content in same batch"
     try std.testing.expectEqual(@as(usize, 2), outcome.staged_paths.items.len);
 
     var object_hash: [64]u8 = undefined;
-    try onlyFileNameInDir(omohi_dir, "staged/objects", &object_hash);
+    try persistence_fixture_inspector.onlyFileNameInDir(omohi_dir, "staged/objects", &object_hash);
 }
 
 test "addDirectory reuses committed object without rewriting staged object" {
@@ -2445,7 +2456,7 @@ test "addDirectory reuses committed object without rewriting staged object" {
     try std.testing.expectEqual(@as(usize, 1), outcome.staged_paths.items.len);
     try std.testing.expectEqualStrings(b_path, outcome.staged_paths.items[0]);
     try std.testing.expectEqual(@as(usize, 1), outcome.skipped_no_change);
-    try expectDirHasNoFiles(omohi_dir, "staged/objects");
+    try persistence_fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/objects");
 }
 
 test "addDirectory counts missing tracked file separately" {
@@ -2935,8 +2946,8 @@ test "commit releases lock and keeps retryable state when failing before HEAD wr
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
     try std.testing.expect(parseHeadCommitId(head_bytes) != null);
-    try expectDirEmpty(omohi_dir, "staged/entries");
-    try expectDirEmpty(omohi_dir, "staged/objects");
+    try persistence_fixture_inspector.expectDirEmpty(omohi_dir, "staged/entries");
+    try persistence_fixture_inspector.expectDirEmpty(omohi_dir, "staged/objects");
 }
 
 test "commit can recover after failure between HEAD write and staged reset" {
@@ -2969,6 +2980,6 @@ test "commit can recover after failure between HEAD write and staged reset" {
     defer allocator.free(head_bytes_after_retry);
     const head_after_retry = parseHeadCommitId(head_bytes_after_retry) orelse return error.InvalidHead;
     try std.testing.expectEqualSlices(u8, retried_commit_id.asSlice(), head_after_retry);
-    try expectDirEmpty(omohi_dir, "staged/entries");
-    try expectDirEmpty(omohi_dir, "staged/objects");
+    try persistence_fixture_inspector.expectDirEmpty(omohi_dir, "staged/entries");
+    try persistence_fixture_inspector.expectDirEmpty(omohi_dir, "staged/objects");
 }

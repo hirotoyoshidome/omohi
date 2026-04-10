@@ -62,19 +62,6 @@ fn addDirectory(
     return add_store.addTree(allocator, omohi_dir, absolute_path);
 }
 
-// Reads the single file name inside a directory and copies it into the fixed output buffer.
-fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
-    var target = try dir.openDir(path, .{ .iterate = true });
-    defer target.close();
-
-    var it = target.iterate();
-    const first = (try it.next()) orelse return error.MissingFile;
-    if (first.kind != .file) return error.InvalidEntry;
-    if ((try it.next()) != null) return error.TooManyFiles;
-    if (first.name.len != out.len) return error.InvalidHashLength;
-    @memcpy(out, first.name);
-}
-
 // Returns the staged entry file name as an owned string for test assertions.
 fn stagedEntryIdFrom(
     allocator: std.mem.Allocator,
@@ -82,31 +69,8 @@ fn stagedEntryIdFrom(
     staged_entries_path: []const u8,
 ) ![]u8 {
     var staged_hash: [64]u8 = undefined;
-    try onlyFileNameInDir(dir, staged_entries_path, &staged_hash);
+    try add_store.testOnlyOnlyFileNameInDir(dir, staged_entries_path, &staged_hash);
     return std.fmt.allocPrint(allocator, "{s}", .{staged_hash});
-}
-
-// Returns the value for a `key=value` property line when present.
-fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
-    var iter = std.mem.splitScalar(u8, bytes, '\n');
-    while (iter.next()) |raw| {
-        const line = std.mem.trim(u8, std.mem.trimRight(u8, raw, "\r"), " \t");
-        if (line.len <= key.len or line[key.len] != '=') continue;
-        if (!std.mem.startsWith(u8, line, key)) continue;
-        return line[key.len + 1 ..];
-    }
-    return null;
-}
-
-// Returns the first non-empty HEAD line from the stored file bytes.
-fn headValue(bytes: []const u8) ?[]const u8 {
-    var iter = std.mem.splitScalar(u8, bytes, '\n');
-    while (iter.next()) |raw| {
-        const line = std.mem.trim(u8, std.mem.trimRight(u8, raw, "\r"), " \t");
-        if (line.len == 0) continue;
-        return line;
-    }
-    return null;
 }
 
 test "add writes staged entry and staged object using content hash" {
@@ -134,7 +98,7 @@ test "add writes staged entry and staged object using content hash" {
     defer freeAddOutcome(allocator, &outcome);
 
     var staged_object_hash: [64]u8 = undefined;
-    try onlyFileNameInDir(omohi_dir, "staged/objects", &staged_object_hash);
+    try add_store.testOnlyOnlyFileNameInDir(omohi_dir, "staged/objects", &staged_object_hash);
     const object_path = try std.fmt.allocPrint(allocator, "staged/objects/{s}", .{staged_object_hash});
     defer allocator.free(object_path);
     const staged_object = try omohi_dir.readFileAlloc(allocator, object_path, 512);
@@ -190,19 +154,19 @@ test "commit can read staged data created by add" {
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
-    const commit_id = headValue(head_bytes) orelse return error.MissingCommitId;
+    const commit_id = add_store.testOnlyHeadValue(head_bytes) orelse return error.MissingCommitId;
 
     const commit_path = try std.fmt.allocPrint(allocator, "commits/{s}/{s}", .{ commit_id[0..2], commit_id });
     defer allocator.free(commit_path);
     const commit_bytes = try omohi_dir.readFileAlloc(allocator, commit_path, 512);
     defer allocator.free(commit_bytes);
-    const snapshot_id = propertyValue(commit_bytes, "snapshotId") orelse return error.MissingSnapshotId;
+    const snapshot_id = add_store.testOnlyPropertyValue(commit_bytes, "snapshotId") orelse return error.MissingSnapshotId;
 
     const snapshot_path = try std.fmt.allocPrint(allocator, "snapshots/{s}/{s}", .{ snapshot_id[0..2], snapshot_id });
     defer allocator.free(snapshot_path);
     const snapshot_bytes = try omohi_dir.readFileAlloc(allocator, snapshot_path, 1024);
     defer allocator.free(snapshot_bytes);
-    const entries_value = propertyValue(snapshot_bytes, "entries") orelse return error.MissingContentHash;
+    const entries_value = add_store.testOnlyPropertyValue(snapshot_bytes, "entries") orelse return error.MissingContentHash;
     const separator = std.mem.lastIndexOfScalar(u8, entries_value, ':') orelse return error.MissingContentHash;
     if (separator + 1 >= entries_value.len) return error.MissingContentHash;
     const hash_value = entries_value[separator + 1 ..];
