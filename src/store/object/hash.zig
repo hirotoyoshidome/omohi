@@ -70,13 +70,15 @@ pub fn sha256HexFromHasher(hasher: *sha2.Sha256) [64]u8 {
     return out;
 }
 
-/// CommitId is derived from snapshotId + message.
+/// CommitId is derived from snapshotId + message + createdAt.
 /// Memory: value return.
-pub fn commitIdFrom(snapshotId: []const u8, message: []const u8) [64]u8 {
+pub fn commitIdFrom(snapshotId: []const u8, message: []const u8, created_at: []const u8) [64]u8 {
     var hasher = sha2.Sha256.init(.{});
     hasher.update(snapshotId);
     hasher.update(id_field_separator);
     hasher.update(message);
+    hasher.update(id_field_separator);
+    hasher.update(created_at);
 
     var digest: [sha2.Sha256.digest_length]u8 = undefined;
     hasher.final(&digest);
@@ -86,8 +88,12 @@ pub fn commitIdFrom(snapshotId: []const u8, message: []const u8) [64]u8 {
 }
 
 // Wraps `commitIdFrom` in the constrained commit-id value object.
-pub fn commitIdVoFrom(snapshot_id: constrained_types.SnapshotId, message: []const u8) constrained_types.CommitId {
-    return .{ .value = commitIdFrom(snapshot_id.asSlice(), message) };
+pub fn commitIdVoFrom(
+    snapshot_id: constrained_types.SnapshotId,
+    message: []const u8,
+    created_at: []const u8,
+) constrained_types.CommitId {
+    return .{ .value = commitIdFrom(snapshot_id.asSlice(), message, created_at) };
 }
 
 /// StagedFileId is derived from path + content hash.
@@ -160,9 +166,9 @@ test "stagedFileIdFrom uses content-hash colon path format" {
     try testing.expectEqualSlices(u8, expected[0..], id[0..]);
 }
 
-test "commitIdFrom uses snapshot-id colon message format" {
-    const id = commitIdFrom("snapshot-1", "hello");
-    const expected = sha256Hex("snapshot-1" ++ id_field_separator ++ "hello");
+test "commitIdFrom uses snapshot-id colon message colon created-at format" {
+    const id = commitIdFrom("snapshot-1", "hello", "2026-04-12T00:00:00.000Z");
+    const expected = sha256Hex("snapshot-1" ++ id_field_separator ++ "hello" ++ id_field_separator ++ "2026-04-12T00:00:00.000Z");
     try testing.expectEqualSlices(u8, expected[0..], id[0..]);
 }
 

@@ -890,6 +890,7 @@ pub fn commit(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     message: []const u8,
+    empty: bool,
 ) !constrained_types.CommitId {
     try lock.acquireLock(omohi_dir);
     defer lock.releaseLock(omohi_dir);
@@ -899,28 +900,37 @@ pub fn commit(
     var entries = try local_staged.loadStagedEntries(allocator, persistence);
     defer local_staged.freeEntries(allocator, &entries);
 
-    if (entries.items.len == 0) return error.NothingToCommit;
+    if (!empty and entries.items.len == 0) return error.NothingToCommit;
 
-    try local_staged.ensureObjectsExistForEntries(allocator, persistence, entries.items);
+    if (!empty) try local_staged.ensureObjectsExistForEntries(allocator, persistence, entries.items);
 
-    var snapshot_entries = try local_staged.snapshotEntriesFromStaged(allocator, entries.items);
+    var snapshot_entries = if (empty)
+        std.array_list.Managed(ContentEntry).init(allocator)
+    else
+        try local_staged.snapshotEntriesFromStaged(allocator, entries.items);
     defer local_staged.freeSnapshotEntries(allocator, &snapshot_entries);
     std.mem.sort(ContentEntry, snapshot_entries.items, {}, isPathLessThan);
 
     const snapshot_id = try hash.snapshotIdFrom(allocator, snapshot_entries.items);
-    const commit_id = hash.commitIdFrom(snapshot_id[0..], message);
+    const identity = try nextUniqueCommitIdentity(allocator, persistence, snapshot_id[0..], message);
+    const commit_id = identity.commit_id;
+    const created_at = identity.created_at;
 
     try maybeFailCommitAt(.before_write_snapshot);
     try local_snapshot.writeSnapshot(allocator, persistence, snapshot_id[0..], snapshot_entries.items);
     try maybeFailCommitAt(.before_write_commit);
-    try local_commit.writeCommit(allocator, persistence, commit_id[0..], snapshot_id[0..], message);
+    try local_commit.writeCommit(allocator, persistence, commit_id[0..], snapshot_id[0..], message, created_at[0..], empty);
 
-    try maybeFailCommitAt(.before_move_objects);
-    try local_staged.moveObjectsFromStage(allocator, persistence);
+    if (!empty) {
+        try maybeFailCommitAt(.before_move_objects);
+        try local_staged.moveObjectsFromStage(allocator, persistence);
+    }
     try maybeFailCommitAt(.before_write_head);
     try local_head.writeHead(allocator, persistence, commit_id[0..]);
-    try maybeFailCommitAt(.before_reset_staged);
-    try local_staged.resetStaged(persistence);
+    if (!empty) {
+        try maybeFailCommitAt(.before_reset_staged);
+        try local_staged.resetStaged(persistence);
+    }
     return try constrained_types.CommitId.init(commit_id[0..]);
 }
 
@@ -928,6 +938,64 @@ pub fn commit(
 fn maybeFailCommitAt(point: CommitFailurePoint) !void {
     if (!builtin.is_test) return;
     if (commit_failure_point == point) return error.TestInjectedFailure;
+}
+
+// Parses the optional persisted empty-commit marker and defaults to false for legacy commit records.
+fn parseCommitEmptyFlag(value: ?[]const u8) bool {
+    const raw = value orelse return false;
+    return std.mem.eql(u8, raw, "true");
+}
+
+const CommitIdentity = struct {
+    commit_id: [64]u8,
+    created_at: [24]u8,
+};
+
+// Chooses a commit id and timestamp pair that is unique within persisted commit storage.
+fn nextUniqueCommitIdentity(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    snapshot_id: []const u8,
+    message: []const u8,
+) !CommitIdentity {
+    return nextUniqueCommitIdentityFromMillis(allocator, persistence, snapshot_id, message, std.time.milliTimestamp());
+}
+
+// Chooses a unique commit id and timestamp pair starting from the supplied UTC millisecond timestamp.
+fn nextUniqueCommitIdentityFromMillis(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    snapshot_id: []const u8,
+    message: []const u8,
+    start_millis: i64,
+) !CommitIdentity {
+    var created_at_millis = start_millis;
+    while (true) : (created_at_millis += 1) {
+        const created_at = try utc.iso8601FromMillis(created_at_millis);
+        const commit_id = hash.commitIdFrom(snapshot_id, message, created_at[0..]);
+        if (!try commitRecordExists(allocator, persistence, commit_id[0..])) {
+            return .{
+                .commit_id = commit_id,
+                .created_at = created_at,
+            };
+        }
+    }
+}
+
+// Reports whether a commit record file already exists for the given commit id.
+fn commitRecordExists(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    commit_id: []const u8,
+) !bool {
+    const path = try persistence.commitsPath(allocator, commit_id);
+    defer allocator.free(path);
+
+    persistence.dir.access(path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return false,
+        else => return err,
+    };
+    return true;
 }
 
 // Sorts content entries by tracked path before snapshot persistence.
@@ -1146,6 +1214,7 @@ const ParsedCommit = struct {
     snapshot_id: constrained_types.SnapshotId,
     message: []u8,
     created_at: []u8,
+    is_empty: bool,
 };
 
 const FindCandidate = struct {
@@ -1170,12 +1239,14 @@ fn readCommitFile(
     const snapshot_raw = propertyValue(bytes, "snapshotId") orelse return error.InvalidCommit;
     const message_raw = propertyValue(bytes, "message") orelse return error.InvalidCommit;
     const created_raw = propertyValue(bytes, "createdAt") orelse return error.InvalidCommit;
+    const empty_raw = propertyValue(bytes, "empty");
 
     return .{
         .commit_id = id,
         .snapshot_id = try constrained_types.SnapshotId.init(snapshot_raw),
         .message = try allocator.dupe(u8, message_raw),
         .created_at = try allocator.dupe(u8, created_raw),
+        .is_empty = parseCommitEmptyFlag(empty_raw),
     };
 }
 
@@ -1787,6 +1858,26 @@ fn filledHexId(ch: u8) [64]u8 {
     return value;
 }
 
+test "nextUniqueCommitIdentity advances createdAt when commit id already exists" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const persistence = PersistenceLayout.init(omohi_dir);
+    const snapshot_id = filledHexId('a');
+    const original_created_at = "2026-04-12T00:00:00.000Z";
+    const existing_commit_id = hash.commitIdFrom(snapshot_id[0..], "memo", original_created_at);
+    try writeFindFixtureCommit(allocator, omohi_dir, existing_commit_id[0..], "memo", original_created_at);
+
+    const start_millis = try local_date.parseUtcIso8601Millis(original_created_at);
+    const identity = try nextUniqueCommitIdentityFromMillis(allocator, persistence, snapshot_id[0..], "memo", start_millis);
+    try std.testing.expect(!std.mem.eql(u8, identity.commit_id[0..], existing_commit_id[0..]));
+    try std.testing.expect(!std.mem.eql(u8, identity.created_at[0..], original_created_at));
+}
+
 test "commitIdList returns commit ids in descending order" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1800,11 +1891,11 @@ test "commitIdList returns commit ids in descending order" {
     defer allocator.free(tracked_path);
     _ = try track(allocator, omohi_dir, tracked_path);
     try add(allocator, omohi_dir, tracked_path);
-    const first = try commit(allocator, omohi_dir, "first");
+    const first = try commit(allocator, omohi_dir, "first", false);
 
     allocator.free(try addTestFileForCommit(tmp.dir, allocator, "a.txt", "two"));
     try add(allocator, omohi_dir, tracked_path);
-    const newer = try commit(allocator, omohi_dir, "second");
+    const newer = try commit(allocator, omohi_dir, "second", false);
 
     var ids = try commitIdList(allocator, omohi_dir);
     defer freeStringList(allocator, &ids);
@@ -1894,7 +1985,7 @@ fn writeFindFixtureCommit(
     const snapshot_id = filledHexId('a');
     const content = try std.fmt.allocPrint(
         allocator,
-        "snapshotId={s}\nmessage={s}\ncreatedAt={s}\n",
+        "snapshotId={s}\nmessage={s}\ncreatedAt={s}\nempty=false\n",
         .{ snapshot_id[0..], message, created_at },
     );
     defer allocator.free(content);
@@ -2296,7 +2387,7 @@ test "add does not stage file when content matches HEAD" {
     _ = try track(allocator, omohi_dir, absolute_path);
 
     try add(allocator, omohi_dir, absolute_path);
-    _ = try commit(allocator, omohi_dir, "first");
+    _ = try commit(allocator, omohi_dir, "first", false);
     try add(allocator, omohi_dir, absolute_path);
 
     try persistence_fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/entries");
@@ -2322,7 +2413,7 @@ test "add removes staged entry when file returns to HEAD content" {
     defer allocator.free(absolute_path);
     _ = try track(allocator, omohi_dir, absolute_path);
     try add(allocator, omohi_dir, absolute_path);
-    _ = try commit(allocator, omohi_dir, "first");
+    _ = try commit(allocator, omohi_dir, "first", false);
 
     source_file = try source_dir.createFile("memo.txt", .{ .truncate = true });
     try source_file.writeAll("after");
@@ -2447,7 +2538,7 @@ test "addDirectory reuses committed object without rewriting staged object" {
     _ = try track(allocator, omohi_dir, b_path);
 
     try add(allocator, omohi_dir, a_path);
-    _ = try commit(allocator, omohi_dir, "first");
+    _ = try commit(allocator, omohi_dir, "first", false);
 
     const paths = [_][]const u8{ a_path, b_path };
     var outcome = try addDirectory(allocator, omohi_dir, &paths);
@@ -2650,7 +2741,7 @@ test "statusForTrackedPath reports staged and committed states" {
     try add(allocator, omohi_dir, absolute_path);
     try std.testing.expectEqual(.staged, try statusForTrackedPath(allocator, omohi_dir, absolute_path));
 
-    _ = try commit(allocator, omohi_dir, "first");
+    _ = try commit(allocator, omohi_dir, "first", false);
     try std.testing.expectEqual(.committed, try statusForTrackedPath(allocator, omohi_dir, absolute_path));
 }
 
@@ -2832,6 +2923,43 @@ test "show returns CommitNotFound when commit does not exist" {
     try std.testing.expectError(error.CommitNotFound, show(allocator, omohi_dir, missing_commit[0..]));
 }
 
+test "empty commit writes empty snapshot, keeps staged state, and shows zero paths" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+    try writeCommitFixtureStage(allocator, omohi_dir, "empty-note", 'a', "payload");
+
+    const commit_id = try commit(allocator, omohi_dir, "memo", true);
+
+    const commit_path = try std.fmt.allocPrint(allocator, "commits/{s}/{s}", .{ commit_id.asSlice()[0..2], commit_id.asSlice() });
+    defer allocator.free(commit_path);
+    const commit_bytes = try omohi_dir.readFileAlloc(allocator, commit_path, 512);
+    defer allocator.free(commit_bytes);
+    try std.testing.expectEqualStrings("true", testOnlyPropertyValue(commit_bytes, "empty").?);
+
+    const snapshot_id = testOnlyPropertyValue(commit_bytes, "snapshotId").?;
+    const snapshot_path = try std.fmt.allocPrint(allocator, "snapshots/{s}/{s}", .{ snapshot_id[0..2], snapshot_id });
+    defer allocator.free(snapshot_path);
+    const snapshot_bytes = try omohi_dir.readFileAlloc(allocator, snapshot_path, 256);
+    defer allocator.free(snapshot_bytes);
+    try std.testing.expectEqualStrings("entries=\n", snapshot_bytes);
+
+    var staged_paths = try stagedPaths(allocator, omohi_dir);
+    defer freeStringList(allocator, &staged_paths);
+    try std.testing.expectEqual(@as(usize, 1), staged_paths.items.len);
+    try std.testing.expectEqualStrings("/tmp/empty-note.txt", staged_paths.items[0]);
+
+    var details = try show(allocator, omohi_dir, commit_id.asSlice());
+    defer freeCommitDetails(allocator, &details);
+    try std.testing.expectEqual(@as(usize, 0), details.entries.items.len);
+    try std.testing.expectEqualStrings("memo", details.message);
+}
+
 test "tagList returns empty when commit exists and has no tags" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -2912,7 +3040,7 @@ test "commit rejects staged entry when corresponding object is missing" {
     try writeCommitFixtureStage(allocator, omohi_dir, "dangling-entry", 'a', "payload");
     try omohi_dir.deleteFile("staged/objects/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
-    try std.testing.expectError(error.StagedObjectMissing, commit(allocator, omohi_dir, "msg"));
+    try std.testing.expectError(error.StagedObjectMissing, commit(allocator, omohi_dir, "msg", false));
     try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("LOCK", .{}));
     try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("HEAD", .{}));
 }
@@ -2930,7 +3058,7 @@ test "commit releases lock and keeps retryable state when failing before HEAD wr
     setCommitFailurePoint(.before_write_head);
     defer clearCommitFailurePoint();
 
-    try std.testing.expectError(error.TestInjectedFailure, commit(allocator, omohi_dir, "msg"));
+    try std.testing.expectError(error.TestInjectedFailure, commit(allocator, omohi_dir, "msg", false));
     try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("LOCK", .{}));
     try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("HEAD", .{}));
 
@@ -2941,7 +3069,7 @@ test "commit releases lock and keeps retryable state when failing before HEAD wr
 
     clearCommitFailurePoint();
 
-    _ = try commit(allocator, omohi_dir, "msg");
+    _ = try commit(allocator, omohi_dir, "msg", false);
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
@@ -2963,7 +3091,7 @@ test "commit can recover after failure between HEAD write and staged reset" {
     setCommitFailurePoint(.before_reset_staged);
     defer clearCommitFailurePoint();
 
-    try std.testing.expectError(error.TestInjectedFailure, commit(allocator, omohi_dir, "msg"));
+    try std.testing.expectError(error.TestInjectedFailure, commit(allocator, omohi_dir, "msg", false));
     try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("LOCK", .{}));
 
     const head_bytes_before_retry = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
@@ -2973,8 +3101,8 @@ test "commit can recover after failure between HEAD write and staged reset" {
 
     clearCommitFailurePoint();
 
-    const retried_commit_id = try commit(allocator, omohi_dir, "msg");
-    try std.testing.expectEqualSlices(u8, head_before_retry, retried_commit_id.asSlice());
+    const retried_commit_id = try commit(allocator, omohi_dir, "msg", false);
+    try std.testing.expect(!std.mem.eql(u8, head_before_retry, retried_commit_id.asSlice()));
 
     const head_bytes_after_retry = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes_after_retry);

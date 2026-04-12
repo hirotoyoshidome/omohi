@@ -8,9 +8,10 @@ pub fn commit(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     message: []const u8,
+    empty: bool,
 ) ![64]u8 {
     try store_api.ensureStoreVersion(allocator, omohi_dir);
-    const id = try store_api.commit(allocator, omohi_dir, message);
+    const id = try store_api.commit(allocator, omohi_dir, message, empty);
     return id.value;
 }
 
@@ -60,7 +61,7 @@ test "commit writes immutable data and cleans staged" {
     object_file.close();
 
     const message = "initial commit";
-    const commit_id = try commit(allocator, omohi_dir, message);
+    const commit_id = try commit(allocator, omohi_dir, message, false);
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
@@ -115,6 +116,36 @@ test "commit without staged entries returns NothingToCommit and removes lock" {
     try omohi_dir.makePath("staged/entries");
     try omohi_dir.makePath("staged/objects");
 
-    try std.testing.expectError(error.NothingToCommit, commit(std.testing.allocator, omohi_dir, "msg"));
+    try std.testing.expectError(error.NothingToCommit, commit(std.testing.allocator, omohi_dir, "msg", false));
     try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("LOCK", .{}));
+}
+
+test "empty commit without staged entries writes message-only commit" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try store_api.initializeVersionForFirstTrack(allocator, omohi_dir);
+    try omohi_dir.makePath("staged/entries");
+    try omohi_dir.makePath("staged/objects");
+
+    const commit_id = try commit(allocator, omohi_dir, "memo", true);
+
+    const commit_path = try std.fmt.allocPrint(allocator, "commits/{s}/{s}", .{ commit_id[0..2], commit_id });
+    defer allocator.free(commit_path);
+    const commit_bytes = try omohi_dir.readFileAlloc(allocator, commit_path, 512);
+    defer allocator.free(commit_bytes);
+    try std.testing.expectEqualStrings("true", store_api.testOnlyPropertyValue(commit_bytes, "empty").?);
+
+    const snapshot_id = store_api.testOnlyPropertyValue(commit_bytes, "snapshotId").?;
+    const snapshot_path = try std.fmt.allocPrint(allocator, "snapshots/{s}/{s}", .{ snapshot_id[0..2], snapshot_id });
+    defer allocator.free(snapshot_path);
+    const snapshot_bytes = try omohi_dir.readFileAlloc(allocator, snapshot_path, 256);
+    defer allocator.free(snapshot_bytes);
+    try std.testing.expectEqualStrings("entries=\n", snapshot_bytes);
+
+    try store_api.testOnlyExpectDirEmpty(omohi_dir, "staged/entries");
+    try store_api.testOnlyExpectDirEmpty(omohi_dir, "staged/objects");
 }

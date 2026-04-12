@@ -270,6 +270,7 @@ fn parseTagRm(args: []const []const u8) !types.ParsedRequest {
 fn parseCommit(allocator: std.mem.Allocator, args: []const []const u8) !types.ParsedRequest {
     var message: ?[]const u8 = null;
     var dry_run = false;
+    var empty = false;
     var tags = std.array_list.Managed([]const u8).init(allocator);
     errdefer tags.deinit();
 
@@ -291,6 +292,12 @@ fn parseCommit(allocator: std.mem.Allocator, args: []const []const u8) !types.Pa
                     continue;
                 }
 
+                if (scan.equalsIgnoreAsciiCase(opt.key, "empty")) {
+                    if (opt.value != null) return error.UnknownOption;
+                    empty = true;
+                    continue;
+                }
+
                 if (scan.equalsIgnoreAsciiCase(opt.key, "message")) {
                     message = try scan.optionValue(args, &idx, opt.value);
                     continue;
@@ -306,6 +313,11 @@ fn parseCommit(allocator: std.mem.Allocator, args: []const []const u8) !types.Pa
         }
 
         if (!stop_option and std.mem.startsWith(u8, token, "-") and token.len > 1) {
+            if (scan.isShortOption(token, 'e')) {
+                empty = true;
+                continue;
+            }
+
             if (scan.isShortOption(token, 'm')) {
                 message = try scan.optionValue(args, &idx, null);
                 continue;
@@ -329,6 +341,7 @@ fn parseCommit(allocator: std.mem.Allocator, args: []const []const u8) !types.Pa
         .message = message_value,
         .tags = tag_view,
         .dry_run = dry_run,
+        .empty = empty,
     } };
 }
 
@@ -690,7 +703,7 @@ test "parser rejects mixed or invalid untrack missing usage" {
 
 test "parser accepts commit options" {
     const allocator = std.testing.allocator;
-    const argv = [_][]const u8{ "commit", "-m", "msg", "--tag=release", "-t", "prod", "--dry-run" };
+    const argv = [_][]const u8{ "commit", "-e", "-m", "msg", "--tag=release", "-t", "prod", "--dry-run" };
     var parsed = try parseArgs(allocator, &argv);
     defer types.deinitParsedRequest(allocator, &parsed);
 
@@ -698,6 +711,7 @@ test "parser accepts commit options" {
         .commit => |args| {
             try std.testing.expectEqualStrings("msg", args.message);
             try std.testing.expect(args.dry_run);
+            try std.testing.expect(args.empty);
             try std.testing.expectEqual(@as(usize, 2), args.tags.len);
             try std.testing.expectEqualStrings("release", args.tags[0]);
             try std.testing.expectEqualStrings("prod", args.tags[1]);
@@ -716,10 +730,33 @@ test "parser accepts commit long message option" {
         .commit => |args| {
             try std.testing.expectEqualStrings("msg", args.message);
             try std.testing.expect(!args.dry_run);
+            try std.testing.expect(!args.empty);
             try std.testing.expectEqual(@as(usize, 0), args.tags.len);
         },
         else => return error.UnexpectedResult,
     }
+}
+
+test "parser accepts commit empty long option" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{ "commit", "--empty", "--message", "msg" };
+    var parsed = try parseArgs(allocator, &argv);
+    defer types.deinitParsedRequest(allocator, &parsed);
+
+    switch (parsed) {
+        .commit => |args| {
+            try std.testing.expectEqualStrings("msg", args.message);
+            try std.testing.expect(args.empty);
+            try std.testing.expect(!args.dry_run);
+            try std.testing.expectEqual(@as(usize, 0), args.tags.len);
+        },
+        else => return error.UnexpectedResult,
+    }
+}
+
+test "parser rejects commit empty option with value" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.UnknownOption, parseArgs(allocator, &.{ "commit", "--empty=yes", "-m", "msg" }));
 }
 
 test "parser resolves help from help aliases and accepts topic" {

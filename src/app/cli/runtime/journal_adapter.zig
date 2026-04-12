@@ -30,6 +30,7 @@ pub fn fromParsedRequest(
                 .message = args.message,
                 .tags = args.tags,
                 .dryRun = false,
+                .empty = args.empty,
             });
         },
         .tag_add => |args| try makeEvent(allocator, "tag-add", .{
@@ -76,10 +77,27 @@ test "fromParsedRequest skips commit dry-run" {
         .message = "m",
         .tags = &tags,
         .dry_run = true,
+        .empty = false,
     } };
 
     const maybe_event = try fromParsedRequest(std.testing.allocator, parsed);
     try std.testing.expect(maybe_event == null);
+}
+
+test "fromParsedRequest keeps commit empty flag in payload" {
+    const tags = [_][]const u8{"release"};
+    const parsed: parser_types.ParsedRequest = .{ .commit = .{
+        .message = "m",
+        .tags = &tags,
+        .dry_run = false,
+        .empty = true,
+    } };
+
+    var event = (try fromParsedRequest(std.testing.allocator, parsed)).?;
+    defer event.deinit(std.testing.allocator);
+
+    try std.testing.expectEqualStrings("commit", event.command_type);
+    try std.testing.expect(std.mem.indexOf(u8, event.payload_json, "\"empty\":true") != null);
 }
 
 test "fromParsedRequest maps untrack missing command to event" {

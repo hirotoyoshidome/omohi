@@ -120,23 +120,26 @@ pub const all = [_]CommandSpec{
     },
     .{
         .name = "commit",
-        .usage = "commit -m <message> [-t <tag>] [--dry-run]",
+        .usage = "commit -m <message> [-t <tag>] [--dry-run] [--empty]",
         .summary = "Create a commit from staged entries.",
         .positionals = &.{},
         .options = &.{
             .{ .long = "message", .short = 'm', .value_name = "message", .required = true, .repeatable = false, .description = "Commit message text." },
             .{ .long = "tag", .short = 't', .value_name = "tag", .required = false, .repeatable = true, .description = "Tag name to attach. Can be repeated." },
             .{ .long = "dry-run", .short = null, .value_name = null, .required = false, .repeatable = false, .description = "Show commit result preview without writing commit data." },
+            .{ .long = "empty", .short = 'e', .value_name = null, .required = false, .repeatable = false, .description = "Create a message-only commit with no staged file entries." },
         },
         .examples = &.{
             "omohi commit -m \"initial\"",
             "omohi commit -m \"release\" --tag release -t prod",
             "omohi commit -m \"check\" --dry-run",
+            "omohi commit --empty -m \"memo\"",
         },
         .notes = &.{
             "`-m` or `--message` is required.",
             "If a file was already staged and later becomes `missing`, `commit` still uses the staged entry.",
             "`--dry-run` shows such staged entries with a `(missing)` marker.",
+            "`--empty` creates a commit from message metadata only and leaves staged files untouched.",
         },
     },
     .{
@@ -453,6 +456,7 @@ fn optionTakesValue(comptime command_name: []const u8, comptime option_long: []c
     if (std.mem.eql(u8, command_name, "untrack") and std.mem.eql(u8, option_long, "missing")) return false;
     if (std.mem.eql(u8, command_name, "add") and std.mem.eql(u8, option_long, "all")) return false;
     if (std.mem.eql(u8, command_name, "commit") and std.mem.eql(u8, option_long, "dry-run")) return false;
+    if (std.mem.eql(u8, command_name, "commit") and std.mem.eql(u8, option_long, "empty")) return false;
     if (std.mem.eql(u8, command_name, "commit") and std.mem.eql(u8, option_long, "message")) return true;
     if (std.mem.eql(u8, command_name, "commit") and std.mem.eql(u8, option_long, "tag")) return true;
     if (std.mem.eql(u8, command_name, "tracklist") and std.mem.eql(u8, option_long, "output")) return true;

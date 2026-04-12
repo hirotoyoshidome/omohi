@@ -2,8 +2,6 @@ const std = @import("std");
 
 const atomic_write = @import("../storage/atomic_write.zig");
 const PersistenceLayout = @import("../object/persistence_layout.zig").PersistenceLayout;
-const utc = @import("../storage/time/utc.zig");
-
 // Persists one commit record using atomic write semantics.
 pub fn writeCommit(
     allocator: std.mem.Allocator,
@@ -11,9 +9,10 @@ pub fn writeCommit(
     commit_id: []const u8,
     snapshot_id: []const u8,
     message: []const u8,
+    created_at: []const u8,
+    is_empty: bool,
 ) !void {
-    const created_at = try utc.nowIso8601Utc();
-    const content = try formatCommitFile(allocator, snapshot_id, message, created_at);
+    const content = try formatCommitFile(allocator, snapshot_id, message, created_at, is_empty);
     defer allocator.free(content);
 
     const path = try persistence.commitsPath(allocator, commit_id);
@@ -27,7 +26,8 @@ fn formatCommitFile(
     allocator: std.mem.Allocator,
     snapshot_id: []const u8,
     message: []const u8,
-    created_at: [24]u8,
+    created_at: []const u8,
+    is_empty: bool,
 ) ![]u8 {
     var buffer = std.array_list.Managed(u8).init(allocator);
     defer buffer.deinit();
@@ -36,6 +36,7 @@ fn formatCommitFile(
     try writer.print("snapshotId={s}\n", .{snapshot_id});
     try writer.print("message={s}\n", .{message});
     try writer.print("createdAt={s}\n", .{created_at});
+    try writer.print("empty={s}\n", .{if (is_empty) "true" else "false"});
     return buffer.toOwnedSlice();
 }
 
@@ -43,13 +44,13 @@ test "formatCommitFile renders commit properties" {
     const allocator = std.testing.allocator;
     var snapshot_id: [64]u8 = undefined;
     @memset(&snapshot_id, 'd');
-    const created_at = "2024-01-02T03:04:05.006Z".*;
-    const result = try formatCommitFile(allocator, &snapshot_id, "message", created_at);
+    const result = try formatCommitFile(allocator, &snapshot_id, "message", "2024-01-02T03:04:05.006Z", true);
     defer allocator.free(result);
 
     try std.testing.expect(std.mem.indexOf(u8, result, "snapshotId=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd") != null);
     try std.testing.expect(std.mem.indexOf(u8, result, "message=message") != null);
     try std.testing.expect(std.mem.indexOf(u8, result, "createdAt=2024-01-02T03:04:05.006Z") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "empty=true") != null);
 }
 
 test "writeCommit persists commit file" {
@@ -66,7 +67,7 @@ test "writeCommit persists commit file" {
     var commit_id: [64]u8 = undefined;
     @memset(&commit_id, 'f');
 
-    try writeCommit(allocator, persistence, &commit_id, &snapshot_id, "initial");
+    try writeCommit(allocator, persistence, &commit_id, &snapshot_id, "initial", "2024-01-02T03:04:05.006Z", false);
 
     const path = try persistence.commitsPath(allocator, &commit_id);
     defer allocator.free(path);
@@ -76,4 +77,5 @@ test "writeCommit persists commit file" {
     try std.testing.expect(std.mem.indexOf(u8, content, "snapshotId=") != null);
     try std.testing.expect(std.mem.indexOf(u8, content, "message=initial") != null);
     try std.testing.expect(std.mem.indexOf(u8, content, "createdAt=") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "empty=false") != null);
 }

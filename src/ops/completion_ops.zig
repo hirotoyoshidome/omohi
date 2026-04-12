@@ -9,7 +9,7 @@ const top_level_commands = [_][]const u8{
 };
 const top_level_aliases = [_][]const u8{ "-h", "--help", "-v", "--version" };
 const tag_commands = [_][]const u8{ "ls", "add", "rm" };
-const commit_options = [_][]const u8{ "-m", "--message", "-t", "--tag", "--dry-run" };
+const commit_options = [_][]const u8{ "-e", "--empty", "-m", "--message", "-t", "--tag", "--dry-run" };
 const add_options = [_][]const u8{ "-a", "--all" };
 const untrack_options = [_][]const u8{"--missing"};
 const tracklist_options = [_][]const u8{ "--output", "--field" };
@@ -392,7 +392,7 @@ test "complete returns commit ids for show and tags for tag rm" {
     defer allocator.free(tracked_path);
     _ = try store_api.track(allocator, omohi_dir, tracked_path);
     try store_api.add(allocator, omohi_dir, tracked_path);
-    const commit_id = try store_api.commit(allocator, omohi_dir, "first");
+    const commit_id = try store_api.commit(allocator, omohi_dir, "first", false);
     try store_api.tagAdd(allocator, omohi_dir, commit_id.asSlice(), &.{ "prod", "release" });
 
     {

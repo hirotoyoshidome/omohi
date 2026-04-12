@@ -62,7 +62,7 @@ Agents should also refer to directories under `docs/` when they are relevant to 
   - `ContentHash = SHA-256(Base64(fileBytes))`
   - `StagedFileId = SHA-256("<contentHash>:<absolutePath>")`
   - `SnapshotId = SHA-256(concatenated "<path>:<contentHash>" sorted by path)`
-  - `CommitId = SHA-256("<snapshotId>:<message>")`
+  - `CommitId = SHA-256("<snapshotId>:<message>:<createdAt>")`
   - `TrackedFileId = UUIDv4 without hyphens (32-char hex)`
 - Path constraints:
   - absolute path only

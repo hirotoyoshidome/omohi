@@ -150,7 +150,7 @@ test "commit can read staged data created by add" {
 
     var outcome = try add(allocator, omohi_dir, absolute_path);
     defer freeAddOutcome(allocator, &outcome);
-    _ = try add_store.commit(allocator, omohi_dir, "via add");
+    _ = try add_store.commit(allocator, omohi_dir, "via add", false);
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
@@ -289,7 +289,7 @@ test "add reports no-change when file matches HEAD" {
     _ = try add_store.track(allocator, omohi_dir, absolute_path);
     var initial_outcome = try add(allocator, omohi_dir, absolute_path);
     defer freeAddOutcome(allocator, &initial_outcome);
-    _ = try add_store.commit(allocator, omohi_dir, "first");
+    _ = try add_store.commit(allocator, omohi_dir, "first", false);
 
     var outcome = try add(allocator, omohi_dir, absolute_path);
     defer freeAddOutcome(allocator, &outcome);
@@ -380,7 +380,7 @@ test "addAllTracked skips committed and already staged files" {
         var first = try add(allocator, omohi_dir, a_path);
         defer freeAddOutcome(allocator, &first);
     }
-    _ = try add_store.commit(allocator, omohi_dir, "first");
+    _ = try add_store.commit(allocator, omohi_dir, "first", false);
 
     try add_store.add(allocator, omohi_dir, b_path);
 
