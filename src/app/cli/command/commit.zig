@@ -34,7 +34,7 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.CommitArgs) !command
         return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
     }
 
-    const commit_id = try commit_ops.commit(allocator, omohi.dir, args.message);
+    const commit_id = try commit_ops.commit(allocator, omohi.dir, args.message, args.empty);
     if (args.tags.len > 0) {
         try tag_ops.add(allocator, omohi.dir, &commit_id, args.tags);
     }

@@ -44,6 +44,7 @@ pub const CommitArgs = struct {
     message: []const u8,
     tags: []const []const u8,
     dry_run: bool,
+    empty: bool,
 };
 
 pub const TracklistArgs = struct {
