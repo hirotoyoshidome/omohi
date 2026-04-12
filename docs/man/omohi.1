@@ -169,7 +169,7 @@ Create a commit from staged entries.
 .TP
 .B Usage
 .nf
-omohi commit \-m <message> [\-t <tag>] [\-\-dry\-run]
+omohi commit \-m <message> [\-t <tag>] [\-\-dry\-run] [\-\-empty]
 .fi
 .TP
 .B Options
@@ -185,12 +185,17 @@ optional, repeatable: Tag name to attach. Can be repeated.
 .B \-\-dry\-run
 optional: Show commit result preview without writing commit data.
 .RE
+.RS 4
+.B \-e, \-\-empty
+optional: Create a message\-only commit with no staged file entries.
+.RE
 .TP
 .B Examples
 .nf
 omohi commit \-m "initial"
 omohi commit \-m "release" \-\-tag release \-t prod
 omohi commit \-m "check" \-\-dry\-run
+omohi commit \-\-empty \-m "memo"
 .fi
 .TP
 .B Notes
@@ -202,6 +207,9 @@ If a file was already staged and later becomes `missing`, `commit` still uses th
 .RE
 .RS 4
 `\-\-dry\-run` shows such staged entries with a `(missing)` marker.
+.RE
+.RS 4
+`\-\-empty` creates a commit from message metadata only and leaves staged files untouched.
 .RE
 .SS status
 .TP

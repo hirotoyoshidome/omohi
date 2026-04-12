@@ -10,7 +10,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 | `untrack` | `untrack (<trackedFileId> | --missing)` | Remove one tracked target by ID or clear all missing tracked targets. |
 | `add` | `add [-a|--all] [<path>...]` | Stage one tracked file, a tracked directory subtree, or all changed tracked files. |
 | `rm` | `rm <path>...` | Remove one staged file or recursively unstage staged files under a directory. |
-| `commit` | `commit -m <message> [-t <tag>] [--dry-run]` | Create a commit from staged entries. |
+| `commit` | `commit -m <message> [-t <tag>] [--dry-run] [--empty]` | Create a commit from staged entries. |
 | `status` | `status` | Show tracked and staged state overview. |
 | `tracklist` | `tracklist [--output <text|json>] [--field <id|path>]...` | List tracked targets with tracked file IDs. |
 | `version` | `version` | Print application version and build target. |
@@ -97,7 +97,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 
 ### commit
 
-- Usage: `omohi commit -m <message> [-t <tag>] [--dry-run]`
+- Usage: `omohi commit -m <message> [-t <tag>] [--dry-run] [--empty]`
 - Summary: Create a commit from staged entries.
 - Positionals:
   - None
@@ -105,14 +105,17 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
   - `-m`, `--message` `<message>` (required): Commit message text.
   - `-t`, `--tag` `<tag>` (optional, repeatable): Tag name to attach. Can be repeated.
   - `--dry-run` (optional): Show commit result preview without writing commit data.
+  - `-e`, `--empty` (optional): Create a message-only commit with no staged file entries.
 - Examples:
   - `omohi commit -m "initial"`
   - `omohi commit -m "release" --tag release -t prod`
   - `omohi commit -m "check" --dry-run`
+  - `omohi commit --empty -m "memo"`
 - Notes:
   - `-m` or `--message` is required.
   - If a file was already staged and later becomes `missing`, `commit` still uses the staged entry.
   - `--dry-run` shows such staged entries with a `(missing)` marker.
+  - `--empty` creates a commit from message metadata only and leaves staged files untouched.
 
 ### status
 
