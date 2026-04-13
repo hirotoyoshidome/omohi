@@ -55,6 +55,11 @@ pub const CommitSummaryList = api_types.CommitSummaryList;
 pub const StringList = api_types.StringList;
 pub const TagList = api_types.TagList;
 pub const CommitDetails = api_types.CommitDetails;
+pub const FindEmptyFilter = enum {
+    all,
+    empty_only,
+    non_empty_only,
+};
 pub const TrackedEntry = local_tracked.TrackedEntry;
 pub const TrackedList = local_tracked.TrackedList;
 pub const StagedEntry = local_staged.StagedEntry;
@@ -526,11 +531,12 @@ pub fn freeRmBatchOutcome(allocator: std.mem.Allocator, outcome: *RmBatchOutcome
     freeStringList(allocator, &outcome.unstaged_paths);
 }
 
-/// Finds commits with optional tag and epoch-millis range filters.
+/// Finds commits with optional tag, empty-commit, and epoch-millis range filters.
 pub fn find(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     tag_name: ?[]const u8,
+    empty_filter: FindEmptyFilter,
     since_millis: ?i64,
     until_millis: ?i64,
     limit: usize,
@@ -574,6 +580,11 @@ pub fn find(
             }
         }
 
+        if (!matchesFindEmptyFilter(parsed.is_empty, empty_filter)) {
+            freeParsedCommit(allocator, &parsed);
+            continue;
+        }
+
         try matches.append(.{
             .parsed = parsed,
             .created_at_millis = created_at_millis,
@@ -598,6 +609,15 @@ pub fn find(
     }
 
     return out;
+}
+
+// Reports whether the commit's empty flag matches the requested `find` filter.
+fn matchesFindEmptyFilter(is_empty: bool, filter: FindEmptyFilter) bool {
+    return switch (filter) {
+        .all => true,
+        .empty_only => is_empty,
+        .non_empty_only => !is_empty,
+    };
 }
 
 // Releases owned strings held by commit summaries returned from `find`.
@@ -1870,7 +1890,7 @@ test "nextUniqueCommitIdentity advances createdAt when commit id already exists"
     const snapshot_id = filledHexId('a');
     const original_created_at = "2026-04-12T00:00:00.000Z";
     const existing_commit_id = hash.commitIdFrom(snapshot_id[0..], "memo", original_created_at);
-    try writeFindFixtureCommit(allocator, omohi_dir, existing_commit_id[0..], "memo", original_created_at);
+    try writeFindFixtureCommit(allocator, omohi_dir, existing_commit_id[0..], "memo", original_created_at, false);
 
     const start_millis = try local_date.parseUtcIso8601Millis(original_created_at);
     const identity = try nextUniqueCommitIdentityFromMillis(allocator, persistence, snapshot_id[0..], "memo", start_millis);
@@ -1977,6 +1997,7 @@ fn writeFindFixtureCommit(
     commit_id: []const u8,
     message: []const u8,
     created_at: []const u8,
+    is_empty: bool,
 ) !void {
     const persistence = PersistenceLayout.init(omohi_dir);
     const path = try persistence.commitsPath(allocator, commit_id);
@@ -1985,8 +2006,8 @@ fn writeFindFixtureCommit(
     const snapshot_id = filledHexId('a');
     const content = try std.fmt.allocPrint(
         allocator,
-        "snapshotId={s}\nmessage={s}\ncreatedAt={s}\nempty=false\n",
-        .{ snapshot_id[0..], message, created_at },
+        "snapshotId={s}\nmessage={s}\ncreatedAt={s}\nempty={s}\n",
+        .{ snapshot_id[0..], message, created_at, if (is_empty) "true" else "false" },
     );
     defer allocator.free(content);
 
@@ -2808,10 +2829,10 @@ test "find sorts by createdAt desc and applies the requested limit" {
         const message = try std.fmt.allocPrint(allocator, "msg-{d}", .{idx + 1});
         defer allocator.free(message);
 
-        try writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], message, created_at);
+        try writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], message, created_at, false);
     }
 
-    var list = try find(allocator, omohi_dir, null, null, null, 10);
+    var list = try find(allocator, omohi_dir, null, .all, null, null, 10);
     defer freeCommitSummaryList(allocator, &list);
 
     try std.testing.expectEqual(@as(usize, 10), list.items.len);
@@ -2832,32 +2853,32 @@ test "find applies tag and time range filters as intersection" {
     const commit_a = filledHexId('a');
     const commit_b = filledHexId('b');
 
-    try writeFindFixtureCommit(allocator, omohi_dir, commit_a[0..], "release-a", "2026-03-10T18:00:00.000Z");
-    try writeFindFixtureCommit(allocator, omohi_dir, commit_b[0..], "prod-b", "2026-03-07T01:00:00.000Z");
+    try writeFindFixtureCommit(allocator, omohi_dir, commit_a[0..], "release-a", "2026-03-10T18:00:00.000Z", false);
+    try writeFindFixtureCommit(allocator, omohi_dir, commit_b[0..], "prod-b", "2026-03-07T01:00:00.000Z", false);
 
     const release_tags = [_][]const u8{"release"};
     const prod_tags = [_][]const u8{"prod"};
     try writeFindFixtureTags(allocator, omohi_dir, commit_a[0..], &release_tags);
     try writeFindFixtureTags(allocator, omohi_dir, commit_b[0..], &prod_tags);
 
-    var by_tag = try find(allocator, omohi_dir, "release", null, null, 10);
+    var by_tag = try find(allocator, omohi_dir, "release", .all, null, null, 10);
     defer freeCommitSummaryList(allocator, &by_tag);
     try std.testing.expectEqual(@as(usize, 1), by_tag.items.len);
     try std.testing.expectEqualStrings("release-a", by_tag.items[0].message);
 
     const created_a = try local_date.parseUtcIso8601Millis("2026-03-10T18:00:00.000Z");
-    var by_range = try find(allocator, omohi_dir, null, created_a, created_a, 10);
+    var by_range = try find(allocator, omohi_dir, null, .all, created_a, created_a, 10);
     defer freeCommitSummaryList(allocator, &by_range);
     try std.testing.expectEqual(@as(usize, 1), by_range.items.len);
     try std.testing.expectEqualStrings("release-a", by_range.items[0].message);
     try std.testing.expectEqual(@as(usize, 29), by_range.items[0].local_created_at.len);
 
-    var by_tag_and_range = try find(allocator, omohi_dir, "release", created_a, created_a, 10);
+    var by_tag_and_range = try find(allocator, omohi_dir, "release", .all, created_a, created_a, 10);
     defer freeCommitSummaryList(allocator, &by_tag_and_range);
     try std.testing.expectEqual(@as(usize, 1), by_tag_and_range.items.len);
     try std.testing.expectEqualStrings("release-a", by_tag_and_range.items[0].message);
 
-    var no_intersection = try find(allocator, omohi_dir, "prod", created_a, created_a, 10);
+    var no_intersection = try find(allocator, omohi_dir, "prod", .all, created_a, created_a, 10);
     defer freeCommitSummaryList(allocator, &no_intersection);
     try std.testing.expectEqual(@as(usize, 0), no_intersection.items.len);
 }
@@ -2890,13 +2911,68 @@ test "find returns local createdAt in user timezone" {
     defer omohi_dir.close();
 
     const commit_id = filledHexId('a');
-    try writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], "tokyo", "2026-03-10T18:00:00.123Z");
+    try writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], "tokyo", "2026-03-10T18:00:00.123Z", false);
 
-    var list = try find(allocator, omohi_dir, null, null, null, 10);
+    var list = try find(allocator, omohi_dir, null, .all, null, null, 10);
     defer freeCommitSummaryList(allocator, &list);
 
     try std.testing.expectEqual(@as(usize, 1), list.items.len);
     try std.testing.expectEqualStrings("2026-03-11T03:00:00.123+09:00", list.items[0].local_created_at);
+}
+
+test "find filters empty and non-empty commits" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const empty_commit = filledHexId('a');
+    const normal_commit = filledHexId('b');
+
+    try writeFindFixtureCommit(allocator, omohi_dir, empty_commit[0..], "empty", "2026-03-11T00:00:00.000Z", true);
+    try writeFindFixtureCommit(allocator, omohi_dir, normal_commit[0..], "normal", "2026-03-10T00:00:00.000Z", false);
+
+    var empty_only = try find(allocator, omohi_dir, null, .empty_only, null, null, 10);
+    defer freeCommitSummaryList(allocator, &empty_only);
+    try std.testing.expectEqual(@as(usize, 1), empty_only.items.len);
+    try std.testing.expectEqualStrings("empty", empty_only.items[0].message);
+
+    var non_empty_only = try find(allocator, omohi_dir, null, .non_empty_only, null, null, 10);
+    defer freeCommitSummaryList(allocator, &non_empty_only);
+    try std.testing.expectEqual(@as(usize, 1), non_empty_only.items.len);
+    try std.testing.expectEqualStrings("normal", non_empty_only.items[0].message);
+}
+
+test "find applies empty filter together with tag and time range" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+
+    const empty_release = filledHexId('a');
+    const non_empty_release = filledHexId('b');
+    const empty_prod = filledHexId('c');
+
+    try writeFindFixtureCommit(allocator, omohi_dir, empty_release[0..], "empty-release", "2026-03-10T18:00:00.000Z", true);
+    try writeFindFixtureCommit(allocator, omohi_dir, non_empty_release[0..], "non-empty-release", "2026-03-10T18:00:00.000Z", false);
+    try writeFindFixtureCommit(allocator, omohi_dir, empty_prod[0..], "empty-prod", "2026-03-07T01:00:00.000Z", true);
+
+    const release_tags = [_][]const u8{"release"};
+    const prod_tags = [_][]const u8{"prod"};
+    try writeFindFixtureTags(allocator, omohi_dir, empty_release[0..], &release_tags);
+    try writeFindFixtureTags(allocator, omohi_dir, non_empty_release[0..], &release_tags);
+    try writeFindFixtureTags(allocator, omohi_dir, empty_prod[0..], &prod_tags);
+
+    const created_release = try local_date.parseUtcIso8601Millis("2026-03-10T18:00:00.000Z");
+    var list = try find(allocator, omohi_dir, "release", .empty_only, created_release, created_release, 10);
+    defer freeCommitSummaryList(allocator, &list);
+
+    try std.testing.expectEqual(@as(usize, 1), list.items.len);
+    try std.testing.expectEqualStrings("empty-release", list.items[0].message);
 }
 
 test "tagList returns CommitNotFound when commit does not exist" {
@@ -2975,6 +3051,7 @@ test "tagList returns empty when commit exists and has no tags" {
         existing_commit[0..],
         "fixture-message",
         "2026-03-12T00:00:00.000Z",
+        false,
     );
 
     var tags = try tagList(allocator, omohi_dir, existing_commit[0..]);
