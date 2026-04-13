@@ -1145,6 +1145,7 @@ test "findResult renders heading and commit blocks" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = "release",
+        .empty_filter = .all,
         .since = null,
         .until = null,
         .since_millis = null,
@@ -1177,6 +1178,7 @@ test "findResult renders selected fields as text rows" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = null,
+        .empty_filter = .all,
         .since = null,
         .until = null,
         .since_millis = null,
@@ -1199,6 +1201,7 @@ test "findResult renders no commits message" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = null,
+        .empty_filter = .all,
         .since = null,
         .until = null,
         .since_millis = null,
@@ -1225,6 +1228,7 @@ test "findResult renders since heading" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = null,
+        .empty_filter = .all,
         .since = "2026-03-10",
         .until = null,
         .since_millis = 0,
@@ -1251,6 +1255,7 @@ test "findResult renders tag and range heading" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = "release",
+        .empty_filter = .all,
         .since = "2026-03-10",
         .until = "2026-03-11",
         .since_millis = 0,
@@ -1277,6 +1282,7 @@ test "findResult renders json output" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = null,
+        .empty_filter = .all,
         .since = null,
         .until = null,
         .since_millis = null,
@@ -1306,6 +1312,7 @@ test "findResult renders selected fields as json" {
 
     const output = try findResult(std.testing.allocator, &list, .{
         .tag = null,
+        .empty_filter = .all,
         .since = null,
         .until = null,
         .since_millis = null,
