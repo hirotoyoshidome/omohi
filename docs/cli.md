@@ -14,7 +14,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 | `status` | `status` | Show tracked and staged state overview. |
 | `tracklist` | `tracklist [--output <text|json>] [--field <id|path>]...` | List tracked targets with tracked file IDs. |
 | `version` | `version` | Print application version and build target. |
-| `find` | `find [--tag <tag>] [--since <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--until <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--limit <1-500>] [--output <text|json>] [--field <commit_id|message|created_at>]...` | Search commits by optional tag and local-time range filters. |
+| `find` | `find [--tag <tag>] [--empty|--no-empty] [--since <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--until <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--limit <1-500>] [--output <text|json>] [--field <commit_id|message|created_at>]...` | Search commits by optional tag, empty-commit, and local-time range filters. |
 | `show` | `show [--output <text|json>] [--field <commit_id|message|created_at|paths|tags>]... <commitId>` | Show one commit details payload. |
 | `journal` | `journal` | Show recent journal logs in reverse chronological order. |
 | `tag ls` | `tag ls <commitId>` | List tags for one commit. |
@@ -165,12 +165,14 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 
 ### find
 
-- Usage: `omohi find [--tag <tag>] [--since <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--until <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--limit <1-500>] [--output <text|json>] [--field <commit_id|message|created_at>]...`
-- Summary: Search commits by optional tag and local-time range filters.
+- Usage: `omohi find [--tag <tag>] [--empty|--no-empty] [--since <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--until <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--limit <1-500>] [--output <text|json>] [--field <commit_id|message|created_at>]...`
+- Summary: Search commits by optional tag, empty-commit, and local-time range filters.
 - Positionals:
   - None
 - Options:
   - `-t`, `--tag` `<tag>` (optional): Filter commits by tag name.
+  - `--empty` (optional): Return only empty commits.
+  - `--no-empty` (optional): Return only non-empty commits.
   - `-s`, `--since` `<YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>` (optional): Filter commits created at or after the given local date/time.
   - `-u`, `--until` `<YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>` (optional): Filter commits created at or before the given local date/time.
   - `--limit` `<1-500>` (optional): Limit the number of returned commits. Accepts integers from 1 through 500.
@@ -180,14 +182,17 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
   - `omohi find`
   - `omohi find --limit 100`
   - `omohi find --tag release`
+  - `omohi find --empty`
+  - `omohi find --no-empty --tag release`
   - `omohi find --since 2026-03-17`
   - `omohi find --tag release --since 2026-03-17 --until 2026-03-17T23:59:59`
   - `omohi find --field commit_id --field created_at`
   - `omohi find --output json --tag release`
 - Notes:
-  - When tag and time filters are set, intersection is returned.
+  - When tag, empty-commit, and time filters are set, intersection is returned.
   - Date-only and datetime values are interpreted in the local timezone.
   - `--since` and `--until` are inclusive bounds.
+  - `--empty` and `--no-empty` cannot be combined.
   - Without `--limit`, `find` returns up to 500 commits and pages text output on TTY with `less` when available.
   - `--limit` accepts integers from 1 through 500 and disables pager output when set.
   - Each result is shown as commit ID, local timestamp, and commit message in a multi-line block.
