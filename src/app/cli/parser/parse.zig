@@ -348,6 +348,7 @@ fn parseCommit(allocator: std.mem.Allocator, args: []const []const u8) !types.Pa
 // Parses `find` options and validates any provided local-time range filters.
 fn parseFind(allocator: std.mem.Allocator, args: []const []const u8) !types.ParsedRequest {
     var tag_name: ?[]const u8 = null;
+    var empty_filter: types.FindEmptyFilter = .all;
     var since: ?[]const u8 = null;
     var until: ?[]const u8 = null;
     var since_millis: ?i64 = null;
@@ -371,6 +372,20 @@ fn parseFind(allocator: std.mem.Allocator, args: []const []const u8) !types.Pars
             if (scan.parseLongOption(token)) |opt| {
                 if (scan.equalsIgnoreAsciiCase(opt.key, "tag")) {
                     tag_name = try scan.optionValue(args, &idx, opt.value);
+                    continue;
+                }
+
+                if (scan.equalsIgnoreAsciiCase(opt.key, "empty")) {
+                    if (opt.value != null) return error.UnknownOption;
+                    if (empty_filter == .non_empty_only) return error.InvalidArgument;
+                    empty_filter = .empty_only;
+                    continue;
+                }
+
+                if (scan.equalsIgnoreAsciiCase(opt.key, "no-empty")) {
+                    if (opt.value != null) return error.UnknownOption;
+                    if (empty_filter == .empty_only) return error.InvalidArgument;
+                    empty_filter = .non_empty_only;
                     continue;
                 }
 
@@ -439,6 +454,7 @@ fn parseFind(allocator: std.mem.Allocator, args: []const []const u8) !types.Pars
 
     return .{ .find = .{
         .tag = tag_name,
+        .empty_filter = empty_filter,
         .since = since,
         .until = until,
         .since_millis = since_millis,
@@ -929,6 +945,7 @@ test "parser normalizes option keys for find" {
         switch (parsed) {
             .find => |args| {
                 try std.testing.expectEqualStrings("release", args.tag.?);
+                try std.testing.expectEqual(types.FindEmptyFilter.all, args.empty_filter);
                 try std.testing.expectEqualStrings("2026-03-12", args.since.?);
                 try std.testing.expectEqualStrings("2026-03-13", args.until.?);
             },
@@ -943,6 +960,7 @@ test "parser normalizes option keys for find" {
         switch (parsed) {
             .find => |args| {
                 try std.testing.expectEqualStrings("release", args.tag.?);
+                try std.testing.expectEqual(types.FindEmptyFilter.all, args.empty_filter);
                 try std.testing.expectEqualStrings("2026-03-12", args.since.?);
                 try std.testing.expectEqualStrings("2026-03-13T12:00:00", args.until.?);
             },
@@ -988,6 +1006,7 @@ test "parser accepts find output and repeated fields" {
     switch (parsed) {
         .find => |args| {
             try std.testing.expectEqual(types.OutputFormat.json, args.output);
+            try std.testing.expectEqual(types.FindEmptyFilter.all, args.empty_filter);
             try std.testing.expectEqual(@as(usize, 2), args.fields.len);
             try std.testing.expectEqual(types.FindField.commit_id, args.fields[0]);
             try std.testing.expectEqual(types.FindField.created_at, args.fields[1]);
@@ -1005,7 +1024,10 @@ test "parser accepts find limit values" {
         defer types.deinitParsedRequest(allocator, &parsed);
 
         switch (parsed) {
-            .find => |args| try std.testing.expectEqual(@as(?usize, 25), args.limit),
+            .find => |args| {
+                try std.testing.expectEqual(types.FindEmptyFilter.all, args.empty_filter);
+                try std.testing.expectEqual(@as(?usize, 25), args.limit);
+            },
             else => return error.UnexpectedResult,
         }
     }
@@ -1016,7 +1038,34 @@ test "parser accepts find limit values" {
         defer types.deinitParsedRequest(allocator, &parsed);
 
         switch (parsed) {
-            .find => |args| try std.testing.expectEqual(@as(?usize, 500), args.limit),
+            .find => |args| {
+                try std.testing.expectEqual(types.FindEmptyFilter.all, args.empty_filter);
+                try std.testing.expectEqual(@as(?usize, 500), args.limit);
+            },
+            else => return error.UnexpectedResult,
+        }
+    }
+}
+
+test "parser accepts find empty filters" {
+    const allocator = std.testing.allocator;
+
+    {
+        var parsed = try parseArgs(allocator, &.{ "find", "--empty" });
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .find => |args| try std.testing.expectEqual(types.FindEmptyFilter.empty_only, args.empty_filter),
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        var parsed = try parseArgs(allocator, &.{ "find", "--no-empty" });
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .find => |args| try std.testing.expectEqual(types.FindEmptyFilter.non_empty_only, args.empty_filter),
             else => return error.UnexpectedResult,
         }
     }
@@ -1028,6 +1077,18 @@ test "parser rejects invalid find limit values" {
     try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "find", "--limit", "0" }));
     try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "find", "--limit", "501" }));
     try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "find", "--limit", "abc" }));
+}
+
+test "parser rejects conflicting find empty filters" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "find", "--empty", "--no-empty" }));
+    try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "find", "--no-empty", "--empty" }));
+}
+
+test "parser rejects find empty filters with values" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.UnknownOption, parseArgs(allocator, &.{ "find", "--empty=true" }));
+    try std.testing.expectError(error.UnknownOption, parseArgs(allocator, &.{ "find", "--no-empty=false" }));
 }
 
 test "parser accepts show options before commit id" {

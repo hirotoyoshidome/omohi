@@ -14,6 +14,12 @@ pub const FindField = enum {
     created_at,
 };
 
+pub const FindEmptyFilter = enum {
+    all,
+    empty_only,
+    non_empty_only,
+};
+
 pub const ShowField = enum {
     commit_id,
     message,
@@ -54,6 +60,7 @@ pub const TracklistArgs = struct {
 
 pub const FindArgs = struct {
     tag: ?[]const u8,
+    empty_filter: FindEmptyFilter,
     since: ?[]const u8,
     until: ?[]const u8,
     since_millis: ?i64,
