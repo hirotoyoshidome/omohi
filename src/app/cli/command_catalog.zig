@@ -182,11 +182,13 @@ pub const all = [_]CommandSpec{
     },
     .{
         .name = "find",
-        .usage = "find [--tag <tag>] [--since <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--until <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--limit <1-500>] [--output <text|json>] [--field <commit_id|message|created_at>]...",
-        .summary = "Search commits by optional tag and local-time range filters.",
+        .usage = "find [--tag <tag>] [--empty|--no-empty] [--since <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--until <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--limit <1-500>] [--output <text|json>] [--field <commit_id|message|created_at>]...",
+        .summary = "Search commits by optional tag, empty-commit, and local-time range filters.",
         .positionals = &.{},
         .options = &.{
             .{ .long = "tag", .short = 't', .value_name = "tag", .required = false, .repeatable = false, .description = "Filter commits by tag name." },
+            .{ .long = "empty", .short = null, .value_name = null, .required = false, .repeatable = false, .description = "Return only empty commits." },
+            .{ .long = "no-empty", .short = null, .value_name = null, .required = false, .repeatable = false, .description = "Return only non-empty commits." },
             .{ .long = "since", .short = 's', .value_name = "YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS", .required = false, .repeatable = false, .description = "Filter commits created at or after the given local date/time." },
             .{ .long = "until", .short = 'u', .value_name = "YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS", .required = false, .repeatable = false, .description = "Filter commits created at or before the given local date/time." },
             .{ .long = "limit", .short = null, .value_name = "1-500", .required = false, .repeatable = false, .description = "Limit the number of returned commits. Accepts integers from 1 through 500." },
@@ -197,15 +199,18 @@ pub const all = [_]CommandSpec{
             "omohi find",
             "omohi find --limit 100",
             "omohi find --tag release",
+            "omohi find --empty",
+            "omohi find --no-empty --tag release",
             "omohi find --since 2026-03-17",
             "omohi find --tag release --since 2026-03-17 --until 2026-03-17T23:59:59",
             "omohi find --field commit_id --field created_at",
             "omohi find --output json --tag release",
         },
         .notes = &.{
-            "When tag and time filters are set, intersection is returned.",
+            "When tag, empty-commit, and time filters are set, intersection is returned.",
             "Date-only and datetime values are interpreted in the local timezone.",
             "`--since` and `--until` are inclusive bounds.",
+            "`--empty` and `--no-empty` cannot be combined.",
             "Without `--limit`, `find` returns up to 500 commits and pages text output on TTY with `less` when available.",
             "`--limit` accepts integers from 1 through 500 and disables pager output when set.",
             "Each result is shown as commit ID, local timestamp, and commit message in a multi-line block.",
@@ -462,6 +467,8 @@ fn optionTakesValue(comptime command_name: []const u8, comptime option_long: []c
     if (std.mem.eql(u8, command_name, "tracklist") and std.mem.eql(u8, option_long, "output")) return true;
     if (std.mem.eql(u8, command_name, "tracklist") and std.mem.eql(u8, option_long, "field")) return true;
     if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "tag")) return true;
+    if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "empty")) return false;
+    if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "no-empty")) return false;
     if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "since")) return true;
     if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "until")) return true;
     if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "limit")) return true;

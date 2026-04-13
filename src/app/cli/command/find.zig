@@ -14,7 +14,15 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.FindArgs) !command_t
     defer omohi.deinit(allocator);
 
     const limit = args.limit orelse default_limit;
-    var list = try find_ops.find(allocator, omohi.dir, args.tag, args.since_millis, args.until_millis, limit);
+    var list = try find_ops.find(
+        allocator,
+        omohi.dir,
+        args.tag,
+        toOpsEmptyFilter(args.empty_filter),
+        args.since_millis,
+        args.until_millis,
+        limit,
+    );
     defer find_ops.freeCommitSummaryList(allocator, &list);
 
     const output = try presenter.findResult(allocator, &list, args);
@@ -23,6 +31,15 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.FindArgs) !command_t
         .to_stderr = false,
         .exit_code = exit_code.ok,
         .page_output = shouldPageOutput(args),
+    };
+}
+
+// Converts the parser-level empty-commit filter into the ops/store representation.
+fn toOpsEmptyFilter(filter: parser_types.FindEmptyFilter) find_ops.FindEmptyFilter {
+    return switch (filter) {
+        .all => .all,
+        .empty_only => .empty_only,
+        .non_empty_only => .non_empty_only,
     };
 }
 
@@ -38,6 +55,7 @@ test "find uses 500 item default limit" {
 test "find enables paging only for default text output" {
     try std.testing.expect(shouldPageOutput(.{
         .tag = null,
+        .empty_filter = .all,
         .since = null,
         .until = null,
         .since_millis = null,
@@ -49,6 +67,7 @@ test "find enables paging only for default text output" {
 
     try std.testing.expect(!shouldPageOutput(.{
         .tag = null,
+        .empty_filter = .all,
         .since = null,
         .until = null,
         .since_millis = null,
@@ -60,6 +79,7 @@ test "find enables paging only for default text output" {
 
     try std.testing.expect(!shouldPageOutput(.{
         .tag = null,
+        .empty_filter = .all,
         .since = null,
         .until = null,
         .since_millis = null,

@@ -4,18 +4,20 @@ const store_api = @import("../store/api.zig");
 
 pub const CommitSummary = store_api.CommitSummary;
 pub const CommitSummaryList = store_api.CommitSummaryList;
+pub const FindEmptyFilter = store_api.FindEmptyFilter;
 
-/// Finds commits by optional tag and local-time range filters.
+/// Finds commits by optional tag, empty-commit, and local-time range filters.
 pub fn find(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     tag_name: ?[]const u8,
+    empty_filter: FindEmptyFilter,
     since_millis: ?i64,
     until_millis: ?i64,
     limit: usize,
 ) !CommitSummaryList {
     try store_api.ensureStoreVersion(allocator, omohi_dir);
-    return store_api.find(allocator, omohi_dir, tag_name, since_millis, until_millis, limit);
+    return store_api.find(allocator, omohi_dir, tag_name, empty_filter, since_millis, until_millis, limit);
 }
 
 // Releases the owned commit summary strings returned by `find`.
