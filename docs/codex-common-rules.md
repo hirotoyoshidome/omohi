@@ -45,6 +45,16 @@ The intended workflow is "a normal request message + a reference to this documen
 * Confirm that the "design intent" matches the actual file placement and dependencies.
 * If a rule violation is pointed out, re-check related areas across the codebase to avoid missing similar issues.
 
+### 3.8 CLI Contract Changes Must Update All Surfaces
+* Do not treat a CLI change as complete after updating only parser code, only command execution, or only docs.
+* When commands, subcommands, aliases, options, or option values change, verify and update every affected public surface in the same change:
+  * parser behavior and argument structs
+  * command catalog / help text / allowed values
+  * shell completion sources and completion test fixtures
+  * CLI-facing tests that cover the changed contract
+* If user-facing CLI docs are generated, update the generating Zig source first and then regenerate the docs.
+* If completion is hand-maintained, update the completion source and its tests explicitly rather than assuming docs regeneration will cover it.
+
 ## 4. SHOULD
 * Split files with high cognitive load by responsibility.
 * For persistence structures, define structs and types before using them.
@@ -58,6 +68,7 @@ The intended workflow is "a normal request message + a reference to this documen
 * Directory placement that does not match responsibility (for example, putting procedures under `store`)
 * Starting implementation without reading the reference materials specified in the request
 * Cross-cutting refactors without tests
+* Declaring a CLI contract change finished while completion or CLI-facing regression tests are knowingly stale
 
 ## 6. Minimal Additions to a Request (Not a Template)
 Add only the following one or two lines to a normal request message.
@@ -73,6 +84,7 @@ Scope: (target path for this request) / Excluded: (paths not to touch in this re
 * Do placement and naming match the intended responsibilities?
 * Is the public boundary of `api.zig` kept thin?
 * Does the plan include adding or updating tests?
+* If the change touches CLI behavior, does the plan explicitly mention command catalog, completion, and CLI-facing tests?
 
 ## 8. Update Policy
 * If the same issue causes repeated follow-up requests two or more times, promote it into either MUST or SHOULD and add it here.

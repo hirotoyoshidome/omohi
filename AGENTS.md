@@ -133,9 +133,16 @@ Agents should also refer to directories under `docs/` when they are relevant to 
 - Run `make test-e2e-matrix` when changing CLI options, parser behavior, aliases, output formats, or broad command-pattern coverage.
 - Ensure Bash Completion still works. Use `make test-completion` when commands, subcommands, or options may be affected.
 - If commands, subcommands, or options are added or changed, update completion behavior accordingly.
+- Treat CLI contract changes as multi-surface updates. When commands, subcommands, aliases, or options are added or changed, verify all affected sources together before finishing:
+  - parser behavior and argument structs
+  - command catalog / help text / allowed values
+  - completion sources and completion test fixtures
+  - smoke / matrix / contract tests that cover the changed public behavior
+- Do not mark a CLI change complete after updating only the parser or only the docs. Completion and CLI-facing tests must be checked in the same change when they are in scope.
 - Avoid introducing significant performance regressions. When behavior may affect command cost or traversal size, verify that performance is not materially worse.
 - If commands, subcommands, or options are added or changed, update the generating Zig sources first and then regenerate the user-facing CLI docs:
   - `docs/cli.md`
   - `docs/man/omohi.1`
+- If completion is driven by a hand-maintained source or test fixture rather than generated docs, update that source directly and keep it in sync with the command catalog.
 - Ensure formatting is applied. Use `make fmt-check` at minimum.
 - Prefer `make check` when the change scope is broad enough to affect multiple quality gates.

@@ -59,10 +59,13 @@ case "$*" in
     printf '%s\n' --all
     ;;
   "omohi find " )
-    printf '%s\n' -t --tag -d --date
+    printf '%s\n' -t --tag --empty --no-empty -s --since -u --until --limit --output --field
     ;;
-  "omohi find --d" )
-    printf '%s\n' --date
+  "omohi find --e" )
+    printf '%s\n' --empty
+    ;;
+  "omohi find --n" )
+    printf '%s\n' --no-empty
     ;;
   "omohi tracklist " )
     printf '%s\n' --output --field
@@ -123,8 +126,9 @@ assert_reply "-m --message -t --tag --dry-run" omohi commit ""
 assert_reply "--message" omohi commit --m
 assert_reply "-a --all" omohi add -
 assert_reply "--all" omohi add --
-assert_reply "-t --tag -d --date" omohi find ""
-assert_reply "--date" omohi find --d
+assert_reply "-t --tag --empty --no-empty -s --since -u --until --limit --output --field" omohi find ""
+assert_reply "--empty" omohi find --e
+assert_reply "--no-empty" omohi find --n
 assert_reply "--output --field" omohi tracklist ""
 assert_reply "--output" omohi tracklist --o
 assert_reply "text json" omohi tracklist --output ""
