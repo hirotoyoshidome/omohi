@@ -13,7 +13,7 @@ const commit_options = [_][]const u8{ "-e", "--empty", "-m", "--message", "-t", 
 const add_options = [_][]const u8{ "-a", "--all" };
 const untrack_options = [_][]const u8{"--missing"};
 const tracklist_options = [_][]const u8{ "--output", "--field" };
-const find_options = [_][]const u8{ "-t", "--tag", "-s", "--since", "-u", "--until", "--limit", "--output", "--field" };
+const find_options = [_][]const u8{ "-t", "--tag", "--empty", "--no-empty", "-s", "--since", "-u", "--until", "--limit", "--output", "--field" };
 const show_options = [_][]const u8{ "--output", "--field" };
 const output_values = [_][]const u8{ "text", "json" };
 const tracklist_field_values = [_][]const u8{ "id", "path" };
@@ -486,6 +486,14 @@ test "complete returns reference output and field candidates" {
     const allocator = std.testing.allocator;
 
     {
+        const words = [_][]const u8{ "omohi", "find", "" };
+        var list = try complete(allocator, null, &words, 2);
+        defer freeCandidateList(allocator, &list);
+        try std.testing.expect(containsCandidate(list.items, "--empty"));
+        try std.testing.expect(containsCandidate(list.items, "--no-empty"));
+    }
+
+    {
         const words = [_][]const u8{ "omohi", "tracklist", "--out" };
         var list = try complete(allocator, null, &words, 2);
         defer freeCandidateList(allocator, &list);
@@ -499,6 +507,14 @@ test "complete returns reference output and field candidates" {
         defer freeCandidateList(allocator, &list);
         try std.testing.expectEqual(@as(usize, 1), list.items.len);
         try std.testing.expectEqualStrings("--limit", list.items[0]);
+    }
+
+    {
+        const words = [_][]const u8{ "omohi", "find", "--n" };
+        var list = try complete(allocator, null, &words, 2);
+        defer freeCandidateList(allocator, &list);
+        try std.testing.expectEqual(@as(usize, 1), list.items.len);
+        try std.testing.expectEqualStrings("--no-empty", list.items[0]);
     }
 
     {
