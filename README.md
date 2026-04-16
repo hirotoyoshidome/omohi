@@ -172,6 +172,7 @@ so long-span decision context remains usable, not forgotten.
 - CLI reference: [docs/cli.md](./docs/cli.md)
 - Man page: [`docs/man/omohi.1`](./docs/man/omohi.1)
 - Japanese README: [README.ja.md](./README.ja.md)
+- AI fuzz harness: [tools/ai-fuzz/README.md](./tools/ai-fuzz/README.md)
 
 ## Contributing
 
