@@ -129,12 +129,31 @@ run_omohi_capture() {
   RUN_STDERR="$(cat "$RUN_STDERR_FILE")"
 }
 
+# Builds a shell-safe command line for invoking omohi under a pseudo terminal.
+build_omohi_tty_command() {
+  local command
+  command="$(printf 'HOME=%q %q' "$HOME_DIR" "$OMOHI_BIN")"
+
+  while [ "$#" -gt 0 ]; do
+    command="${command} $(printf '%q' "$1")"
+    shift
+  done
+
+  printf '%s\n' "$command"
+}
+
 run_omohi_capture_tty() {
   RUN_STDOUT_FILE="$TEST_TMP_ROOT/stdout.txt"
   RUN_STDERR_FILE="$TEST_TMP_ROOT/stderr.txt"
 
   set +e
-  script -q /dev/null env HOME="$HOME_DIR" "$OMOHI_BIN" "$@" >"$RUN_STDOUT_FILE" 2>"$RUN_STDERR_FILE"
+  if script --version >/dev/null 2>&1; then
+    local command
+    command="$(build_omohi_tty_command "$@")"
+    script -q -e -c "$command" /dev/null >"$RUN_STDOUT_FILE" 2>"$RUN_STDERR_FILE"
+  else
+    script -q /dev/null env HOME="$HOME_DIR" "$OMOHI_BIN" "$@" >"$RUN_STDOUT_FILE" 2>"$RUN_STDERR_FILE"
+  fi
   RUN_CODE=$?
   set -e
 
