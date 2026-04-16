@@ -42,6 +42,16 @@ Prefer coverage in the following order.
 - Persistence or lock-related invariant when applicable
 - Exit-code regression when CLI-visible behavior changes
 
+## Coverage Gap Review
+When reviewing changes, verify the following for the changed code:
+- Every public function in the changed file has at least one test exercising its success path.
+- Every error return in the changed function has at least one test triggering that error path.
+- If the change introduces a new skip/fallback path in an outcome type, there is a test that exercises that path.
+- If the change touches `store` layer persistence, there is a test that verifies the on-disk state (not just in-memory return values).
+- If the change touches a constrained type, there is a test for both valid and invalid inputs at the boundary.
+- Pure pass-through functions in `ops` that delegate to `store/api` without transformation do not require independent unit tests, provided the underlying `store/api` function is tested. If the `ops` function adds any logic (validation, error mapping, or aggregation), it requires its own tests.
+- State which public functions lack tests and whether that gap is acceptable (e.g., trivial delegation) or needs coverage.
+
 ## Completion Criteria
 - Add or update only the tests needed to protect the changed contract.
 - When a change affects major-command survivability, check whether `main-smoke` should move with it.
