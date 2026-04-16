@@ -1,6 +1,6 @@
 ---
 name: omohi-implementation-cycle
-description: Use this for any implementation task (feature, fix, refactor). Enforces the cycle: implement → test → self-review. Do not declare a task complete until the self-review pass is finished.
+description: Use this for any implementation task (feature, fix, refactor). Enforces the cycle - implement → test → self-review. Do not declare a task complete until the self-review pass is finished.
 ---
 
 # omohi Implementation Cycle
