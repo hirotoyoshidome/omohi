@@ -6,7 +6,7 @@ FMT ?= $(ZIG) fmt
 #   make test OPTIMIZE=ReleaseSafe
 OPTIMIZE ?= Debug
 
-.PHONY: help test test-smoke test-e2e-matrix test-contract test-reliability test-completion perf-baseline fmt fmt-check lint build docs docs-check check clean
+.PHONY: help test test-smoke test-e2e-matrix test-contract test-reliability test-completion test-ai-fuzz perf-baseline fmt fmt-check lint build docs docs-check check clean
 
 help:
 	@echo "Targets:"
@@ -16,6 +16,7 @@ help:
 	@echo "  make test-contract - run CLI exit-code and parser contract checks"
 	@echo "  make test-reliability - run CLI reliability checks for LOCK and staged corruption"
 	@echo "  make test-completion - run shell completion checks"
+	@echo "  make test-ai-fuzz - run Docker harness syntax checks and optional container smoke test"
 	@echo "  make perf-baseline - run scheduled-size performance baseline scenarios"
 	@echo "  make fmt        - format source files (zig fmt .)"
 	@echo "  make fmt-check  - check formatting (zig fmt --check .)"
@@ -43,6 +44,9 @@ test-reliability: build
 
 test-completion:
 	./.github/scripts/omohi_completion.sh
+
+test-ai-fuzz:
+	./tools/ai-fuzz/test_harness.sh
 
 perf-baseline: build
 	./.github/scripts/omohi_perf_baseline.sh ./zig-out/bin/omohi
