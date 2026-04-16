@@ -30,7 +30,7 @@ Before updating a reference file, confirm the following:
 ## Update Procedure
 1. Identify which file is the correct home for the new rule based on the table above.
 2. State the rule concisely. Follow the existing style of the target file.
-3. If the rule originated from a repeated issue, add a one-line note explaining the trigger (following `codex-common-rules.md` §8 Update Policy).
+3. If the rule originated from a repeated issue, add a one-line note explaining the trigger (following `codex-common-rules.md` Update Policy).
 4. Check that the new rule does not contradict existing rules. If it supersedes an old rule, update or remove the old one.
 5. After updating, verify the rule is consistent with related skills and reference documents.
 
