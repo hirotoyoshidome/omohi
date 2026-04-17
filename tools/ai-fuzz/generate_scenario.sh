@@ -9,6 +9,7 @@ AI_PROVIDER="${AI:-auto}"
 REQUESTED_NAME="${NAME:-}"
 REQUEST_PROMPT="${PROMPT:-}"
 FORCE_WRITE="${FORCE:-0}"
+TEST_TAXONOMY_PATH="$REPO_ROOT/docs/test-taxonomy.md"
 
 usage() {
   cat <<'USAGE'
@@ -87,6 +88,37 @@ extract_generated_name() {
   slugify_name "$generated_name"
 }
 
+append_file_block() {
+  local title="$1"
+  local path="$2"
+  local output_file="$3"
+
+  if [ -f "$path" ]; then
+    {
+      printf '\n=== %s ===\n' "$title"
+      cat "$path"
+      printf '\n'
+    } >>"$output_file"
+  fi
+}
+
+append_grep_matches() {
+  local title="$1"
+  local pattern="$2"
+  local path="$3"
+  local output_file="$4"
+
+  if [ -f "$path" ]; then
+    {
+      printf '\n=== %s ===\n' "$title"
+      if ! rg -n "$pattern" "$path"; then
+        printf '(no matches)\n'
+      fi
+      printf '\n'
+    } >>"$output_file"
+  fi
+}
+
 write_prompt() {
   local provider="$1"
   local prompt_file="$2"
@@ -102,11 +134,12 @@ write_prompt() {
   if [ -n "$REQUEST_PROMPT" ]; then
     request_instruction="Follow this requested theme strictly: $REQUEST_PROMPT"
   else
-    request_instruction="Inspect the current implementation context below, choose one useful regression-finding angle that does not just duplicate the smoke scenario, and build a scenario around that angle."
+    request_instruction="Act as a beginner bug hunter. Inspect the current implementation context below, including docs and relevant source files, choose one useful bug-finding angle that does not just duplicate the smoke scenario, and build a scenario around that angle."
   fi
 
   cat >"$prompt_file" <<EOF
 You are generating one AI fuzz scenario for the omohi repository.
+Your role is: beginner bug hunter.
 
 Return output in exactly this format:
 SCENARIO_NAME: <snake_case_name>
@@ -121,9 +154,26 @@ Hard requirements:
 - Include session_name "<name>" and set_step_timeout <seconds>.
 - Keep all file operations inside the container work root using file_* helpers and work_path.
 - Use omohi_exec_expect or shell_exec_expect for intentional failures.
-- Produce a realistic, reproducible scenario that fits the current omohi CLI behavior.
+- Produce a realistic, reproducible scenario that fits the current omohi CLI behavior and current implementation.
+- Read both documentation and relevant source files when choosing the scenario.
 - Do not repeat the exact smoke scenario flow if a different useful angle is available.
 - Keep the scenario focused and compact.
+- Prefer bug-finding over happy-path regression.
+- Target bugs that are plausible under ordinary or slightly-abusive real usage, roughly the kind of issue that maybe 1 out of 30 users could hit.
+- Avoid ultra-niche or purely synthetic corner cases.
+- You may use compact durability-style loops, repeated commands, boundary-value inputs, and lightweight randomized orderings if they remain reproducible and easy to inspect from artifacts.
+- Strong candidate themes include:
+  - boundary values and near-limit inputs
+  - missing files and state transitions
+  - repeated commands and idempotency surprises
+  - order-sensitive workflows
+  - cross-command interactions such as commit + tag + find + show
+  - compact durability or repetition checks inside the harness
+
+Implementation guidance:
+- You are allowed and encouraged to inspect relevant files under docs/ and src/ before deciding.
+- Pay special attention to docs/cli.md and command/store files under src/app/cli/command/, src/ops/, and src/store/api.zig.
+- Favor scenarios that explore behaviors not already well covered by fixed smoke-style tests.
 
 Naming instruction:
 $name_instruction
@@ -135,6 +185,9 @@ Repository context:
 
 === AGENTS.md ===
 $(cat "$REPO_ROOT/AGENTS.md")
+
+=== docs/test-taxonomy.md ===
+$(cat "$TEST_TAXONOMY_PATH")
 
 === tools/ai-fuzz/README.md ===
 $(cat "$SCRIPT_DIR/README.md")
@@ -150,7 +203,18 @@ $(cat "$SCRIPT_DIR/run_session.sh")
 
 === tools/ai-fuzz/test_harness.sh ===
 $(cat "$SCRIPT_DIR/test_harness.sh")
+EOF
 
+  append_file_block "docs/cli.md" "$REPO_ROOT/docs/cli.md" "$prompt_file"
+  append_grep_matches "src/app/cli/command/commit.zig relevant lines" "dry_run|missing|status|tag|empty|commit" "$REPO_ROOT/src/app/cli/command/commit.zig" "$prompt_file"
+  append_grep_matches "src/app/cli/command/add.zig relevant lines" "MissingTrackedFile|missing|untrack --missing|add" "$REPO_ROOT/src/app/cli/command/add.zig" "$prompt_file"
+  append_grep_matches "src/app/cli/command/find.zig relevant lines" "limit|empty|tag|find" "$REPO_ROOT/src/app/cli/command/find.zig" "$prompt_file"
+  append_grep_matches "src/app/cli/command/tag_add.zig relevant lines" "tag|commit" "$REPO_ROOT/src/app/cli/command/tag_add.zig" "$prompt_file"
+  append_grep_matches "src/app/cli/command/tag_rm.zig relevant lines" "tag|commit" "$REPO_ROOT/src/app/cli/command/tag_rm.zig" "$prompt_file"
+  append_grep_matches "src/app/cli/command/tag_ls.zig relevant lines" "tag|commit" "$REPO_ROOT/src/app/cli/command/tag_ls.zig" "$prompt_file"
+  append_grep_matches "src/store/api.zig relevant lines" "missing|status|find|tag|empty_only|non_empty_only|limit|MissingTrackedFile" "$REPO_ROOT/src/store/api.zig" "$prompt_file"
+
+  cat >>"$prompt_file" <<EOF
 Provider hint:
 - You are being called via $provider in non-interactive mode.
 - Your answer will be written directly to a file after the SCENARIO_NAME header is parsed.
