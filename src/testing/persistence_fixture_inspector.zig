@@ -1,6 +1,6 @@
 const std = @import("std");
 
-/// Returns the value for a `key=value` property line when present.
+/// TEST-ONLY: Returns the value for a `key=value` property line when present.
 /// Memory: borrowed.
 /// Lifetime: valid while `bytes` remains valid.
 /// Errors: none.
@@ -16,7 +16,7 @@ pub fn propertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Returns the first non-empty HEAD line from stored file bytes.
+/// TEST-ONLY: Returns the first non-empty HEAD line from stored file bytes.
 /// Memory: borrowed.
 /// Lifetime: valid while `bytes` remains valid.
 /// Errors: none.
@@ -31,7 +31,7 @@ pub fn headValue(bytes: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Reads the single file name inside a fixture directory into the caller-owned buffer.
+/// TEST-ONLY: Reads the single file name inside a fixture directory into the caller-owned buffer.
 /// Memory: borrowed via `out`.
 /// Lifetime: writes into `out` during the call only.
 /// Errors: `MissingFile`, `InvalidEntry`, `TooManyFiles`, `InvalidHashLength`, and directory I/O errors.
@@ -48,7 +48,7 @@ pub fn onlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void 
     @memcpy(out, first.name);
 }
 
-/// Asserts that a fixture directory contains no entries.
+/// TEST-ONLY: Asserts that a fixture directory contains no entries.
 /// Memory: none.
 /// Lifetime: n/a.
 /// Errors: directory I/O errors and test assertion failures.
@@ -61,7 +61,7 @@ pub fn expectDirEmpty(dir: std.fs.Dir, path: []const u8) !void {
     try std.testing.expect((try it.next()) == null);
 }
 
-/// Asserts that a fixture directory contains no file entries.
+/// TEST-ONLY: Asserts that a fixture directory contains no file entries.
 /// Memory: none.
 /// Lifetime: n/a.
 /// Errors: directory I/O errors and `ExpectedNoFiles`.
