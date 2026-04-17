@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const store_api = @import("../store/api.zig");
+const persistence_fixture_inspector = @import("../testing/persistence_fixture_inspector.zig");
 pub const StringList = store_api.StringList;
 
 /// Executes the durable commit transaction: lock -> persist data -> HEAD -> cleanup.
@@ -65,7 +66,7 @@ test "commit writes immutable data and cleans staged" {
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
-    const head_value = store_api.testOnlyHeadValue(head_bytes);
+    const head_value = persistence_fixture_inspector.headValue(head_bytes);
     try std.testing.expect(head_value != null);
     const head_id = head_value.?;
     try std.testing.expectEqualSlices(u8, &commit_id, head_id);
@@ -75,10 +76,10 @@ test "commit writes immutable data and cleans staged" {
     defer allocator.free(commit_path);
     const commit_bytes = try omohi_dir.readFileAlloc(allocator, commit_path, 512);
     defer allocator.free(commit_bytes);
-    const snapshot_value = store_api.testOnlyPropertyValue(commit_bytes, "snapshotId");
+    const snapshot_value = persistence_fixture_inspector.propertyValue(commit_bytes, "snapshotId");
     try std.testing.expect(snapshot_value != null);
     const snapshot_id = snapshot_value.?;
-    const message_value = store_api.testOnlyPropertyValue(commit_bytes, "message");
+    const message_value = persistence_fixture_inspector.propertyValue(commit_bytes, "message");
     try std.testing.expect(message_value != null);
     try std.testing.expectEqualStrings(message, message_value.?);
     try std.testing.expectEqual(@as(usize, 64), snapshot_id.len);
@@ -101,8 +102,8 @@ test "commit writes immutable data and cleans staged" {
     defer allocator.free(stored_object);
     try std.testing.expectEqualStrings(payload, stored_object);
 
-    try store_api.testOnlyExpectDirEmpty(omohi_dir, "staged/entries");
-    try store_api.testOnlyExpectDirEmpty(omohi_dir, "staged/objects");
+    try persistence_fixture_inspector.expectDirEmpty(omohi_dir, "staged/entries");
+    try persistence_fixture_inspector.expectDirEmpty(omohi_dir, "staged/objects");
     try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("LOCK", .{}));
 }
 
@@ -137,15 +138,15 @@ test "empty commit without staged entries writes message-only commit" {
     defer allocator.free(commit_path);
     const commit_bytes = try omohi_dir.readFileAlloc(allocator, commit_path, 512);
     defer allocator.free(commit_bytes);
-    try std.testing.expectEqualStrings("true", store_api.testOnlyPropertyValue(commit_bytes, "empty").?);
+    try std.testing.expectEqualStrings("true", persistence_fixture_inspector.propertyValue(commit_bytes, "empty").?);
 
-    const snapshot_id = store_api.testOnlyPropertyValue(commit_bytes, "snapshotId").?;
+    const snapshot_id = persistence_fixture_inspector.propertyValue(commit_bytes, "snapshotId").?;
     const snapshot_path = try std.fmt.allocPrint(allocator, "snapshots/{s}/{s}", .{ snapshot_id[0..2], snapshot_id });
     defer allocator.free(snapshot_path);
     const snapshot_bytes = try omohi_dir.readFileAlloc(allocator, snapshot_path, 256);
     defer allocator.free(snapshot_bytes);
     try std.testing.expectEqualStrings("entries=\n", snapshot_bytes);
 
-    try store_api.testOnlyExpectDirEmpty(omohi_dir, "staged/entries");
-    try store_api.testOnlyExpectDirEmpty(omohi_dir, "staged/objects");
+    try persistence_fixture_inspector.expectDirEmpty(omohi_dir, "staged/entries");
+    try persistence_fixture_inspector.expectDirEmpty(omohi_dir, "staged/objects");
 }
