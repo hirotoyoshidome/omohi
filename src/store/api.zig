@@ -1,9 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const persistence_fixture_inspector = if (builtin.is_test)
-    @import("./testing/persistence_fixture_inspector.zig")
-else
-    struct {};
+const persistence_fixture_inspector = @import("../testing/persistence_fixture_inspector.zig");
 
 const c = @cImport({
     @cInclude("stdlib.h");
@@ -64,46 +61,6 @@ pub const TrackedEntry = local_tracked.TrackedEntry;
 pub const TrackedList = local_tracked.TrackedList;
 pub const StagedEntry = local_staged.StagedEntry;
 pub const StagedPathList = StringList;
-
-/// TEST-ONLY: Returns the value for a `key=value` property line when present.
-/// Memory: borrowed.
-/// Lifetime: valid while `bytes` remains valid.
-/// Errors: none.
-/// Caller responsibilities: keep `bytes` alive while using the returned slice.
-pub fn testOnlyPropertyValue(bytes: []const u8, key: []const u8) ?[]const u8 {
-    if (!builtin.is_test) unreachable;
-    return persistence_fixture_inspector.propertyValue(bytes, key);
-}
-
-/// TEST-ONLY: Returns the first non-empty HEAD line from stored file bytes.
-/// Memory: borrowed.
-/// Lifetime: valid while `bytes` remains valid.
-/// Errors: none.
-/// Caller responsibilities: keep `bytes` alive while using the returned slice.
-pub fn testOnlyHeadValue(bytes: []const u8) ?[]const u8 {
-    if (!builtin.is_test) unreachable;
-    return persistence_fixture_inspector.headValue(bytes);
-}
-
-/// TEST-ONLY: Reads the single file name inside a fixture directory into the caller-owned buffer.
-/// Memory: borrowed via `out`.
-/// Lifetime: writes into `out` during the call only.
-/// Errors: helper directory I/O and validation errors.
-/// Caller responsibilities: provide a fixed-size output buffer matching the expected file name length.
-pub fn testOnlyOnlyFileNameInDir(dir: std.fs.Dir, path: []const u8, out: *[64]u8) !void {
-    if (!builtin.is_test) unreachable;
-    try persistence_fixture_inspector.onlyFileNameInDir(dir, path, out);
-}
-
-/// TEST-ONLY: Asserts that a fixture directory contains no entries.
-/// Memory: none.
-/// Lifetime: n/a.
-/// Errors: helper directory I/O and assertion errors.
-/// Caller responsibilities: pass an existing directory path.
-pub fn testOnlyExpectDirEmpty(dir: std.fs.Dir, path: []const u8) !void {
-    if (!builtin.is_test) unreachable;
-    try persistence_fixture_inspector.expectDirEmpty(dir, path);
-}
 
 const StagedPathState = struct {
     file_name: constrained_types.StagedFileId,
@@ -3016,9 +2973,9 @@ test "empty commit writes empty snapshot, keeps staged state, and shows zero pat
     defer allocator.free(commit_path);
     const commit_bytes = try omohi_dir.readFileAlloc(allocator, commit_path, 512);
     defer allocator.free(commit_bytes);
-    try std.testing.expectEqualStrings("true", testOnlyPropertyValue(commit_bytes, "empty").?);
+    try std.testing.expectEqualStrings("true", persistence_fixture_inspector.propertyValue(commit_bytes, "empty").?);
 
-    const snapshot_id = testOnlyPropertyValue(commit_bytes, "snapshotId").?;
+    const snapshot_id = persistence_fixture_inspector.propertyValue(commit_bytes, "snapshotId").?;
     const snapshot_path = try std.fmt.allocPrint(allocator, "snapshots/{s}/{s}", .{ snapshot_id[0..2], snapshot_id });
     defer allocator.free(snapshot_path);
     const snapshot_bytes = try omohi_dir.readFileAlloc(allocator, snapshot_path, 256);

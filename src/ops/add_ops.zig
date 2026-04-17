@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const add_store = @import("../store/api.zig");
+const persistence_fixture_inspector = @import("../testing/persistence_fixture_inspector.zig");
 pub const AddOutcome = add_store.AddBatchOutcome;
 
 /// Stages a file by writing staged entry/object data.
@@ -69,7 +70,7 @@ fn stagedEntryIdFrom(
     staged_entries_path: []const u8,
 ) ![]u8 {
     var staged_hash: [64]u8 = undefined;
-    try add_store.testOnlyOnlyFileNameInDir(dir, staged_entries_path, &staged_hash);
+    try persistence_fixture_inspector.onlyFileNameInDir(dir, staged_entries_path, &staged_hash);
     return std.fmt.allocPrint(allocator, "{s}", .{staged_hash});
 }
 
@@ -98,7 +99,7 @@ test "add writes staged entry and staged object using content hash" {
     defer freeAddOutcome(allocator, &outcome);
 
     var staged_object_hash: [64]u8 = undefined;
-    try add_store.testOnlyOnlyFileNameInDir(omohi_dir, "staged/objects", &staged_object_hash);
+    try persistence_fixture_inspector.onlyFileNameInDir(omohi_dir, "staged/objects", &staged_object_hash);
     const object_path = try std.fmt.allocPrint(allocator, "staged/objects/{s}", .{staged_object_hash});
     defer allocator.free(object_path);
     const staged_object = try omohi_dir.readFileAlloc(allocator, object_path, 512);
@@ -154,19 +155,19 @@ test "commit can read staged data created by add" {
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
-    const commit_id = add_store.testOnlyHeadValue(head_bytes) orelse return error.MissingCommitId;
+    const commit_id = persistence_fixture_inspector.headValue(head_bytes) orelse return error.MissingCommitId;
 
     const commit_path = try std.fmt.allocPrint(allocator, "commits/{s}/{s}", .{ commit_id[0..2], commit_id });
     defer allocator.free(commit_path);
     const commit_bytes = try omohi_dir.readFileAlloc(allocator, commit_path, 512);
     defer allocator.free(commit_bytes);
-    const snapshot_id = add_store.testOnlyPropertyValue(commit_bytes, "snapshotId") orelse return error.MissingSnapshotId;
+    const snapshot_id = persistence_fixture_inspector.propertyValue(commit_bytes, "snapshotId") orelse return error.MissingSnapshotId;
 
     const snapshot_path = try std.fmt.allocPrint(allocator, "snapshots/{s}/{s}", .{ snapshot_id[0..2], snapshot_id });
     defer allocator.free(snapshot_path);
     const snapshot_bytes = try omohi_dir.readFileAlloc(allocator, snapshot_path, 1024);
     defer allocator.free(snapshot_bytes);
-    const entries_value = add_store.testOnlyPropertyValue(snapshot_bytes, "entries") orelse return error.MissingContentHash;
+    const entries_value = persistence_fixture_inspector.propertyValue(snapshot_bytes, "entries") orelse return error.MissingContentHash;
     const separator = std.mem.lastIndexOfScalar(u8, entries_value, ':') orelse return error.MissingContentHash;
     if (separator + 1 >= entries_value.len) return error.MissingContentHash;
     const hash_value = entries_value[separator + 1 ..];
