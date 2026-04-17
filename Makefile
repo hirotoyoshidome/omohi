@@ -6,7 +6,7 @@ FMT ?= $(ZIG) fmt
 #   make test OPTIMIZE=ReleaseSafe
 OPTIMIZE ?= Debug
 
-.PHONY: help test test-smoke test-e2e-matrix test-contract test-reliability test-completion perf-baseline fmt fmt-check lint build docs docs-check check clean
+.PHONY: help test test-smoke test-e2e-matrix test-contract test-reliability test-completion test-ai-fuzz ai-fuzz ai-fuzz-generate clean-ai-fuzz perf-baseline fmt fmt-check lint build docs docs-check check clean
 
 help:
 	@echo "Targets:"
@@ -16,6 +16,10 @@ help:
 	@echo "  make test-contract - run CLI exit-code and parser contract checks"
 	@echo "  make test-reliability - run CLI reliability checks for LOCK and staged corruption"
 	@echo "  make test-completion - run shell completion checks"
+	@echo "  make test-ai-fuzz - run Docker harness syntax checks and keep smoke-test artifacts"
+	@echo "  make ai-fuzz SCENARIO=tools/ai-fuzz/scenarios/<name>.sh - run one AI fuzz scenario"
+	@echo "  make ai-fuzz-generate [AI=auto|codex|claude] [NAME=<name>] [PROMPT='...'] [FORCE=1] - generate one AI fuzz scenario"
+	@echo "  make clean-ai-fuzz - remove retained AI fuzz artifacts"
 	@echo "  make perf-baseline - run scheduled-size performance baseline scenarios"
 	@echo "  make fmt        - format source files (zig fmt .)"
 	@echo "  make fmt-check  - check formatting (zig fmt --check .)"
@@ -43,6 +47,22 @@ test-reliability: build
 
 test-completion:
 	./.github/scripts/omohi_completion.sh
+
+test-ai-fuzz:
+	./tools/ai-fuzz/test_harness.sh
+
+ai-fuzz:
+	@if [ -z "$(SCENARIO)" ]; then \
+		echo "usage: make ai-fuzz SCENARIO=tools/ai-fuzz/scenarios/<name>.sh" >&2; \
+		exit 2; \
+	fi
+	./tools/ai-fuzz/run_session.sh "$(SCENARIO)"
+
+ai-fuzz-generate:
+	AI="$(AI)" NAME="$(NAME)" PROMPT="$(PROMPT)" FORCE="$(FORCE)" ./tools/ai-fuzz/generate_scenario.sh
+
+clean-ai-fuzz:
+	rm -rf .artifacts/ai-fuzz
 
 perf-baseline: build
 	./.github/scripts/omohi_perf_baseline.sh ./zig-out/bin/omohi

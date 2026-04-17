@@ -171,6 +171,7 @@ omohi show <commitId>
 - CLI リファレンス: [docs/cli.md](./docs/cli.md)
 - man ページ: [`docs/man/omohi.1`](./docs/man/omohi.1)
 - English README: [README.md](./README.md)
+- AI fuzz ハーネス: [tools/ai-fuzz/README.md](./tools/ai-fuzz/README.md)
 
 ## コントリビューション
 
