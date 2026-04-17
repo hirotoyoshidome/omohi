@@ -23,6 +23,7 @@ const _store_local_version = @import("store/local/version.zig");
 const _store_local_journal = @import("store/local/journal.zig");
 // testing
 const _testing_persistence_fixture_inspector = @import("testing/persistence_fixture_inspector.zig");
+const _testing_store_api_test_support = @import("testing/store_api_test_support.zig");
 
 // ops tests
 const _ops_track = @import("ops/track_ops.zig");
@@ -75,6 +76,7 @@ test "load modules" {
     _ = _store_local_version;
     _ = _store_local_journal;
     _ = _testing_persistence_fixture_inspector;
+    _ = _testing_store_api_test_support;
     _ = _ops_track;
     _ = _ops_add;
     _ = _ops_rm;
