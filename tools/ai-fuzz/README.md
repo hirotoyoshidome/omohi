@@ -90,5 +90,17 @@ Review `SUMMARY.md` first, then inspect the per-step logs.
 ## Test
 
 ```sh
-tools/ai-fuzz/test_harness.sh
+make test-ai-fuzz
+```
+
+`make test-ai-fuzz` keeps its smoke-test artifacts under:
+
+```text
+.artifacts/ai-fuzz/<timestamp>-test-harness-basic_session/
+```
+
+Remove retained harness artifacts with:
+
+```sh
+make clean-ai-fuzz
 ```

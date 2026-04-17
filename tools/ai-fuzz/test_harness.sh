@@ -9,8 +9,9 @@ bash -n "$SCRIPT_DIR/container_runner.sh"
 bash -n "$SCRIPT_DIR/examples/basic_session.sh"
 
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  OUTPUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/omohi-ai-fuzz-test.XXXXXX")"
-  trap 'rm -rf "$OUTPUT_DIR"' EXIT
+  OUTPUT_ROOT="$SCRIPT_DIR/../../.artifacts/ai-fuzz"
+  TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
+  OUTPUT_DIR="$OUTPUT_ROOT/${TIMESTAMP}-test-harness-basic_session"
 
   "$SCRIPT_DIR/run_session.sh" \
     --output-dir "$OUTPUT_DIR" \
