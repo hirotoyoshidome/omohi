@@ -468,13 +468,13 @@ write_summary() {
           if ($(i) == "stderr") stderr = $(i + 2)
         }
         printf "### %s\n\n", title
-        printf -- "- ID: `%s`\n", id
-        printf -- "- Severity: `%s`\n", severity
-        printf -- "- Classification: `%s`\n", classification
-        printf -- "- Trigger Step: `%s`\n", trigger
-        printf -- "- Why: %s\n", why
-        printf -- "- stdout: `%s`\n", stdout
-        printf -- "- stderr: `%s`\n\n", stderr
+        printf "- ID: `%s`\n", id
+        printf "- Severity: `%s`\n", severity
+        printf "- Classification: `%s`\n", classification
+        printf "- Trigger Step: `%s`\n", trigger
+        printf "- Why: %s\n", why
+        printf "- stdout: `%s`\n", stdout
+        printf "- stderr: `%s`\n\n", stderr
       }
     ' "$FINDINGS_NDJSON"
   } > "$OUTPUT_DIR/SUMMARY.md"
