@@ -29,6 +29,7 @@ Prefer coverage in the following order.
 - Prefer tests that validate durability invariants such as atomic write order, logical deletion behavior, and `HEAD` update ordering where relevant.
 - Verify ownership and cleanup responsibilities when allocation or staged objects are involved.
 - Mark test-only helper functions with `// TEST-ONLY: <reason>`.
+- Put shared test-only helpers in `src/testing/` instead of exposing them through production Facades.
 - For omohi CI placement:
   - Keep `main-smoke` focused on the must-not-break major-command path after merge to `main`.
   - Put broad CLI pattern coverage in the scheduled `e2e-matrix` job, including option combinations, aliases, parser boundaries, output modes, no-op behavior, and regression scenarios.

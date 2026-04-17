@@ -18,6 +18,7 @@ Always preserve the following.
 - Put procedures (use cases and operations) in `ops/`.
 - Put shared persistence logic in `store/storage/`.
 - Put local file operations in `store/local/`.
+- Put shared test-only fixtures and inspectors in `src/testing/`.
 - Keep `store/api.zig` focused on public functions and do not leak internal details.
 
 ## Audit Procedure
@@ -36,4 +37,5 @@ If there is a violation, do not proceed with implementation; revise it into a sp
 
 ## Tests And Consistency
 - When splitting responsibilities or moving files, update the related tests at the same time.
+- Prefer `src/testing/` over `store/api.zig` when a helper exists only for tests.
 - Leave a short note describing the reason for the change and the design intent.
