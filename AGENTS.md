@@ -30,10 +30,12 @@ Agents should also refer to directories under `docs/` when they are relevant to 
   - `app/cli` (argument interpretation, output formatting)
   - `ops` (procedural operations)
   - `store` (core: persistence + constraints)
+  - `testing` (shared test-only fixtures and support; outside the production dependency graph)
 - Dependency direction:
-  - `app/cli -> ops -> store`
+  - Production code: `app/cli -> ops -> store`
   - `store` must not depend on upper layers.
   - `ops` must not depend on other `ops`; shared behavior used by multiple ops must move into `store`.
+  - Production code must not depend on `testing`; `testing` may depend on lower-layer internals for tests only.
 - Expose `store` only through the Facade (`store/api.zig`).
 - Avoid unnecessary abstraction; abstract only where required.
 - DI policy:
@@ -111,6 +113,8 @@ Agents should also refer to directories under `docs/` when they are relevant to 
 - Highest priority: `store` layer.
 - `ops` / `app/cli`: minimum required tests.
 - Focus on destructive operations, ID generation, persistence consistency, and exit-code regressions.
+- Put shared test-only fixtures, inspectors, and failure-injection helpers under `src/testing/`.
+- Do not expose test-only helpers through `store/api.zig`; keep the Facade focused on production knowledge required by `ops`.
 - CI split:
   - `main-smoke`: keep this limited to the must-not-break CLI path for major commands after merge to `main`.
   - `e2e-matrix`: use this for broad CLI pattern coverage, including option combinations, aliases, parser boundaries, output modes, no-op cases, and regression scenarios.

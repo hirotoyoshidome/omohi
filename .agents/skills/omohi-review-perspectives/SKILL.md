@@ -76,7 +76,8 @@ Review in the following order.
 - `store/api.zig` is a Facade and must not leak internal types, constants, or version information from `store`. When adding a new `pub` to `api.zig`, confirm that it is required by the `ops` layer.
 - `pub fn` in the `ops` layer is limited to functions called from `app/cli`. Helpers used only within `ops` must not be `pub`.
 - When an internal helper is needed by multiple modules, do not simply make it `pub` in place. Move it to the appropriate layer (e.g., an internal module in `store`) and expose it through the correct boundary.
-- Test-only `pub` declarations must be guarded by `builtin.is_test` conditional compilation so they are not exposed in production builds. Reference: `store/api.zig` `persistence_fixture_inspector` pattern.
+- Shared test-only helpers should live under `src/testing/` rather than becoming `pub` on `store/api.zig`.
+- If a Facade file accumulates test-only helpers or fixtures, move them to `src/testing/` and keep the Facade production-focused.
 
 ### Documentation Freshness
 - When CLI commands, subcommands, options, or aliases change, modify the generating Zig source first and regenerate `docs/cli.md` and `docs/man/omohi.1`. Do not hand-edit generated artifacts alone.
