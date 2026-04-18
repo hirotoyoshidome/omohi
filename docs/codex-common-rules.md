@@ -25,11 +25,13 @@ The intended workflow is "a normal request message + a reference to this documen
 * Procedures (use cases and operations) must be placed under `ops`.
 * Persistence and storage responsibilities must be placed under `store/storage` (or another explicitly designated persistence directory).
 * Intermediate responsibilities such as local file operations must be separated into an explicitly designated directory (for example, `store/local`).
+* Shared test-only fixtures, inspectors, and failure-injection helpers must be placed under `src/testing`.
 * Do not mix implementations with different responsibilities in the same file.
 
 ### 3.4 Public Boundary (Keep `api` Thin)
 * Keep `api.zig` focused on public functions, and do not expose internal constants, internal types, or internal version information.
 * Definitions that do not need to be exposed to upper layers must be hidden in internal modules.
+* Do not expose test-only helpers through `api.zig`; import shared test support from `src/testing` in tests instead.
 * Do not treat conceptually different versions as the same constant (for example, a persistence version and a journal version).
 
 ### 3.5 Naming and Concept Consistency
