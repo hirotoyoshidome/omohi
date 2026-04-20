@@ -1,21 +1,5 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const persistence_fixture_inspector = @import("../testing/persistence_fixture_inspector.zig");
-const store_api_test_support = if (builtin.is_test)
-    @import("../testing/store_api_test_support.zig")
-else
-    struct {
-        pub const CommitFailurePoint = enum {
-            none,
-            before_write_snapshot,
-            before_write_commit,
-            before_move_objects,
-            before_write_head,
-            before_reset_staged,
-        };
-
-        pub fn maybeFailCommitAt(_: @This().CommitFailurePoint) !void {}
-    };
 
 const c = @cImport({
     @cInclude("stdlib.h");
@@ -45,7 +29,14 @@ const local_timestamp = @import("./storage/time/local_timestamp.zig");
 const constrained_types = @import("./object/constrained_types.zig");
 
 const max_add_file_size = 64 * 1024 * 1024;
-const CommitFailurePoint = store_api_test_support.CommitFailurePoint;
+const CommitFailurePoint = enum {
+    none,
+    before_write_snapshot,
+    before_write_commit,
+    before_move_objects,
+    before_write_head,
+    before_reset_staged,
+};
 
 pub const StatusKind = api_types.StatusKind;
 pub const StatusEntry = api_types.StatusEntry;
@@ -62,10 +53,10 @@ pub const FindEmptyFilter = enum {
     empty_only,
     non_empty_only,
 };
-pub const TrackedEntry = local_tracked.TrackedEntry;
+const TrackedEntry = local_tracked.TrackedEntry;
 pub const TrackedList = local_tracked.TrackedList;
-pub const StagedEntry = local_staged.StagedEntry;
-pub const StagedPathList = StringList;
+const StagedEntry = local_staged.StagedEntry;
+const StagedPathList = StringList;
 
 const StagedPathState = struct {
     file_name: constrained_types.StagedFileId,
@@ -199,7 +190,7 @@ pub fn add(
 /// Memory: owned result, free with freeAddBatchOutcome
 /// Lifetime: valid until caller frees the returned lists
 /// Errors: lock/I/O errors plus constrained type and FileTooLarge errors
-pub fn addDirectory(
+fn addDirectory(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     absolute_paths: []const []const u8,
@@ -918,7 +909,18 @@ pub fn commit(
 
 // TEST-ONLY: Injects a commit failure at the selected step when running in tests.
 fn maybeFailCommitAt(point: CommitFailurePoint) !void {
-    try store_api_test_support.maybeFailCommitAt(point);
+    if (!builtin.is_test) return;
+
+    const commit_test_support = @import("../testing/store_api_test_support.zig");
+    const support_point: commit_test_support.CommitFailurePoint = switch (point) {
+        .none => .none,
+        .before_write_snapshot => .before_write_snapshot,
+        .before_write_commit => .before_write_commit,
+        .before_move_objects => .before_move_objects,
+        .before_write_head => .before_write_head,
+        .before_reset_staged => .before_reset_staged,
+    };
+    try commit_test_support.maybeFailCommitAt(support_point);
 }
 
 // Parses the optional persisted empty-commit marker and defaults to false for legacy commit records.
@@ -1832,6 +1834,11 @@ fn loadTrackedOrEmpty(
     };
 }
 
+// TEST-ONLY: Shared fixture helpers used by `store/api.zig` tests.
+const fixture_inspector = if (builtin.is_test) @import("../testing/persistence_fixture_inspector.zig") else struct {};
+// TEST-ONLY: Shared store fixture and failure-injection helpers used by `store/api.zig` tests.
+const test_support = if (builtin.is_test) @import("../testing/store_api_test_support.zig") else struct {};
+
 test "nextUniqueCommitIdentity advances createdAt when commit id already exists" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1841,10 +1848,10 @@ test "nextUniqueCommitIdentity advances createdAt when commit id already exists"
     defer omohi_dir.close();
 
     const persistence = PersistenceLayout.init(omohi_dir);
-    const snapshot_id = store_api_test_support.filledHexId('a');
+    const snapshot_id = test_support.filledHexId('a');
     const original_created_at = "2026-04-12T00:00:00.000Z";
     const existing_commit_id = hash.commitIdFrom(snapshot_id[0..], "memo", original_created_at);
-    try store_api_test_support.writeFindFixtureCommit(allocator, omohi_dir, existing_commit_id[0..], "memo", original_created_at, false);
+    try test_support.writeFindFixtureCommit(allocator, omohi_dir, existing_commit_id[0..], "memo", original_created_at, false);
 
     const start_millis = try local_date.parseUtcIso8601Millis(original_created_at);
     const identity = try nextUniqueCommitIdentityFromMillis(allocator, persistence, snapshot_id[0..], "memo", start_millis);
@@ -1861,13 +1868,13 @@ test "commitIdList returns commit ids in descending order" {
     defer omohi_dir.close();
 
     try initializeVersionForFirstTrack(allocator, omohi_dir);
-    const tracked_path = try store_api_test_support.addTestFileForCommit(tmp.dir, allocator, "a.txt", "one");
+    const tracked_path = try test_support.addTestFileForCommit(tmp.dir, allocator, "a.txt", "one");
     defer allocator.free(tracked_path);
     _ = try track(allocator, omohi_dir, tracked_path);
     try add(allocator, omohi_dir, tracked_path);
     const first = try commit(allocator, omohi_dir, "first", false);
 
-    allocator.free(try store_api_test_support.addTestFileForCommit(tmp.dir, allocator, "a.txt", "two"));
+    allocator.free(try test_support.addTestFileForCommit(tmp.dir, allocator, "a.txt", "two"));
     try add(allocator, omohi_dir, tracked_path);
     const newer = try commit(allocator, omohi_dir, "second", false);
 
@@ -1914,9 +1921,9 @@ test "stagedPathList returns staged paths sorted ascending" {
     defer omohi_dir.close();
 
     try initializeVersionForFirstTrack(allocator, omohi_dir);
-    const b_path = try store_api_test_support.addTestFileForCommit(tmp.dir, allocator, "b.txt", "b");
+    const b_path = try test_support.addTestFileForCommit(tmp.dir, allocator, "b.txt", "b");
     defer allocator.free(b_path);
-    const a_path = try store_api_test_support.addTestFileForCommit(tmp.dir, allocator, "a.txt", "a");
+    const a_path = try test_support.addTestFileForCommit(tmp.dir, allocator, "a.txt", "a");
     defer allocator.free(a_path);
     _ = try track(allocator, omohi_dir, b_path);
     _ = try track(allocator, omohi_dir, a_path);
@@ -2222,7 +2229,7 @@ test "add uses absolute path when generating staged file id" {
     const staged_file_id = hash.stagedFileIdFrom(absolute_path, &content_hash);
 
     var staged_entry_id: [64]u8 = undefined;
-    try persistence_fixture_inspector.onlyFileNameInDir(omohi_dir, "staged/entries", &staged_entry_id);
+    try fixture_inspector.onlyFileNameInDir(omohi_dir, "staged/entries", &staged_entry_id);
     try std.testing.expectEqualSlices(u8, staged_file_id[0..], staged_entry_id[0..]);
 
     const stored_path = try std.fmt.allocPrint(allocator, "staged/entries/{s}", .{staged_file_id[0..]});
@@ -2256,8 +2263,8 @@ test "add does not stage file when content matches HEAD" {
     _ = try commit(allocator, omohi_dir, "first", false);
     try add(allocator, omohi_dir, absolute_path);
 
-    try persistence_fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/entries");
-    try persistence_fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/objects");
+    try fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/entries");
+    try fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/objects");
 }
 
 test "add removes staged entry when file returns to HEAD content" {
@@ -2291,8 +2298,8 @@ test "add removes staged entry when file returns to HEAD content" {
     source_file.close();
     try add(allocator, omohi_dir, absolute_path);
 
-    try persistence_fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/entries");
-    try persistence_fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/objects");
+    try fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/entries");
+    try fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/objects");
 }
 
 test "add reconstructs target staged entry after entry corruption" {
@@ -2370,7 +2377,7 @@ test "addDirectory reuses one staged object for duplicate content in same batch"
     try std.testing.expectEqual(@as(usize, 2), outcome.staged_paths.items.len);
 
     var object_hash: [64]u8 = undefined;
-    try persistence_fixture_inspector.onlyFileNameInDir(omohi_dir, "staged/objects", &object_hash);
+    try fixture_inspector.onlyFileNameInDir(omohi_dir, "staged/objects", &object_hash);
 }
 
 test "addDirectory reuses committed object without rewriting staged object" {
@@ -2413,7 +2420,7 @@ test "addDirectory reuses committed object without rewriting staged object" {
     try std.testing.expectEqual(@as(usize, 1), outcome.staged_paths.items.len);
     try std.testing.expectEqualStrings(b_path, outcome.staged_paths.items[0]);
     try std.testing.expectEqual(@as(usize, 1), outcome.skipped_no_change);
-    try persistence_fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/objects");
+    try fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/objects");
 }
 
 test "addDirectory counts missing tracked file separately" {
@@ -2664,7 +2671,7 @@ test "find sorts by createdAt desc and applies the requested limit" {
 
     const id_chars = [_]u8{ 'f', 'e', 'd', 'c', 'b', 'a', '9', '8', '7', '6', '0' };
     for (id_chars, 0..) |id_ch, idx| {
-        const commit_id = store_api_test_support.filledHexId(id_ch);
+        const commit_id = test_support.filledHexId(id_ch);
         const created_at = try std.fmt.allocPrint(
             allocator,
             "2026-03-{d:0>2}T00:00:00.000Z",
@@ -2674,7 +2681,7 @@ test "find sorts by createdAt desc and applies the requested limit" {
         const message = try std.fmt.allocPrint(allocator, "msg-{d}", .{idx + 1});
         defer allocator.free(message);
 
-        try store_api_test_support.writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], message, created_at, false);
+        try test_support.writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], message, created_at, false);
     }
 
     var list = try find(allocator, omohi_dir, null, .all, null, null, 10);
@@ -2683,7 +2690,7 @@ test "find sorts by createdAt desc and applies the requested limit" {
     try std.testing.expectEqual(@as(usize, 10), list.items.len);
     try std.testing.expectEqualStrings("msg-11", list.items[0].message);
     try std.testing.expectEqualStrings("msg-2", list.items[9].message);
-    try std.testing.expectEqualSlices(u8, store_api_test_support.filledHexId('0')[0..], list.items[0].commit_id.asSlice());
+    try std.testing.expectEqualSlices(u8, test_support.filledHexId('0')[0..], list.items[0].commit_id.asSlice());
     try std.testing.expectEqual(@as(usize, 29), list.items[0].local_created_at.len);
 }
 
@@ -2695,16 +2702,16 @@ test "find applies tag and time range filters as intersection" {
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
 
-    const commit_a = store_api_test_support.filledHexId('a');
-    const commit_b = store_api_test_support.filledHexId('b');
+    const commit_a = test_support.filledHexId('a');
+    const commit_b = test_support.filledHexId('b');
 
-    try store_api_test_support.writeFindFixtureCommit(allocator, omohi_dir, commit_a[0..], "release-a", "2026-03-10T18:00:00.000Z", false);
-    try store_api_test_support.writeFindFixtureCommit(allocator, omohi_dir, commit_b[0..], "prod-b", "2026-03-07T01:00:00.000Z", false);
+    try test_support.writeFindFixtureCommit(allocator, omohi_dir, commit_a[0..], "release-a", "2026-03-10T18:00:00.000Z", false);
+    try test_support.writeFindFixtureCommit(allocator, omohi_dir, commit_b[0..], "prod-b", "2026-03-07T01:00:00.000Z", false);
 
     const release_tags = [_][]const u8{"release"};
     const prod_tags = [_][]const u8{"prod"};
-    try store_api_test_support.writeFindFixtureTags(allocator, omohi_dir, commit_a[0..], &release_tags);
-    try store_api_test_support.writeFindFixtureTags(allocator, omohi_dir, commit_b[0..], &prod_tags);
+    try test_support.writeFindFixtureTags(allocator, omohi_dir, commit_a[0..], &release_tags);
+    try test_support.writeFindFixtureTags(allocator, omohi_dir, commit_b[0..], &prod_tags);
 
     var by_tag = try find(allocator, omohi_dir, "release", .all, null, null, 10);
     defer freeCommitSummaryList(allocator, &by_tag);
@@ -2755,8 +2762,8 @@ test "find returns local createdAt in user timezone" {
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
 
-    const commit_id = store_api_test_support.filledHexId('a');
-    try store_api_test_support.writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], "tokyo", "2026-03-10T18:00:00.123Z", false);
+    const commit_id = test_support.filledHexId('a');
+    try test_support.writeFindFixtureCommit(allocator, omohi_dir, commit_id[0..], "tokyo", "2026-03-10T18:00:00.123Z", false);
 
     var list = try find(allocator, omohi_dir, null, .all, null, null, 10);
     defer freeCommitSummaryList(allocator, &list);
@@ -2773,11 +2780,11 @@ test "find filters empty and non-empty commits" {
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
 
-    const empty_commit = store_api_test_support.filledHexId('a');
-    const normal_commit = store_api_test_support.filledHexId('b');
+    const empty_commit = test_support.filledHexId('a');
+    const normal_commit = test_support.filledHexId('b');
 
-    try store_api_test_support.writeFindFixtureCommit(allocator, omohi_dir, empty_commit[0..], "empty", "2026-03-11T00:00:00.000Z", true);
-    try store_api_test_support.writeFindFixtureCommit(allocator, omohi_dir, normal_commit[0..], "normal", "2026-03-10T00:00:00.000Z", false);
+    try test_support.writeFindFixtureCommit(allocator, omohi_dir, empty_commit[0..], "empty", "2026-03-11T00:00:00.000Z", true);
+    try test_support.writeFindFixtureCommit(allocator, omohi_dir, normal_commit[0..], "normal", "2026-03-10T00:00:00.000Z", false);
 
     var empty_only = try find(allocator, omohi_dir, null, .empty_only, null, null, 10);
     defer freeCommitSummaryList(allocator, &empty_only);
@@ -2798,19 +2805,19 @@ test "find applies empty filter together with tag and time range" {
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
 
-    const empty_release = store_api_test_support.filledHexId('a');
-    const non_empty_release = store_api_test_support.filledHexId('b');
-    const empty_prod = store_api_test_support.filledHexId('c');
+    const empty_release = test_support.filledHexId('a');
+    const non_empty_release = test_support.filledHexId('b');
+    const empty_prod = test_support.filledHexId('c');
 
-    try store_api_test_support.writeFindFixtureCommit(allocator, omohi_dir, empty_release[0..], "empty-release", "2026-03-10T18:00:00.000Z", true);
-    try store_api_test_support.writeFindFixtureCommit(allocator, omohi_dir, non_empty_release[0..], "non-empty-release", "2026-03-10T18:00:00.000Z", false);
-    try store_api_test_support.writeFindFixtureCommit(allocator, omohi_dir, empty_prod[0..], "empty-prod", "2026-03-07T01:00:00.000Z", true);
+    try test_support.writeFindFixtureCommit(allocator, omohi_dir, empty_release[0..], "empty-release", "2026-03-10T18:00:00.000Z", true);
+    try test_support.writeFindFixtureCommit(allocator, omohi_dir, non_empty_release[0..], "non-empty-release", "2026-03-10T18:00:00.000Z", false);
+    try test_support.writeFindFixtureCommit(allocator, omohi_dir, empty_prod[0..], "empty-prod", "2026-03-07T01:00:00.000Z", true);
 
     const release_tags = [_][]const u8{"release"};
     const prod_tags = [_][]const u8{"prod"};
-    try store_api_test_support.writeFindFixtureTags(allocator, omohi_dir, empty_release[0..], &release_tags);
-    try store_api_test_support.writeFindFixtureTags(allocator, omohi_dir, non_empty_release[0..], &release_tags);
-    try store_api_test_support.writeFindFixtureTags(allocator, omohi_dir, empty_prod[0..], &prod_tags);
+    try test_support.writeFindFixtureTags(allocator, omohi_dir, empty_release[0..], &release_tags);
+    try test_support.writeFindFixtureTags(allocator, omohi_dir, non_empty_release[0..], &release_tags);
+    try test_support.writeFindFixtureTags(allocator, omohi_dir, empty_prod[0..], &prod_tags);
 
     const created_release = try local_date.parseUtcIso8601Millis("2026-03-10T18:00:00.000Z");
     var list = try find(allocator, omohi_dir, "release", .empty_only, created_release, created_release, 10);
@@ -2828,7 +2835,7 @@ test "tagList returns CommitNotFound when commit does not exist" {
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
 
-    const missing_commit = store_api_test_support.filledHexId('a');
+    const missing_commit = test_support.filledHexId('a');
     try std.testing.expectError(error.CommitNotFound, tagList(allocator, omohi_dir, missing_commit[0..]));
 }
 
@@ -2840,7 +2847,7 @@ test "show returns CommitNotFound when commit does not exist" {
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
 
-    const missing_commit = store_api_test_support.filledHexId('c');
+    const missing_commit = test_support.filledHexId('c');
     try std.testing.expectError(error.CommitNotFound, show(allocator, omohi_dir, missing_commit[0..]));
 }
 
@@ -2853,7 +2860,7 @@ test "empty commit writes empty snapshot, keeps staged state, and shows zero pat
     defer omohi_dir.close();
 
     try initializeVersionForFirstTrack(allocator, omohi_dir);
-    try store_api_test_support.writeCommitFixtureStage(allocator, omohi_dir, "empty-note", 'a', "payload");
+    try test_support.writeCommitFixtureStage(allocator, omohi_dir, "empty-note", 'a', "payload");
 
     const commit_id = try commit(allocator, omohi_dir, "memo", true);
 
@@ -2861,9 +2868,9 @@ test "empty commit writes empty snapshot, keeps staged state, and shows zero pat
     defer allocator.free(commit_path);
     const commit_bytes = try omohi_dir.readFileAlloc(allocator, commit_path, 512);
     defer allocator.free(commit_bytes);
-    try std.testing.expectEqualStrings("true", persistence_fixture_inspector.propertyValue(commit_bytes, "empty").?);
+    try std.testing.expectEqualStrings("true", fixture_inspector.propertyValue(commit_bytes, "empty").?);
 
-    const snapshot_id = persistence_fixture_inspector.propertyValue(commit_bytes, "snapshotId").?;
+    const snapshot_id = fixture_inspector.propertyValue(commit_bytes, "snapshotId").?;
     const snapshot_path = try std.fmt.allocPrint(allocator, "snapshots/{s}/{s}", .{ snapshot_id[0..2], snapshot_id });
     defer allocator.free(snapshot_path);
     const snapshot_bytes = try omohi_dir.readFileAlloc(allocator, snapshot_path, 256);
@@ -2889,8 +2896,8 @@ test "tagList returns empty when commit exists and has no tags" {
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
 
-    const existing_commit = store_api_test_support.filledHexId('b');
-    try store_api_test_support.writeFindFixtureCommit(
+    const existing_commit = test_support.filledHexId('b');
+    try test_support.writeFindFixtureCommit(
         allocator,
         omohi_dir,
         existing_commit[0..],
@@ -2959,7 +2966,7 @@ test "commit rejects staged entry when corresponding object is missing" {
     defer omohi_dir.close();
     try initializeVersionForFirstTrack(allocator, omohi_dir);
 
-    try store_api_test_support.writeCommitFixtureStage(allocator, omohi_dir, "dangling-entry", 'a', "payload");
+    try test_support.writeCommitFixtureStage(allocator, omohi_dir, "dangling-entry", 'a', "payload");
     try omohi_dir.deleteFile("staged/objects/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
     try std.testing.expectError(error.StagedObjectMissing, commit(allocator, omohi_dir, "msg", false));
@@ -2975,10 +2982,10 @@ test "commit releases lock and keeps retryable state when failing before HEAD wr
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
     try initializeVersionForFirstTrack(allocator, omohi_dir);
-    try store_api_test_support.writeCommitFixtureStage(allocator, omohi_dir, "retry-entry", 'b', "payload");
+    try test_support.writeCommitFixtureStage(allocator, omohi_dir, "retry-entry", 'b', "payload");
 
-    store_api_test_support.setCommitFailurePoint(.before_write_head);
-    defer store_api_test_support.clearCommitFailurePoint();
+    test_support.setCommitFailurePoint(.before_write_head);
+    defer test_support.clearCommitFailurePoint();
 
     try std.testing.expectError(error.TestInjectedFailure, commit(allocator, omohi_dir, "msg", false));
     try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("LOCK", .{}));
@@ -2989,15 +2996,15 @@ test "commit releases lock and keeps retryable state when failing before HEAD wr
     defer allocator.free(stored_object);
     try std.testing.expectEqualStrings("payload", stored_object);
 
-    store_api_test_support.clearCommitFailurePoint();
+    test_support.clearCommitFailurePoint();
 
     _ = try commit(allocator, omohi_dir, "msg", false);
 
     const head_bytes = try omohi_dir.readFileAlloc(allocator, "HEAD", 256);
     defer allocator.free(head_bytes);
     try std.testing.expect(parseHeadCommitId(head_bytes) != null);
-    try persistence_fixture_inspector.expectDirEmpty(omohi_dir, "staged/entries");
-    try persistence_fixture_inspector.expectDirEmpty(omohi_dir, "staged/objects");
+    try fixture_inspector.expectDirEmpty(omohi_dir, "staged/entries");
+    try fixture_inspector.expectDirEmpty(omohi_dir, "staged/objects");
 }
 
 test "commit can recover after failure between HEAD write and staged reset" {
@@ -3008,10 +3015,10 @@ test "commit can recover after failure between HEAD write and staged reset" {
     var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
     defer omohi_dir.close();
     try initializeVersionForFirstTrack(allocator, omohi_dir);
-    try store_api_test_support.writeCommitFixtureStage(allocator, omohi_dir, "recover-entry", 'c', "payload");
+    try test_support.writeCommitFixtureStage(allocator, omohi_dir, "recover-entry", 'c', "payload");
 
-    store_api_test_support.setCommitFailurePoint(.before_reset_staged);
-    defer store_api_test_support.clearCommitFailurePoint();
+    test_support.setCommitFailurePoint(.before_reset_staged);
+    defer test_support.clearCommitFailurePoint();
 
     try std.testing.expectError(error.TestInjectedFailure, commit(allocator, omohi_dir, "msg", false));
     try std.testing.expectError(error.FileNotFound, omohi_dir.openFile("LOCK", .{}));
@@ -3021,7 +3028,7 @@ test "commit can recover after failure between HEAD write and staged reset" {
     const head_before_retry = parseHeadCommitId(head_bytes_before_retry) orelse return error.InvalidHead;
     try std.testing.expectEqual(@as(usize, 64), head_before_retry.len);
 
-    store_api_test_support.clearCommitFailurePoint();
+    test_support.clearCommitFailurePoint();
 
     const retried_commit_id = try commit(allocator, omohi_dir, "msg", false);
     try std.testing.expect(!std.mem.eql(u8, head_before_retry, retried_commit_id.asSlice()));
@@ -3030,6 +3037,6 @@ test "commit can recover after failure between HEAD write and staged reset" {
     defer allocator.free(head_bytes_after_retry);
     const head_after_retry = parseHeadCommitId(head_bytes_after_retry) orelse return error.InvalidHead;
     try std.testing.expectEqualSlices(u8, retried_commit_id.asSlice(), head_after_retry);
-    try persistence_fixture_inspector.expectDirEmpty(omohi_dir, "staged/entries");
-    try persistence_fixture_inspector.expectDirEmpty(omohi_dir, "staged/objects");
+    try fixture_inspector.expectDirEmpty(omohi_dir, "staged/entries");
+    try fixture_inspector.expectDirEmpty(omohi_dir, "staged/objects");
 }
