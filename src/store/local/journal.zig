@@ -1,11 +1,11 @@
 const std = @import("std");
 
 const atomic_write = @import("../storage/atomic_write.zig");
-const StringList = @import("../object/api_types.zig").StringList;
 const PersistenceLayout = @import("../object/persistence_layout.zig").PersistenceLayout;
 
 const max_journal_file_size = 64 * 1024 * 1024;
 const journal_format_version: u32 = 1;
+const JournalLineList = std.array_list.Managed([]u8);
 
 pub const JournalRecord = struct {
     ts_utc: [24]u8,
@@ -53,8 +53,8 @@ pub fn readLatestLines(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
     limit: usize,
-) !StringList {
-    var out = StringList.init(allocator);
+) !JournalLineList {
+    var out = JournalLineList.init(allocator);
     errdefer freeStringList(allocator, &out);
 
     if (limit == 0) return out;
@@ -65,7 +65,7 @@ pub fn readLatestLines(
     };
     defer journal_dir.close();
 
-    var names = StringList.init(allocator);
+    var names = JournalLineList.init(allocator);
     defer freeStringList(allocator, &names);
 
     var it = journal_dir.iterate();
@@ -92,7 +92,7 @@ pub fn readLatestLines(
 }
 
 // Releases the owned journal lines stored in the list.
-pub fn freeStringList(allocator: std.mem.Allocator, list: *StringList) void {
+pub fn freeStringList(allocator: std.mem.Allocator, list: *JournalLineList) void {
     for (list.items) |item| allocator.free(item);
     list.deinit();
 }
@@ -128,7 +128,7 @@ fn isNameDescLessThan(_: void, lhs: []u8, rhs: []u8) bool {
 // Appends newest lines from one journal file into the output list until the limit is reached.
 fn appendLatestLinesFromBytes(
     allocator: std.mem.Allocator,
-    out: *StringList,
+    out: *JournalLineList,
     bytes: []const u8,
     limit: usize,
 ) !void {
