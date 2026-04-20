@@ -20,7 +20,6 @@ const local_directory_tree_files = @import("./local/directory_tree_files.zig");
 const local_version = @import("./local/version.zig");
 const version_guard = @import("./storage/version_guard.zig");
 const ContentEntry = @import("./object/content_entry.zig").ContentEntry;
-const api_types = @import("./object/api_types.zig");
 const hash = @import("./object/hash.zig");
 const lock = @import("./storage/lock.zig");
 const utc = @import("./storage/time/utc.zig");
@@ -38,16 +37,94 @@ const CommitFailurePoint = enum {
     before_reset_staged,
 };
 
-pub const StatusKind = api_types.StatusKind;
-pub const StatusEntry = api_types.StatusEntry;
-pub const StatusList = api_types.StatusList;
-pub const AddBatchOutcome = api_types.AddBatchOutcome;
-pub const RmBatchOutcome = api_types.RmBatchOutcome;
-pub const CommitSummary = api_types.CommitSummary;
-pub const CommitSummaryList = api_types.CommitSummaryList;
-pub const StringList = api_types.StringList;
-pub const TagList = api_types.TagList;
-pub const CommitDetails = api_types.CommitDetails;
+/// Enumerates the store-visible tracking state for one tracked path.
+pub const StatusKind = enum {
+    untracked,
+    tracked,
+    changed,
+    missing,
+    staged,
+    committed,
+};
+
+/// Describes one tracked path and its current store-visible status.
+pub const StatusEntry = struct {
+    id: constrained_types.TrackedFileId,
+    path: []u8,
+    status: StatusKind,
+};
+
+/// Owns a status entry list returned by `status`.
+pub const StatusList = std.array_list.Managed(StatusEntry);
+
+/// Collects the results of batched add processing.
+pub const AddBatchOutcome = struct {
+    staged_paths: std.array_list.Managed([]u8),
+    skipped_untracked: usize,
+    skipped_missing: usize,
+    skipped_non_regular: usize,
+    skipped_already_staged: usize,
+    skipped_no_change: usize,
+
+    /// Initializes an empty add batch outcome that owns collected staged paths.
+    pub fn init(allocator: std.mem.Allocator) AddBatchOutcome {
+        return .{
+            .staged_paths = std.array_list.Managed([]u8).init(allocator),
+            .skipped_untracked = 0,
+            .skipped_missing = 0,
+            .skipped_non_regular = 0,
+            .skipped_already_staged = 0,
+            .skipped_no_change = 0,
+        };
+    }
+};
+
+/// Collects the results of batched rm processing.
+pub const RmBatchOutcome = struct {
+    unstaged_paths: std.array_list.Managed([]u8),
+    skipped_untracked: usize,
+    skipped_not_staged: usize,
+    skipped_non_regular: usize,
+
+    /// Initializes an empty rm batch outcome that owns collected unstaged paths.
+    pub fn init(allocator: std.mem.Allocator) RmBatchOutcome {
+        return .{
+            .unstaged_paths = std.array_list.Managed([]u8).init(allocator),
+            .skipped_untracked = 0,
+            .skipped_not_staged = 0,
+            .skipped_non_regular = 0,
+        };
+    }
+};
+
+/// Summarizes one commit result for `find`.
+pub const CommitSummary = struct {
+    commit_id: constrained_types.CommitId,
+    message: []u8,
+    created_at: []u8,
+    local_created_at: []u8,
+};
+
+/// Owns commit summary entries returned by `find`.
+pub const CommitSummaryList = std.array_list.Managed(CommitSummary);
+
+/// Owns a list of heap-allocated UTF-8 strings.
+pub const StringList = std.array_list.Managed([]u8);
+
+/// Owns a list of heap-allocated tag strings.
+pub const TagList = StringList;
+
+/// Carries commit metadata, entries, and tags for `show`.
+pub const CommitDetails = struct {
+    commit_id: constrained_types.CommitId,
+    snapshot_id: constrained_types.SnapshotId,
+    message: []u8,
+    created_at: []u8,
+    entries: std.array_list.Managed(ContentEntry),
+    tags: TagList,
+};
+
+/// Selects which empty-commit states `find` should include.
 pub const FindEmptyFilter = enum {
     all,
     empty_only,
