@@ -23,7 +23,7 @@ pub fn fromParsedRequest(
             .missing = args.missing,
         }),
         .add => |args| try makeEvent(allocator, "add", .{ .all = args.all, .paths = args.paths }),
-        .rm => |args| try makeEvent(allocator, "rm", .{ .paths = args.paths }),
+        .rm => |args| try makeEvent(allocator, "rm", .{ .all = args.all, .paths = args.paths }),
         .commit => |args| blk: {
             if (args.dry_run) break :blk null;
             break :blk try makeEvent(allocator, "commit", .{
