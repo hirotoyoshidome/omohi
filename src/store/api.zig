@@ -385,6 +385,24 @@ pub fn rmTree(
     return outcome;
 }
 
+/// Removes all current staged entries.
+/// Memory: owned result, free with freeRmBatchOutcome
+/// Lifetime: valid until caller frees the returned lists
+/// Errors: lock/I/O errors plus staged entry validation errors
+pub fn rmAllStaged(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+) !RmBatchOutcome {
+    try lock.acquireLock(omohi_dir);
+    defer lock.releaseLock(omohi_dir);
+
+    const persistence = PersistenceLayout.init(omohi_dir);
+    var raw_entries = try loadRawStagedEntriesOrEmpty(allocator, persistence);
+    defer if (raw_entries) |*list| local_staged.freeRawEntries(allocator, list);
+
+    return rmAllStagedLocked(allocator, persistence, raw_entries);
+}
+
 /// Registers an absolute file path under tracked/<TrackedFileId>.
 /// Memory: borrowed (temporary allocations only)
 /// Errors: error{AlreadyTracked} plus lock/I/O and constrained type errors.
@@ -1229,6 +1247,40 @@ fn rmPathsLocked(
         try outcome.unstaged_paths.append(try allocator.dupe(u8, absolute_path));
     }
 
+    return outcome;
+}
+
+// Removes every valid raw staged entry while the caller already holds the store lock.
+fn rmAllStagedLocked(
+    allocator: std.mem.Allocator,
+    persistence: PersistenceLayout,
+    raw_entries: ?local_staged.RawEntryList,
+) !RmBatchOutcome {
+    var outcome = RmBatchOutcome.init(allocator);
+    errdefer freeRmBatchOutcome(allocator, &outcome);
+
+    var staged_hash_counts = std.AutoHashMap([64]u8, usize).init(allocator);
+    defer staged_hash_counts.deinit();
+
+    if (raw_entries) |list| {
+        for (list.items) |entry| {
+            const content_hash = entry.content_hash orelse continue;
+            try incrementHashCount(&staged_hash_counts, content_hash);
+        }
+
+        for (list.items) |entry| {
+            const absolute_path = entry.path orelse continue;
+            const content_hash = entry.content_hash orelse continue;
+            const file_name = try constrained_types.StagedFileId.init(entry.file_name);
+
+            _ = try constrained_types.TrackedFilePath.init(absolute_path);
+            try local_trash.moveStagedEntryToTrash(allocator, persistence, file_name.asSlice());
+            try decrementHashCountAndTrashObject(allocator, persistence, &staged_hash_counts, content_hash);
+            try outcome.unstaged_paths.append(try allocator.dupe(u8, absolute_path));
+        }
+    }
+
+    std.mem.sort([]u8, outcome.unstaged_paths.items, {}, isStringAscLessThan);
     return outcome;
 }
 
@@ -2736,6 +2788,79 @@ test "rmTree removes staged files recursively and counts non-regular entries" {
 
     try std.testing.expectEqual(@as(usize, 2), outcome.unstaged_paths.items.len);
     try std.testing.expectEqual(@as(usize, 1), outcome.skipped_non_regular);
+}
+
+test "rmAllStaged removes all staged entries and staged objects" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    {
+        var file = try source_dir.createFile("a.txt", .{});
+        defer file.close();
+        try file.writeAll("a");
+    }
+    {
+        var file = try source_dir.createFile("b.txt", .{});
+        defer file.close();
+        try file.writeAll("b");
+    }
+
+    const a_path = try source_dir.realpathAlloc(allocator, "a.txt");
+    defer allocator.free(a_path);
+    const b_path = try source_dir.realpathAlloc(allocator, "b.txt");
+    defer allocator.free(b_path);
+
+    _ = try track(allocator, omohi_dir, a_path);
+    _ = try track(allocator, omohi_dir, b_path);
+    try add(allocator, omohi_dir, a_path);
+    try add(allocator, omohi_dir, b_path);
+
+    var outcome = try rmAllStaged(allocator, omohi_dir);
+    defer freeRmBatchOutcome(allocator, &outcome);
+
+    try std.testing.expectEqual(@as(usize, 2), outcome.unstaged_paths.items.len);
+    try fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/entries");
+    try fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/objects");
+}
+
+test "rmAllStaged unstages a deleted source file" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    {
+        var file = try source_dir.createFile("deleted.txt", .{});
+        defer file.close();
+        try file.writeAll("deleted");
+    }
+
+    const absolute_path = try source_dir.realpathAlloc(allocator, "deleted.txt");
+    defer allocator.free(absolute_path);
+
+    _ = try track(allocator, omohi_dir, absolute_path);
+    try add(allocator, omohi_dir, absolute_path);
+    try source_dir.deleteFile("deleted.txt");
+
+    var outcome = try rmAllStaged(allocator, omohi_dir);
+    defer freeRmBatchOutcome(allocator, &outcome);
+
+    try std.testing.expectEqual(@as(usize, 1), outcome.unstaged_paths.items.len);
+    try std.testing.expectEqualStrings(absolute_path, outcome.unstaged_paths.items[0]);
+    try fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/entries");
+    try fixture_inspector.expectDirHasNoFiles(omohi_dir, "staged/objects");
 }
 
 test "find sorts by createdAt desc and applies the requested limit" {
