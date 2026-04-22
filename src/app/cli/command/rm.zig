@@ -12,6 +12,14 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.RmArgs) !command_typ
     var omohi = try environment.openOmohiDir(allocator, false);
     defer omohi.deinit(allocator);
 
+    if (args.all) {
+        var outcome = try rm_ops.rmAllStaged(allocator, omohi.dir);
+        defer rm_ops.freeRmOutcome(allocator, &outcome);
+
+        const output = try presenter.rmMultiResult(allocator, &outcome);
+        return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
+    }
+
     if (args.paths.len == 1) {
         const absolute_path = try path_resolver.resolveAbsolutePath(allocator, args.paths[0]);
         defer allocator.free(absolute_path);

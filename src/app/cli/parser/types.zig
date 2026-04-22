@@ -43,6 +43,7 @@ pub const AddArgs = struct {
 };
 
 pub const RmArgs = struct {
+    all: bool,
     paths: []const []const u8,
 };
 

@@ -230,10 +230,51 @@ fn parseAdd(args: []const []const u8) !types.ParsedRequest {
     return .{ .add = .{ .all = false, .paths = paths } };
 }
 
-// Parses `rm <path>...`.
+// Parses `rm <path>...` and `rm -a|--all`.
 fn parseRm(args: []const []const u8) !types.ParsedRequest {
-    if (args.len == 0) return error.MissingArgument;
-    return .{ .rm = .{ .paths = args } };
+    var all = false;
+    var idx: usize = 0;
+    var stop_option = false;
+    var positional_start: ?usize = null;
+
+    while (idx < args.len) : (idx += 1) {
+        const token = args[idx];
+
+        if (!stop_option and scan.isDoubleDash(token)) {
+            stop_option = true;
+            if (positional_start == null) positional_start = idx + 1;
+            continue;
+        }
+
+        if (!stop_option) {
+            if (scan.parseLongOption(token)) |opt| {
+                if (scan.equalsIgnoreAsciiCase(opt.key, "all")) {
+                    if (opt.value != null) return error.UnknownOption;
+                    if (all) return error.UnexpectedArgument;
+                    all = true;
+                    continue;
+                }
+                return error.UnknownOption;
+            }
+
+            if (scan.isShortOption(token, 'a')) {
+                if (all) return error.UnexpectedArgument;
+                all = true;
+                continue;
+            }
+        }
+
+        if (positional_start == null) positional_start = idx;
+    }
+
+    const paths = if (positional_start) |start| args[start..] else &.{};
+    if (all) {
+        if (paths.len != 0) return error.UnexpectedArgument;
+        return .{ .rm = .{ .all = true, .paths = paths } };
+    }
+
+    if (paths.len == 0) return error.MissingArgument;
+    return .{ .rm = .{ .all = false, .paths = paths } };
 }
 
 // Parses `journal` with no extra arguments.
@@ -613,6 +654,7 @@ test "parser accepts multiple positional paths for track add and rm" {
 
         switch (parsed) {
             .rm => |args| {
+                try std.testing.expect(!args.all);
                 try std.testing.expectEqual(@as(usize, 2), args.paths.len);
                 try std.testing.expectEqualStrings("./a.md", args.paths[0]);
                 try std.testing.expectEqualStrings("./b.md", args.paths[1]);
@@ -675,6 +717,61 @@ test "parser rejects add all mixed with paths" {
     try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &.{ "add", "-a", "./a.md" }));
     try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &.{ "add", "--all", "./a.md" }));
     try std.testing.expectError(error.UnknownOption, parseArgs(allocator, &.{ "add", "--all=value" }));
+}
+
+test "parser accepts rm all options" {
+    const allocator = std.testing.allocator;
+
+    {
+        const argv = [_][]const u8{ "rm", "-a" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .rm => |args| {
+                try std.testing.expect(args.all);
+                try std.testing.expectEqual(@as(usize, 0), args.paths.len);
+            },
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        const argv = [_][]const u8{ "rm", "--all" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .rm => |args| {
+                try std.testing.expect(args.all);
+                try std.testing.expectEqual(@as(usize, 0), args.paths.len);
+            },
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        const argv = [_][]const u8{ "rm", "--", "--all" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .rm => |args| {
+                try std.testing.expect(!args.all);
+                try std.testing.expectEqual(@as(usize, 1), args.paths.len);
+                try std.testing.expectEqualStrings("--all", args.paths[0]);
+            },
+            else => return error.UnexpectedResult,
+        }
+    }
+}
+
+test "parser rejects rm all mixed with paths" {
+    const allocator = std.testing.allocator;
+
+    try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &.{ "rm", "-a", "./a.md" }));
+    try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &.{ "rm", "--all", "./a.md" }));
+    try std.testing.expectError(error.UnknownOption, parseArgs(allocator, &.{ "rm", "--all=value" }));
 }
 
 test "parser accepts untrack id and missing option" {
