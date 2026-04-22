@@ -59,7 +59,15 @@ _omohi_complete() {
     status|version|journal)
       return 0
       ;;
-    help|untrack|rm|show)
+    rm)
+      if [[ -z "${cur}" || "${cur}" == -* ]]; then
+        _omohi_collect_candidates
+        return 0
+      fi
+      _omohi_collect_candidates
+      return 0
+      ;;
+    help|untrack|show)
       _omohi_collect_candidates
       return 0
       ;;
