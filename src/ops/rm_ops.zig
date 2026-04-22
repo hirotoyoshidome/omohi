@@ -20,6 +20,15 @@ pub fn rm(
     return rmDirectory(allocator, omohi_dir, absolute_path);
 }
 
+/// Removes all current staged entries.
+pub fn rmAllStaged(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+) !RmOutcome {
+    try store_api.ensureStoreVersion(allocator, omohi_dir);
+    return store_api.rmAllStaged(allocator, omohi_dir);
+}
+
 // Releases all owned unstaged path strings stored in the outcome.
 pub fn freeRmOutcome(allocator: std.mem.Allocator, outcome: *RmOutcome) void {
     store_api.freeRmBatchOutcome(allocator, outcome);
@@ -146,4 +155,46 @@ test "rm removes staged files recursively and skips non-staged files under direc
     try std.testing.expectEqual(@as(usize, 1), outcome.unstaged_paths.items.len);
     try std.testing.expectEqual(@as(usize, 1), outcome.skipped_not_staged);
     try std.testing.expectEqual(@as(usize, 1), outcome.skipped_untracked);
+}
+
+test "rmAllStaged removes every staged entry" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+    var source_dir = try tmp.dir.makeOpenPath("src", .{ .iterate = true, .access_sub_paths = true });
+    defer source_dir.close();
+    var omohi_dir = try tmp.dir.makeOpenPath(".omohi", .{ .iterate = true, .access_sub_paths = true });
+    defer omohi_dir.close();
+    try store_api.initializeVersionForFirstTrack(allocator, omohi_dir);
+
+    const a_path = try createTestFileAndResolve(source_dir, allocator, "a.txt", "a");
+    defer allocator.free(a_path);
+    const b_path = try createTestFileAndResolve(source_dir, allocator, "b.txt", "b");
+    defer allocator.free(b_path);
+
+    _ = try store_api.track(allocator, omohi_dir, a_path);
+    _ = try store_api.track(allocator, omohi_dir, b_path);
+    try store_api.add(allocator, omohi_dir, a_path);
+    try store_api.add(allocator, omohi_dir, b_path);
+
+    var outcome = try rmAllStaged(allocator, omohi_dir);
+    defer freeRmOutcome(allocator, &outcome);
+
+    try std.testing.expectEqual(@as(usize, 2), outcome.unstaged_paths.items.len);
+    try std.testing.expectEqual(.tracked, try store_api.statusForTrackedPath(allocator, omohi_dir, a_path));
+    try std.testing.expectEqual(.tracked, try store_api.statusForTrackedPath(allocator, omohi_dir, b_path));
+}
+
+// Creates one test file under the fixture directory and returns its owned absolute path.
+fn createTestFileAndResolve(
+    dir: std.fs.Dir,
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    contents: []const u8,
+) ![]u8 {
+    var file = try dir.createFile(path, .{});
+    defer file.close();
+    try file.writeAll(contents);
+    return try dir.realpathAlloc(allocator, path);
 }

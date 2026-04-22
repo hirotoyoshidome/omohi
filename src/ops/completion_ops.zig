@@ -11,6 +11,7 @@ const top_level_aliases = [_][]const u8{ "-h", "--help", "-v", "--version" };
 const tag_commands = [_][]const u8{ "ls", "add", "rm" };
 const commit_options = [_][]const u8{ "-e", "--empty", "-m", "--message", "-t", "--tag", "--dry-run" };
 const add_options = [_][]const u8{ "-a", "--all" };
+const rm_options = [_][]const u8{ "-a", "--all" };
 const untrack_options = [_][]const u8{"--missing"};
 const tracklist_options = [_][]const u8{ "--output", "--field" };
 const find_options = [_][]const u8{ "-t", "--tag", "--empty", "--no-empty", "-s", "--since", "-u", "--until", "--limit", "--output", "--field" };
@@ -29,7 +30,7 @@ pub fn requiresStore(words: []const []const u8, index: usize) bool {
     const command = words[1];
     if (std.mem.eql(u8, command, "untrack")) return index == 2;
     if (std.mem.eql(u8, command, "show")) return showExpectsCommitId(words, index);
-    if (std.mem.eql(u8, command, "rm")) return index == 2;
+    if (std.mem.eql(u8, command, "rm")) return index == 2 and !isOptionLike(words[index]);
     if (std.mem.eql(u8, command, "find")) return expectsValue(words, index, "--tag", "-t");
     if (std.mem.eql(u8, command, "commit")) return expectsValue(words, index, "--tag", "-t");
 
@@ -145,6 +146,8 @@ pub fn complete(
         return out;
     }
     if (std.mem.eql(u8, command, "rm") and index == 2) {
+        try appendFilteredStatic(allocator, &out, &rm_options, current);
+        if (isOptionLike(current)) return out;
         if (maybe_omohi_dir) |omohi_dir| {
             var paths = try loadStagedPaths(allocator, omohi_dir);
             defer freeCandidateList(allocator, &paths);
@@ -319,6 +322,11 @@ fn expectsValue(words: []const []const u8, index: usize, long: []const u8, short
     return std.mem.eql(u8, prev, long) or (short.len != 0 and std.mem.eql(u8, prev, short));
 }
 
+// Reports whether the current completion token should be treated as an option prefix.
+fn isOptionLike(token: []const u8) bool {
+    return std.mem.startsWith(u8, token, "-");
+}
+
 // Reports whether the current completion slot is the positional commit id for `show`.
 fn showExpectsCommitId(words: []const []const u8, index: usize) bool {
     if (index < 2 or index >= words.len) return false;
@@ -413,7 +421,7 @@ test "complete returns commit ids for show and tags for tag rm" {
     }
 }
 
-test "complete returns staged paths for rm" {
+test "complete returns rm options and staged paths" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -435,20 +443,35 @@ test "complete returns staged paths for rm" {
     var list = try complete(allocator, omohi_dir, &words, 2);
     defer freeCandidateList(allocator, &list);
 
-    try std.testing.expectEqual(@as(usize, 2), list.items.len);
-    try std.testing.expectEqualStrings(a_path, list.items[0]);
-    try std.testing.expectEqualStrings(b_path, list.items[1]);
-}
-
-test "complete returns add options" {
-    const allocator = std.testing.allocator;
-    const words = [_][]const u8{ "omohi", "add", "" };
-    var list = try complete(allocator, null, &words, 2);
-    defer freeCandidateList(allocator, &list);
-
-    try std.testing.expectEqual(@as(usize, 2), list.items.len);
+    try std.testing.expectEqual(@as(usize, 4), list.items.len);
     try std.testing.expectEqualStrings("-a", list.items[0]);
     try std.testing.expectEqualStrings("--all", list.items[1]);
+    try std.testing.expectEqualStrings(a_path, list.items[2]);
+    try std.testing.expectEqualStrings(b_path, list.items[3]);
+}
+
+test "complete returns add and rm options" {
+    const allocator = std.testing.allocator;
+
+    {
+        const words = [_][]const u8{ "omohi", "add", "" };
+        var list = try complete(allocator, null, &words, 2);
+        defer freeCandidateList(allocator, &list);
+
+        try std.testing.expectEqual(@as(usize, 2), list.items.len);
+        try std.testing.expectEqualStrings("-a", list.items[0]);
+        try std.testing.expectEqualStrings("--all", list.items[1]);
+    }
+
+    {
+        const words = [_][]const u8{ "omohi", "rm", "-" };
+        var list = try complete(allocator, null, &words, 2);
+        defer freeCandidateList(allocator, &list);
+
+        try std.testing.expectEqual(@as(usize, 2), list.items.len);
+        try std.testing.expectEqualStrings("-a", list.items[0]);
+        try std.testing.expectEqualStrings("--all", list.items[1]);
+    }
 }
 
 test "complete returns journal for top-level command and help topic" {

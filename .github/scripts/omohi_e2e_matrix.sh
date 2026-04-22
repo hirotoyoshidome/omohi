@@ -464,6 +464,62 @@ case_030_rm_mixed_with_non_staged() {
   assert_contains "$RUN_STDERR" "Staged file not found: $FILE_B" "rm should report the non-staged file"
 }
 
+case_030_rm_all_short_option() {
+  setup_two_tracked_files
+  run_omohi_capture add "$FILE_A" "$FILE_B"
+  assert_eq "0" "$RUN_CODE" "add should succeed"
+
+  run_omohi_capture rm -a
+  assert_eq "0" "$RUN_CODE" "rm -a should succeed"
+  assert_contains "$RUN_STDOUT" "Unstaged 2 file(s)." "rm -a should report all unstaged files"
+  assert_path_listed "$RUN_STDOUT" "$FILE_A"
+  assert_path_listed "$RUN_STDOUT" "$FILE_B"
+}
+
+case_030_rm_all_long_option_with_deleted_source() {
+  local file
+  file="$(make_note_file "note.txt" $'first version\n')"
+  run_omohi_capture track "$file"
+  assert_eq "0" "$RUN_CODE" "track should succeed"
+  run_omohi_capture add "$file"
+  assert_eq "0" "$RUN_CODE" "add should succeed"
+  rm -f "$file"
+
+  run_omohi_capture rm --all
+  assert_eq "0" "$RUN_CODE" "rm --all should succeed for deleted staged source"
+  assert_contains "$RUN_STDOUT" "Unstaged 1 file(s)." "rm --all should report one unstaged file"
+  assert_path_listed "$RUN_STDOUT" "$file"
+}
+
+case_030_rm_all_mixed_with_path() {
+  local file
+  file="$(make_note_file "note.txt" $'first version\n')"
+  run_omohi_capture track "$file"
+  assert_eq "0" "$RUN_CODE" "track should succeed"
+
+  run_omohi_capture rm -a "$file"
+  assert_eq "2" "$RUN_CODE" "rm -a with explicit path should fail"
+  assert_contains "$RUN_STDERR" "Unexpected argument." "rm -a with path should report usage error"
+}
+
+case_030_rm_all_with_value() {
+  run_omohi_capture rm --all=value
+  assert_eq "2" "$RUN_CODE" "rm --all=value should fail"
+  assert_contains "$RUN_STDERR" "Unknown option." "rm --all=value should report unknown option"
+}
+
+case_030_rm_double_dash_positional() {
+  local tracked
+  tracked="$(make_note_file "tracked.txt" $'tracked\n')"
+  run_omohi_capture track "$tracked"
+  assert_eq "0" "$RUN_CODE" "track should initialize store"
+
+  run_omohi_capture rm -- --all
+  assert_eq "4" "$RUN_CODE" "rm should treat --all as positional path after --"
+  assert_contains "$RUN_STDERR" "Tracked file not found:" "rm should treat --all as path"
+  assert_contains "$RUN_STDERR" "/--all" "rm should resolve the positional path"
+}
+
 case_031_commit_short_message_option() {
   local file
   file="$(make_note_file "note.txt" $'first version\n')"
@@ -1192,6 +1248,11 @@ run_case "rm directory recursive" case_027_rm_directory_recursive
 run_case "rm tracked but not staged" case_028_rm_tracked_but_not_staged
 run_case "rm untracked path" case_029_rm_untracked_path
 run_case "rm mixed staged and non-staged" case_030_rm_mixed_with_non_staged
+run_case "rm all short option" case_030_rm_all_short_option
+run_case "rm all long option with deleted source" case_030_rm_all_long_option_with_deleted_source
+run_case "rm all mixed with path" case_030_rm_all_mixed_with_path
+run_case "rm all with value" case_030_rm_all_with_value
+run_case "rm positional after double dash" case_030_rm_double_dash_positional
 run_case "commit short message option" case_031_commit_short_message_option
 run_case "commit long message option" case_032_commit_long_message_option
 run_case "commit with multiple tags" case_033_commit_with_multiple_tags

@@ -9,7 +9,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 | `track` | `track <path>...` | Register one file or recursively track files under a directory. |
 | `untrack` | `untrack (<trackedFileId> | --missing)` | Remove one tracked target by ID or clear all missing tracked targets. |
 | `add` | `add [-a|--all] [<path>...]` | Stage one tracked file, a tracked directory subtree, or all changed tracked files. |
-| `rm` | `rm <path>...` | Remove one staged file or recursively unstage staged files under a directory. |
+| `rm` | `rm [-a|--all] [<path>...]` | Remove one staged file, recursively unstage staged files under a directory, or unstage all staged files. |
 | `commit` | `commit -m <message> [-t <tag>] [--dry-run] [--empty]` | Create a commit from staged entries. |
 | `status` | `status` | Show tracked and staged state overview. |
 | `tracklist` | `tracklist [--output <text|json>] [--field <id|path>]...` | List tracked targets with tracked file IDs. |
@@ -80,18 +80,21 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 
 ### rm
 
-- Usage: `omohi rm <path>...`
-- Summary: Remove one staged file or recursively unstage staged files under a directory.
+- Usage: `omohi rm [-a|--all] [<path>...]`
+- Summary: Remove one staged file, recursively unstage staged files under a directory, or unstage all staged files.
 - Positionals:
-  - `path` (required, repeatable): Path to the staged file or directory to unstage.
+  - `path` (optional, repeatable): Path to the staged file or directory to unstage.
 - Options:
-  - None
+  - `-a`, `--all` (optional): Unstage all currently staged files.
 - Examples:
   - `omohi rm /tmp/note.txt`
   - `omohi rm .`
   - `omohi rm ./*.md`
+  - `omohi rm -a`
 - Notes:
   - When a directory is given, staged files under it are unstaged recursively.
+  - `-a` and `--all` unstage every currently staged file.
+  - `-a` and explicit paths cannot be combined.
   - Untracked, non-staged, and non-regular entries are skipped.
   - Shell-expanded multiple paths are accepted and processed in order.
 
