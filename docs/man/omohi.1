@@ -132,17 +132,23 @@ Shell\-expanded multiple paths are accepted and processed in order.
 .SS rm
 .TP
 .B Summary
-Remove one staged file or recursively unstage staged files under a directory.
+Remove one staged file, recursively unstage staged files under a directory, or unstage all staged files.
 .TP
 .B Usage
 .nf
-omohi rm <path>...
+omohi rm [\-a|\-\-all] [<path>...]
 .fi
 .TP
 .B Positionals
 .RS 4
 .B path
-required, repeatable: Path to the staged file or directory to unstage.
+optional, repeatable: Path to the staged file or directory to unstage.
+.RE
+.TP
+.B Options
+.RS 4
+.B \-a, \-\-all
+optional: Unstage all currently staged files.
 .RE
 .TP
 .B Examples
@@ -150,11 +156,18 @@ required, repeatable: Path to the staged file or directory to unstage.
 omohi rm /tmp/note.txt
 omohi rm .
 omohi rm ./*.md
+omohi rm \-a
 .fi
 .TP
 .B Notes
 .RS 4
 When a directory is given, staged files under it are unstaged recursively.
+.RE
+.RS 4
+`\-a` and `\-\-all` unstage every currently staged file.
+.RE
+.RS 4
+`\-a` and explicit paths cannot be combined.
 .RE
 .RS 4
 Untracked, non\-staged, and non\-regular entries are skipped.

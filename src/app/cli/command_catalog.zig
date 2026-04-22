@@ -105,15 +105,19 @@ pub const all = [_]CommandSpec{
     },
     .{
         .name = "rm",
-        .usage = "rm <path>...",
-        .summary = "Remove one staged file or recursively unstage staged files under a directory.",
+        .usage = "rm [-a|--all] [<path>...]",
+        .summary = "Remove one staged file, recursively unstage staged files under a directory, or unstage all staged files.",
         .positionals = &.{
-            .{ .name = "path", .required = true, .repeatable = true, .description = "Path to the staged file or directory to unstage." },
+            .{ .name = "path", .required = false, .repeatable = true, .description = "Path to the staged file or directory to unstage." },
         },
-        .options = &.{},
-        .examples = &.{ "omohi rm /tmp/note.txt", "omohi rm .", "omohi rm ./*.md" },
+        .options = &.{
+            .{ .long = "all", .short = 'a', .value_name = null, .required = false, .repeatable = false, .description = "Unstage all currently staged files." },
+        },
+        .examples = &.{ "omohi rm /tmp/note.txt", "omohi rm .", "omohi rm ./*.md", "omohi rm -a" },
         .notes = &.{
             "When a directory is given, staged files under it are unstaged recursively.",
+            "`-a` and `--all` unstage every currently staged file.",
+            "`-a` and explicit paths cannot be combined.",
             "Untracked, non-staged, and non-regular entries are skipped.",
             "Shell-expanded multiple paths are accepted and processed in order.",
         },
@@ -460,6 +464,7 @@ fn assertDelimitedValuesMatchEnum(
 fn optionTakesValue(comptime command_name: []const u8, comptime option_long: []const u8) bool {
     if (std.mem.eql(u8, command_name, "untrack") and std.mem.eql(u8, option_long, "missing")) return false;
     if (std.mem.eql(u8, command_name, "add") and std.mem.eql(u8, option_long, "all")) return false;
+    if (std.mem.eql(u8, command_name, "rm") and std.mem.eql(u8, option_long, "all")) return false;
     if (std.mem.eql(u8, command_name, "commit") and std.mem.eql(u8, option_long, "dry-run")) return false;
     if (std.mem.eql(u8, command_name, "commit") and std.mem.eql(u8, option_long, "empty")) return false;
     if (std.mem.eql(u8, command_name, "commit") and std.mem.eql(u8, option_long, "message")) return true;
