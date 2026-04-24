@@ -9,6 +9,7 @@ const status_ops = @import("../../../ops/status_ops.zig");
 const find_ops = @import("../../../ops/find_ops.zig");
 const show_ops = @import("../../../ops/show_ops.zig");
 const tag_ops = @import("../../../ops/tag_ops.zig");
+const journal_ops = @import("../../../ops/journal_ops.zig");
 
 pub const TagRemoveOutcome = enum {
     no_tags,
@@ -241,6 +242,28 @@ pub fn rmMultiResult(allocator: std.mem.Allocator, outcome: *const rm_ops.RmOutc
 // Renders the created commit id as owned CLI output.
 pub fn commitResult(allocator: std.mem.Allocator, commit_id: [64]u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "Committed {s}.\n", .{&commit_id});
+}
+
+// Renders journal entries as owned CLI output.
+pub fn journalResult(
+    allocator: std.mem.Allocator,
+    entries: *const journal_ops.JournalList,
+) ![]u8 {
+    if (entries.items.len == 0) return message(allocator, "no journal entries\n");
+
+    var out = std.array_list.Managed(u8).init(allocator);
+    errdefer out.deinit();
+    const writer = out.writer();
+
+    for (entries.items) |entry| {
+        try writer.print("{s} {s} {s}\n", .{
+            entry.local_ts,
+            entry.command_type,
+            entry.payload_json,
+        });
+    }
+
+    return out.toOwnedSlice();
 }
 
 // Renders tracked entries as owned CLI output.
@@ -1163,6 +1186,42 @@ test "findResult renders heading and commit blocks" {
             "  first\n\n",
         output,
     );
+}
+
+test "journalResult renders local timestamp, command type, and payload" {
+    var entries = journal_ops.JournalList.init(std.testing.allocator);
+    defer journal_ops.freeJournalList(std.testing.allocator, &entries);
+
+    try entries.append(.{
+        .local_ts = try std.testing.allocator.dupe(u8, "2026-03-10T09:00:00.000+09:00"),
+        .command_type = try std.testing.allocator.dupe(u8, "track"),
+        .payload_json = try std.testing.allocator.dupe(u8, "{\"path\":\"/tmp/one\"}"),
+    });
+    try entries.append(.{
+        .local_ts = try std.testing.allocator.dupe(u8, "2026-03-10T09:00:01.000+09:00"),
+        .command_type = try std.testing.allocator.dupe(u8, "add"),
+        .payload_json = try std.testing.allocator.dupe(u8, "{\"message\":\"hello world\"}"),
+    });
+
+    const output = try journalResult(std.testing.allocator, &entries);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "2026-03-10T09:00:00.000+09:00 track {\"path\":\"/tmp/one\"}\n" ++
+            "2026-03-10T09:00:01.000+09:00 add {\"message\":\"hello world\"}\n",
+        output,
+    );
+    try std.testing.expect(std.mem.indexOf(u8, output, "2026-03-10T00:00:00.000Z") == null);
+}
+
+test "journalResult renders empty message when no entries exist" {
+    var entries = journal_ops.JournalList.init(std.testing.allocator);
+    defer journal_ops.freeJournalList(std.testing.allocator, &entries);
+
+    const output = try journalResult(std.testing.allocator, &entries);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings("no journal entries\n", output);
 }
 
 test "findResult renders selected fields as text rows" {
