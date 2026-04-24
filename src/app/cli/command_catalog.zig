@@ -252,6 +252,7 @@ pub const all = [_]CommandSpec{
         .examples = &.{"omohi journal"},
         .notes = &.{
             "Shows the latest 500 successful mutating command records.",
+            "Displays timestamps in the local timezone.",
             "TTY output is paged with less when available.",
         },
     },
