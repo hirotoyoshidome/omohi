@@ -231,6 +231,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
   - `omohi journal`
 - Notes:
   - Shows the latest 500 successful mutating command records.
+  - Displays timestamps in the local timezone.
   - TTY output is paged with less when available.
 
 ### tag ls

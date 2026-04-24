@@ -114,6 +114,12 @@ pub const StringList = std.array_list.Managed([]u8);
 /// Owns a list of heap-allocated tag strings.
 pub const TagList = StringList;
 
+/// Describes one journal entry as presented to upper layers.
+pub const JournalEntry = local_journal.JournalEntry;
+
+/// Owns journal entries returned by `journal`.
+pub const JournalEntryList = local_journal.JournalEntryList;
+
 /// Carries commit metadata, entries, and tags for `show`.
 pub const CommitDetails = struct {
     commit_id: constrained_types.CommitId,
@@ -768,15 +774,20 @@ pub fn freeStringList(allocator: std.mem.Allocator, list: *StringList) void {
     list.deinit();
 }
 
-/// Loads latest journal lines in reverse chronological order.
-/// Memory: owned list, free with freeStringList.
+/// Loads latest journal entries in reverse chronological order.
+/// Memory: owned list, free with freeJournalEntryList.
 pub fn journal(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
     limit: usize,
-) !StringList {
+) !JournalEntryList {
     const persistence = PersistenceLayout.init(omohi_dir);
-    return local_journal.readLatestLines(allocator, persistence, limit);
+    return local_journal.readLatestEntries(allocator, persistence, limit);
+}
+
+/// Releases the owned journal entries stored in the list.
+pub fn freeJournalEntryList(allocator: std.mem.Allocator, list: *JournalEntryList) void {
+    local_journal.freeEntryList(allocator, list);
 }
 
 // Adds tags to a commit, creating missing tag records and updating commit-tag metadata under the lock.
@@ -3139,7 +3150,7 @@ test "appendJournal writes one line into UTC daily file" {
     try std.testing.expect(std.mem.indexOf(u8, bytes, "{\"path\":\"/tmp/sample\"}") != null);
 }
 
-test "journal returns latest lines in reverse chronological order" {
+test "journal returns latest entries in reverse chronological order" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -3152,11 +3163,13 @@ test "journal returns latest lines in reverse chronological order" {
     try appendJournal(allocator, omohi_dir, "add", "{\"path\":\"/tmp/two\"}");
 
     var lines = try journal(allocator, omohi_dir, 2);
-    defer freeStringList(allocator, &lines);
+    defer freeJournalEntryList(allocator, &lines);
 
     try std.testing.expectEqual(@as(usize, 2), lines.items.len);
-    try std.testing.expect(std.mem.indexOf(u8, lines.items[0], "\"/tmp/two\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, lines.items[1], "\"/tmp/one\"") != null);
+    try std.testing.expectEqualStrings("add", lines.items[0].command_type);
+    try std.testing.expect(std.mem.indexOf(u8, lines.items[0].payload_json, "\"/tmp/two\"") != null);
+    try std.testing.expectEqualStrings("track", lines.items[1].command_type);
+    try std.testing.expect(std.mem.indexOf(u8, lines.items[1].payload_json, "\"/tmp/one\"") != null);
 }
 
 test "commit rejects staged entry when corresponding object is missing" {

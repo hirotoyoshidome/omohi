@@ -2,9 +2,10 @@ const std = @import("std");
 
 const store_api = @import("../store/api.zig");
 
-pub const JournalList = store_api.StringList;
+pub const JournalEntry = store_api.JournalEntry;
+pub const JournalList = store_api.JournalEntryList;
 
-/// Loads recent journal lines from the store.
+/// Loads recent journal entries from the store.
 pub fn journal(
     allocator: std.mem.Allocator,
     omohi_dir: std.fs.Dir,
@@ -14,12 +15,12 @@ pub fn journal(
     return store_api.journal(allocator, omohi_dir, limit);
 }
 
-// Releases the owned journal lines returned by `journal`.
+// Releases the owned journal entries returned by `journal`.
 pub fn freeJournalList(allocator: std.mem.Allocator, list: *JournalList) void {
-    store_api.freeStringList(allocator, list);
+    store_api.freeJournalEntryList(allocator, list);
 }
 
-test "journal delegates to store and returns recent lines" {
+test "journal delegates to store and returns recent entries" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -34,5 +35,6 @@ test "journal delegates to store and returns recent lines" {
     defer freeJournalList(allocator, &lines);
 
     try std.testing.expectEqual(@as(usize, 1), lines.items.len);
-    try std.testing.expect(std.mem.indexOf(u8, lines.items[0], "\"/tmp/ops\"") != null);
+    try std.testing.expectEqualStrings("track", lines.items[0].command_type);
+    try std.testing.expect(std.mem.indexOf(u8, lines.items[0].payload_json, "\"/tmp/ops\"") != null);
 }
