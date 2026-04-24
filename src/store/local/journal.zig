@@ -5,7 +5,6 @@ const PersistenceLayout = @import("../object/persistence_layout.zig").Persistenc
 
 const max_journal_file_size = 64 * 1024 * 1024;
 const journal_format_version: u32 = 1;
-const JournalLineList = std.array_list.Managed([]u8);
 
 pub const JournalRecord = struct {
     ts_utc: [24]u8,
@@ -13,6 +12,21 @@ pub const JournalRecord = struct {
     command_type: []const u8,
     payload_json: []const u8,
 };
+
+pub const JournalEntry = struct {
+    local_ts: []u8,
+    command_type: []u8,
+    payload_json: []u8,
+
+    /// Releases the owned fields of one journal entry.
+    pub fn deinit(self: *JournalEntry, allocator: std.mem.Allocator) void {
+        allocator.free(self.local_ts);
+        allocator.free(self.command_type);
+        allocator.free(self.payload_json);
+    }
+};
+
+pub const JournalEntryList = std.array_list.Managed(JournalEntry);
 
 /// Appends one journal record into daily UTC journal file.
 pub fn appendRecord(
@@ -48,14 +62,14 @@ pub fn appendRecord(
     try atomic_write.atomicWrite(allocator, persistence.dir, path, line);
 }
 
-/// Loads latest journal lines in reverse chronological order.
-pub fn readLatestLines(
+/// Loads latest journal entries in reverse chronological order.
+pub fn readLatestEntries(
     allocator: std.mem.Allocator,
     persistence: PersistenceLayout,
     limit: usize,
-) !JournalLineList {
-    var out = JournalLineList.init(allocator);
-    errdefer freeStringList(allocator, &out);
+) !JournalEntryList {
+    var out = JournalEntryList.init(allocator);
+    errdefer freeEntryList(allocator, &out);
 
     if (limit == 0) return out;
 
@@ -65,8 +79,8 @@ pub fn readLatestLines(
     };
     defer journal_dir.close();
 
-    var names = JournalLineList.init(allocator);
-    defer freeStringList(allocator, &names);
+    var names = std.array_list.Managed([]u8).init(allocator);
+    defer freeNameList(allocator, &names);
 
     var it = journal_dir.iterate();
     while (try it.next()) |entry| {
@@ -84,16 +98,16 @@ pub fn readLatestLines(
         const bytes = try persistence.dir.readFileAlloc(allocator, path, max_journal_file_size);
         defer allocator.free(bytes);
 
-        try appendLatestLinesFromBytes(allocator, &out, bytes, limit);
+        try appendLatestEntriesFromBytes(allocator, &out, bytes, limit);
         if (out.items.len >= limit) break;
     }
 
     return out;
 }
 
-// Releases the owned journal lines stored in the list.
-pub fn freeStringList(allocator: std.mem.Allocator, list: *JournalLineList) void {
-    for (list.items) |item| allocator.free(item);
+// Releases the owned journal entries stored in the list.
+pub fn freeEntryList(allocator: std.mem.Allocator, list: *JournalEntryList) void {
+    for (list.items) |*item| item.deinit(allocator);
     list.deinit();
 }
 
@@ -125,10 +139,16 @@ fn isNameDescLessThan(_: void, lhs: []u8, rhs: []u8) bool {
     return std.mem.order(u8, lhs, rhs) == .gt;
 }
 
-// Appends newest lines from one journal file into the output list until the limit is reached.
-fn appendLatestLinesFromBytes(
+// Releases the owned journal file names stored in the list.
+fn freeNameList(allocator: std.mem.Allocator, list: *std.array_list.Managed([]u8)) void {
+    for (list.items) |item| allocator.free(item);
+    list.deinit();
+}
+
+// Appends newest journal entries from one file into the output list until the limit is reached.
+fn appendLatestEntriesFromBytes(
     allocator: std.mem.Allocator,
-    out: *JournalLineList,
+    out: *JournalEntryList,
     bytes: []const u8,
     limit: usize,
 ) !void {
@@ -140,13 +160,42 @@ fn appendLatestLinesFromBytes(
         var start = line_end;
         while (start > 0 and bytes[start - 1] != '\n') : (start -= 1) {}
 
-        if (line_end > start) {
-            try out.append(try allocator.dupe(u8, bytes[start..line_end]));
-        }
+        if (line_end > start) try out.append(try parseLineOwned(allocator, bytes[start..line_end]));
 
         if (start == 0) break;
         end = start;
     }
+}
+
+// Parses one persisted journal line into an owned entry for CLI-facing presentation.
+fn parseLineOwned(allocator: std.mem.Allocator, line: []const u8) !JournalEntry {
+    const first_space = std.mem.indexOfScalar(u8, line, ' ') orelse return error.InvalidJournalRecord;
+    const second_space = std.mem.indexOfScalarPos(u8, line, first_space + 1, ' ') orelse return error.InvalidJournalRecord;
+    const third_space = std.mem.indexOfScalarPos(u8, line, second_space + 1, ' ') orelse return error.InvalidJournalRecord;
+    const fourth_space = std.mem.indexOfScalarPos(u8, line, third_space + 1, ' ') orelse return error.InvalidJournalRecord;
+
+    if (fourth_space + 1 > line.len) return error.InvalidJournalRecord;
+
+    const version_text = line[third_space + 1 .. fourth_space];
+    if (version_text.len == 0) return error.InvalidJournalRecord;
+    const version = std.fmt.parseInt(u32, version_text, 10) catch return error.InvalidJournalRecord;
+    if (version != journal_format_version) return error.InvalidJournalRecord;
+
+    const local_ts = line[first_space + 1 .. second_space];
+    const command_type = line[second_space + 1 .. third_space];
+    const payload_json = line[fourth_space + 1 ..];
+
+    const local_ts_owned = try allocator.dupe(u8, local_ts);
+    errdefer allocator.free(local_ts_owned);
+    const command_type_owned = try allocator.dupe(u8, command_type);
+    errdefer allocator.free(command_type_owned);
+    const payload_json_owned = try allocator.dupe(u8, payload_json);
+
+    return .{
+        .local_ts = local_ts_owned,
+        .command_type = command_type_owned,
+        .payload_json = payload_json_owned,
+    };
 }
 
 test "appendRecord creates and appends daily journal file" {
@@ -197,7 +246,22 @@ test "appendRecord rejects unsupported command type" {
     }));
 }
 
-test "readLatestLines returns newest records across files" {
+test "parseLineOwned extracts local timestamp, command type, and payload" {
+    const entry = try parseLineOwned(
+        std.testing.allocator,
+        "2026-03-15T00:00:01.000Z 2026-03-15T09:00:01.000+09:00 add 1 {\"message\":\"hello world\"}",
+    );
+    defer {
+        var mutable_entry = entry;
+        mutable_entry.deinit(std.testing.allocator);
+    }
+
+    try std.testing.expectEqualStrings("2026-03-15T09:00:01.000+09:00", entry.local_ts);
+    try std.testing.expectEqualStrings("add", entry.command_type);
+    try std.testing.expectEqualStrings("{\"message\":\"hello world\"}", entry.payload_json);
+}
+
+test "readLatestEntries returns newest records across files" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -212,25 +276,30 @@ test "readLatestLines returns newest records across files" {
         allocator,
         omohi_dir,
         "journal/2026-03-14.log",
-        "2026-03-14T00:00:00.000Z old-a track 1 {}\n2026-03-14T00:00:01.000Z old-b add 1 {}\n",
+        "2026-03-14T00:00:00.000Z 2026-03-14T09:00:00.000+09:00 track 1 {}\n" ++
+            "2026-03-14T00:00:01.000Z 2026-03-14T09:00:01.000+09:00 add 1 {}\n",
     );
     try atomic_write.atomicWrite(
         allocator,
         omohi_dir,
         "journal/2026-03-15.log",
-        "2026-03-15T00:00:00.000Z new-a track 1 {}\n2026-03-15T00:00:01.000Z new-b add 1 {}\n",
+        "2026-03-15T00:00:00.000Z 2026-03-15T09:00:00.000+09:00 track 1 {}\n" ++
+            "2026-03-15T00:00:01.000Z 2026-03-15T09:00:01.000+09:00 add 1 {}\n",
     );
 
-    var lines = try readLatestLines(allocator, persistence, 3);
-    defer freeStringList(allocator, &lines);
+    var lines = try readLatestEntries(allocator, persistence, 3);
+    defer freeEntryList(allocator, &lines);
 
     try std.testing.expectEqual(@as(usize, 3), lines.items.len);
-    try std.testing.expectEqualStrings("2026-03-15T00:00:01.000Z new-b add 1 {}", lines.items[0]);
-    try std.testing.expectEqualStrings("2026-03-15T00:00:00.000Z new-a track 1 {}", lines.items[1]);
-    try std.testing.expectEqualStrings("2026-03-14T00:00:01.000Z old-b add 1 {}", lines.items[2]);
+    try std.testing.expectEqualStrings("2026-03-15T09:00:01.000+09:00", lines.items[0].local_ts);
+    try std.testing.expectEqualStrings("add", lines.items[0].command_type);
+    try std.testing.expectEqualStrings("{}", lines.items[0].payload_json);
+    try std.testing.expectEqualStrings("2026-03-15T09:00:00.000+09:00", lines.items[1].local_ts);
+    try std.testing.expectEqualStrings("track", lines.items[1].command_type);
+    try std.testing.expectEqualStrings("2026-03-14T09:00:01.000+09:00", lines.items[2].local_ts);
 }
 
-test "readLatestLines returns empty when journal directory is missing" {
+test "readLatestEntries returns empty when journal directory is missing" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -239,8 +308,8 @@ test "readLatestLines returns empty when journal directory is missing" {
     defer omohi_dir.close();
 
     const persistence = PersistenceLayout.init(omohi_dir);
-    var lines = try readLatestLines(allocator, persistence, 20);
-    defer freeStringList(allocator, &lines);
+    var lines = try readLatestEntries(allocator, persistence, 20);
+    defer freeEntryList(allocator, &lines);
 
     try std.testing.expectEqual(@as(usize, 0), lines.items.len);
 }
