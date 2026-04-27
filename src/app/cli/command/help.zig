@@ -25,6 +25,7 @@ test "help includes all public commands" {
     defer result.deinit(std.testing.allocator);
 
     try std.testing.expect(std.mem.indexOf(u8, result.output, "track <path>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.output, "  tag\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "tag rm <commitId> <tagNames...>") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "version") != null);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "help") != null);

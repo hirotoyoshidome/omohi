@@ -654,7 +654,19 @@ pub fn tagListResult(allocator: std.mem.Allocator, commit_id: []const u8, tags: 
     const writer = out.writer();
 
     try writer.print("Found {d} tag(s) for commit {s}.\n", .{ tags.items.len, commit_id });
-    try writeTagCsvLine(writer, tags.items);
+    try writeTagLines(writer, tags.items);
+
+    return out.toOwnedSlice();
+}
+
+// Renders the global tag-name list as owned CLI output.
+pub fn tagNameListResult(allocator: std.mem.Allocator, tags: *const tag_ops.TagNameList) ![]u8 {
+    var out = std.array_list.Managed(u8).init(allocator);
+    errdefer out.deinit();
+    const writer = out.writer();
+
+    try writer.print("Found {d} tag(s).\n", .{tags.items.len});
+    try writeTagLines(writer, tags.items);
 
     return out.toOwnedSlice();
 }
@@ -739,6 +751,19 @@ fn writeTagCsvLine(writer: anytype, tags: []const []u8) !void {
         try writer.writeAll(tag_name);
     }
     try writer.writeByte('\n');
+}
+
+// Writes tags as one item per line and falls back to `(none)` for empty lists.
+fn writeTagLines(writer: anytype, tags: []const []u8) !void {
+    if (tags.len == 0) {
+        try writer.writeAll("(none)\n");
+        return;
+    }
+
+    for (tags) |tag_name| {
+        try writer.writeAll(tag_name);
+        try writer.writeByte('\n');
+    }
 }
 
 // Writes one selected text value with a leading space separator after the first column.
@@ -1828,7 +1853,28 @@ test "tagAddResult renders added tags branch with csv" {
     );
 }
 
-test "tagListResult renders count and csv line" {
+test "tagNameListResult renders count and one tag per line" {
+    var tags = tag_ops.TagNameList.init(std.testing.allocator);
+    defer {
+        for (tags.items) |tag_name| std.testing.allocator.free(tag_name);
+        tags.deinit();
+    }
+
+    try tags.append(try std.testing.allocator.dupe(u8, "mobile"));
+    try tags.append(try std.testing.allocator.dupe(u8, "release"));
+
+    const output = try tagNameListResult(std.testing.allocator, &tags);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Found 2 tag(s).\n" ++
+            "mobile\n" ++
+            "release\n",
+        output,
+    );
+}
+
+test "tagListResult renders count and one tag per line" {
     var tags = tag_ops.TagList.init(std.testing.allocator);
     defer {
         for (tags.items) |tag_name| std.testing.allocator.free(tag_name);
@@ -1847,7 +1893,8 @@ test "tagListResult renders count and csv line" {
 
     try std.testing.expectEqualStrings(
         "Found 2 tag(s) for commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.\n" ++
-            "mobile,release\n",
+            "mobile\n" ++
+            "release\n",
         output,
     );
 }
@@ -1885,6 +1932,20 @@ test "tagListResult renders none when no tags exist" {
 
     try std.testing.expectEqualStrings(
         "Found 0 tag(s) for commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.\n" ++
+            "(none)\n",
+        output,
+    );
+}
+
+test "tagNameListResult renders none when no tags exist" {
+    var tags = tag_ops.TagNameList.init(std.testing.allocator);
+    defer tags.deinit();
+
+    const output = try tagNameListResult(std.testing.allocator, &tags);
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "Found 0 tag(s).\n" ++
             "(none)\n",
         output,
     );

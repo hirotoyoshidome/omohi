@@ -23,7 +23,8 @@ pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.
         return try parseComplete(argv[1..]);
     }
 
-    if (argv.len >= 2 and std.mem.eql(u8, argv[0], "tag")) {
+    if (std.mem.eql(u8, argv[0], "tag")) {
+        if (argv.len == 1) return try parseNoArgsCommand(.tag, argv[1..]);
         if (std.mem.eql(u8, argv[1], "ls")) return try parseTagLs(argv[2..]);
         if (std.mem.eql(u8, argv[1], "add")) return try parseTagAdd(argv[2..]);
         if (std.mem.eql(u8, argv[1], "rm")) return try parseTagRm(argv[2..]);
@@ -609,6 +610,18 @@ test "parser resolves longest command match for tag subcommands" {
 
     switch (parsed) {
         .tag_ls => |args| try std.testing.expectEqualStrings("abc", args.commit_id),
+        else => return error.UnexpectedResult,
+    }
+}
+
+test "parser accepts bare tag command" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{"tag"};
+    var parsed = try parseArgs(allocator, &argv);
+    defer types.deinitParsedRequest(allocator, &parsed);
+
+    switch (parsed) {
+        .tag => {},
         else => return error.UnexpectedResult,
     }
 }

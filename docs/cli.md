@@ -17,6 +17,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 | `find` | `find [--tag <tag>] [--empty|--no-empty] [--since <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--until <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--limit <1-500>] [--output <text|json>] [--field <commit_id|message|created_at>]...` | Search commits by optional tag, empty-commit, and local-time range filters. |
 | `show` | `show [--output <text|json>] [--field <commit_id|message|created_at|paths|tags>]... <commitId>` | Show one commit details payload. |
 | `journal` | `journal` | Show recent journal logs in reverse chronological order. |
+| `tag` | `tag` | List all known tag names. |
 | `tag ls` | `tag ls <commitId>` | List tags for one commit. |
 | `tag add` | `tag add <commitId> <tagNames...>` | Attach one or more tags to a commit. |
 | `tag rm` | `tag rm <commitId> <tagNames...>` | Remove one or more tags from a commit. |
@@ -233,6 +234,20 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
   - Shows the latest 500 successful mutating command records.
   - Displays timestamps in the local timezone.
   - TTY output is paged with less when available.
+
+### tag
+
+- Usage: `omohi tag`
+- Summary: List all known tag names.
+- Positionals:
+  - None
+- Options:
+  - None
+- Examples:
+  - `omohi tag`
+- Notes:
+  - Lists persisted tag names in ascending order.
+  - Use `tag ls <commitId>` to inspect tags attached to one commit.
 
 ### tag ls
 
