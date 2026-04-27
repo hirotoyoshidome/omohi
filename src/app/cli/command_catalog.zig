@@ -41,6 +41,7 @@ pub const public_command_tags = [_]ParsedRequestTag{
     .find,
     .show,
     .journal,
+    .tag,
     .tag_ls,
     .tag_add,
     .tag_rm,
@@ -257,6 +258,18 @@ pub const all = [_]CommandSpec{
         },
     },
     .{
+        .name = "tag",
+        .usage = "tag",
+        .summary = "List all known tag names.",
+        .positionals = &.{},
+        .options = &.{},
+        .examples = &.{"omohi tag"},
+        .notes = &.{
+            "Lists persisted tag names in ascending order.",
+            "Use `tag ls <commitId>` to inspect tags attached to one commit.",
+        },
+    },
+    .{
         .name = "tag ls",
         .usage = "tag ls <commitId>",
         .summary = "List tags for one commit.",
@@ -316,6 +329,7 @@ comptime {
 // Returns the public catalog name for a parsed request tag.
 fn commandNameForTag(tag: ParsedRequestTag) []const u8 {
     return switch (tag) {
+        .tag => "tag",
         .tag_ls => "tag ls",
         .tag_add => "tag add",
         .tag_rm => "tag rm",
@@ -490,6 +504,7 @@ fn optionTakesValue(comptime command_name: []const u8, comptime option_long: []c
 
 test "command catalog public command order matches parser tags" {
     try std.testing.expectEqual(@as(usize, public_command_tags.len), all.len);
+    try std.testing.expectEqualStrings("tag", commandNameForTag(.tag));
     try std.testing.expectEqualStrings("tag ls", commandNameForTag(.tag_ls));
     try std.testing.expectEqualStrings("tag add", commandNameForTag(.tag_add));
     try std.testing.expectEqualStrings("tag rm", commandNameForTag(.tag_rm));
