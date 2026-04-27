@@ -17,8 +17,8 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 | `find` | `find [--tag <tag>] [--empty|--no-empty] [--since <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--until <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--limit <1-500>] [--output <text|json>] [--field <commit_id|message|created_at>]...` | Search commits by optional tag, empty-commit, and local-time range filters. |
 | `show` | `show [--output <text|json>] [--field <commit_id|message|created_at|paths|tags>]... <commitId>` | Show one commit details payload. |
 | `journal` | `journal` | Show recent journal logs in reverse chronological order. |
-| `tag` | `tag` | List all known tag names. |
-| `tag ls` | `tag ls <commitId>` | List tags for one commit. |
+| `tag` | `tag [--field <tag>]...` | List all known tag names. |
+| `tag ls` | `tag ls [--field <tag>]... <commitId>` | List tags for one commit. |
 | `tag add` | `tag add <commitId> <tagNames...>` | Attach one or more tags to a commit. |
 | `tag rm` | `tag rm <commitId> <tagNames...>` | Remove one or more tags from a commit. |
 | `help` | `help` | Print command usages. |
@@ -237,30 +237,33 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 
 ### tag
 
-- Usage: `omohi tag`
+- Usage: `omohi tag [--field <tag>]...`
 - Summary: List all known tag names.
 - Positionals:
   - None
 - Options:
-  - None
+  - `--field` `<tag>` (optional, repeatable): Select one or more fields. Repeat to keep field order.
 - Examples:
   - `omohi tag`
+  - `omohi tag --field tag`
 - Notes:
   - Lists persisted tag names in ascending order.
+  - When `--field` is set, only the selected tag values are printed, one per line.
   - Use `tag ls <commitId>` to inspect tags attached to one commit.
 
 ### tag ls
 
-- Usage: `omohi tag ls <commitId>`
+- Usage: `omohi tag ls [--field <tag>]... <commitId>`
 - Summary: List tags for one commit.
 - Positionals:
   - `commitId` (required): 64-char commit ID.
 - Options:
-  - None
+  - `--field` `<tag>` (optional, repeatable): Select one or more fields. Repeat to keep field order.
 - Examples:
   - `omohi tag ls aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
+  - `omohi tag ls --field tag aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
 - Notes:
-  - None
+  - When `--field` is set, only the selected tag values are printed, one per line.
 
 ### tag add
 

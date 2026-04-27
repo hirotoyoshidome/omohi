@@ -16,10 +16,12 @@ const untrack_options = [_][]const u8{"--missing"};
 const tracklist_options = [_][]const u8{ "--output", "--field" };
 const find_options = [_][]const u8{ "-t", "--tag", "--empty", "--no-empty", "-s", "--since", "-u", "--until", "--limit", "--output", "--field" };
 const show_options = [_][]const u8{ "--output", "--field" };
+const tag_options = [_][]const u8{"--field"};
 const output_values = [_][]const u8{ "text", "json" };
 const tracklist_field_values = [_][]const u8{ "id", "path" };
 const find_field_values = [_][]const u8{ "commit_id", "message", "created_at" };
 const show_field_values = [_][]const u8{ "commit_id", "message", "created_at", "paths", "tags" };
+const tag_field_values = [_][]const u8{"tag"};
 const help_topics = [_][]const u8{ "track", "untrack", "add", "rm", "commit", "status", "tracklist", "version", "find", "show", "journal", "tag", "help" };
 
 // Reports whether completion at the current cursor position needs store-backed data.
@@ -174,13 +176,33 @@ fn completeTagCommand(
     index: usize,
     current: []const u8,
 ) !void {
+    if (expectsValue(words, index, "--field", "")) {
+        try appendFilteredStatic(allocator, out, &tag_field_values, current);
+        return;
+    }
+
     if (index == 2) {
         try appendFilteredStatic(allocator, out, &tag_commands, current);
+        try appendFilteredStatic(allocator, out, &tag_options, current);
         return;
     }
     if (words.len < 3) return;
 
     const subcommand = words[2];
+    if (std.mem.startsWith(u8, subcommand, "--")) {
+        try appendFilteredStatic(allocator, out, &tag_options, current);
+        return;
+    }
+    if (std.mem.eql(u8, subcommand, "ls")) {
+        if (index == 3 and isOptionLike(current)) {
+            try appendFilteredStatic(allocator, out, &tag_options, current);
+            return;
+        }
+        if (index > 3 and isOptionLike(current)) {
+            try appendFilteredStatic(allocator, out, &tag_options, current);
+            return;
+        }
+    }
     if (index == 3) {
         if ((std.mem.eql(u8, subcommand, "ls") or std.mem.eql(u8, subcommand, "add") or std.mem.eql(u8, subcommand, "rm")) and maybe_omohi_dir != null) {
             var ids = try loadCommitIds(allocator, maybe_omohi_dir.?);
@@ -427,10 +449,11 @@ test "complete returns tag subcommands for bare tag command" {
     var list = try complete(allocator, null, &words, 2);
     defer freeCandidateList(allocator, &list);
 
-    try std.testing.expectEqual(@as(usize, 3), list.items.len);
+    try std.testing.expectEqual(@as(usize, 4), list.items.len);
     try std.testing.expectEqualStrings("ls", list.items[0]);
     try std.testing.expectEqualStrings("add", list.items[1]);
     try std.testing.expectEqualStrings("rm", list.items[2]);
+    try std.testing.expectEqualStrings("--field", list.items[3]);
 }
 
 test "complete returns rm options and staged paths" {
@@ -566,6 +589,30 @@ test "complete returns reference output and field candidates" {
         defer freeCandidateList(allocator, &list);
         try std.testing.expectEqual(@as(usize, 1), list.items.len);
         try std.testing.expectEqualStrings("json", list.items[0]);
+    }
+
+    {
+        const words = [_][]const u8{ "omohi", "tag", "--f" };
+        var list = try complete(allocator, null, &words, 2);
+        defer freeCandidateList(allocator, &list);
+        try std.testing.expectEqual(@as(usize, 1), list.items.len);
+        try std.testing.expectEqualStrings("--field", list.items[0]);
+    }
+
+    {
+        const words = [_][]const u8{ "omohi", "tag", "--field", "t" };
+        var list = try complete(allocator, null, &words, 3);
+        defer freeCandidateList(allocator, &list);
+        try std.testing.expectEqual(@as(usize, 1), list.items.len);
+        try std.testing.expectEqualStrings("tag", list.items[0]);
+    }
+
+    {
+        const words = [_][]const u8{ "omohi", "tag", "ls", "--field", "t" };
+        var list = try complete(allocator, null, &words, 4);
+        defer freeCandidateList(allocator, &list);
+        try std.testing.expectEqual(@as(usize, 1), list.items.len);
+        try std.testing.expectEqualStrings("tag", list.items[0]);
     }
 }
 

@@ -1084,22 +1084,38 @@ case_082_tag_ls_with_tags() {
   assert_contains "$RUN_STDOUT" "beta" "tag ls should include beta tag"
 }
 
-case_083_tag_ls_without_tags() {
+case_083_tag_field_only() {
+  setup_commit_with_two_files_and_tags
+
+  run_omohi_capture tag --field tag
+  assert_eq "0" "$RUN_CODE" "tag --field should succeed"
+  assert_eq $'alpha\nbeta' "$RUN_STDOUT" "tag --field should print one tag per line"
+
+  run_omohi_capture tag ls --field tag "$LAST_COMMIT_ID"
+  assert_eq "0" "$RUN_CODE" "tag ls --field should succeed"
+  assert_eq $'alpha\nbeta' "$RUN_STDOUT" "tag ls --field should print one tag per line"
+}
+
+case_084_tag_ls_without_tags() {
   setup_commit_without_tags
   run_omohi_capture tag ls "$LAST_COMMIT_ID"
   assert_eq "0" "$RUN_CODE" "tag ls should succeed"
   assert_contains "$RUN_STDOUT" "Found 0 tag(s) for commit $LAST_COMMIT_ID." "tag ls should report zero tags"
   assert_contains "$RUN_STDOUT" "(none)" "tag ls should show none"
+
+  run_omohi_capture tag ls --field tag "$LAST_COMMIT_ID"
+  assert_eq "0" "$RUN_CODE" "tag ls --field should succeed for tagless commit"
+  assert_eq "" "$RUN_STDOUT" "tag ls --field should emit empty output for tagless commit"
 }
 
-case_084_tag_ls_unknown_commit() {
+case_085_tag_ls_unknown_commit() {
   setup_commit_without_tags
   run_omohi_capture tag ls 0000000000000000000000000000000000000000000000000000000000000000
   assert_eq "4" "$RUN_CODE" "tag ls should fail for unknown commit"
   assert_contains "$RUN_STDERR" "Commit not found:" "tag ls should report unknown commit"
 }
 
-case_085_tag_add_single() {
+case_086_tag_add_single() {
   setup_commit_without_tags
   run_omohi_capture tag add "$LAST_COMMIT_ID" release
   assert_eq "0" "$RUN_CODE" "tag add should succeed"
@@ -1107,7 +1123,7 @@ case_085_tag_add_single() {
   assert_contains "$RUN_STDOUT" "release" "tag add should list resulting tags"
 }
 
-case_086_tag_add_multiple() {
+case_087_tag_add_multiple() {
   setup_commit_without_tags
   run_omohi_capture tag add "$LAST_COMMIT_ID" release prod
   assert_eq "0" "$RUN_CODE" "tag add should succeed for multiple tags"
@@ -1116,7 +1132,7 @@ case_086_tag_add_multiple() {
   assert_contains "$RUN_STDOUT" "prod" "tag add should include prod tag"
 }
 
-case_087_tag_add_existing_only() {
+case_088_tag_add_existing_only() {
   setup_commit_without_tags
   run_omohi_capture tag add "$LAST_COMMIT_ID" release
   assert_eq "0" "$RUN_CODE" "first tag add should succeed"
@@ -1126,21 +1142,21 @@ case_087_tag_add_existing_only() {
   assert_contains "$RUN_STDOUT" "No new tags were added; commit $LAST_COMMIT_ID already has the specified tags." "tag add should report no-op"
 }
 
-case_088_tag_add_unknown_commit() {
+case_089_tag_add_unknown_commit() {
   setup_commit_without_tags
   run_omohi_capture tag add 0000000000000000000000000000000000000000000000000000000000000000 release
   assert_eq "4" "$RUN_CODE" "tag add should fail for unknown commit"
   assert_contains "$RUN_STDERR" "Commit not found:" "tag add should report unknown commit"
 }
 
-case_089_tag_add_invalid_name() {
+case_090_tag_add_invalid_name() {
   setup_commit_without_tags
   run_omohi_capture tag add "$LAST_COMMIT_ID" ""
   assert_eq "3" "$RUN_CODE" "tag add should reject empty tag"
   assert_contains "$RUN_STDERR" "unexpected system error" "tag add invalid tag currently uses generic runtime message"
 }
 
-case_090_tag_rm_single() {
+case_091_tag_rm_single() {
   setup_commit_with_two_files_and_tags
   run_omohi_capture tag rm "$LAST_COMMIT_ID" alpha
   assert_eq "0" "$RUN_CODE" "tag rm should succeed"
@@ -1148,14 +1164,14 @@ case_090_tag_rm_single() {
   assert_contains "$RUN_STDOUT" "beta" "tag rm should list remaining tags"
 }
 
-case_091_tag_rm_multiple() {
+case_092_tag_rm_multiple() {
   setup_commit_with_two_files_and_tags
   run_omohi_capture tag rm "$LAST_COMMIT_ID" alpha beta
   assert_eq "0" "$RUN_CODE" "tag rm should succeed for multiple tags"
   assert_contains "$RUN_STDOUT" "Removed 2 tag(s) from commit $LAST_COMMIT_ID." "tag rm should report removed count"
 }
 
-case_092_tag_rm_no_tags() {
+case_093_tag_rm_no_tags() {
   setup_commit_without_tags
   run_omohi_capture tag rm "$LAST_COMMIT_ID" release
   assert_eq "0" "$RUN_CODE" "tag rm should succeed for tagless commit"
@@ -1163,7 +1179,7 @@ case_092_tag_rm_no_tags() {
   assert_contains "$RUN_STDOUT" "(none)" "tag rm should show empty result"
 }
 
-case_093_tag_rm_no_matching_tags() {
+case_094_tag_rm_no_matching_tags() {
   setup_commit_with_two_files_and_tags
   run_omohi_capture tag rm "$LAST_COMMIT_ID" release
   assert_eq "0" "$RUN_CODE" "tag rm should succeed for no-op removal"
@@ -1172,14 +1188,14 @@ case_093_tag_rm_no_matching_tags() {
   assert_contains "$RUN_STDOUT" "beta" "tag rm should still show beta tag"
 }
 
-case_094_tag_rm_unknown_commit() {
+case_095_tag_rm_unknown_commit() {
   setup_commit_without_tags
   run_omohi_capture tag rm 0000000000000000000000000000000000000000000000000000000000000000 release
   assert_eq "4" "$RUN_CODE" "tag rm should fail for unknown commit"
   assert_contains "$RUN_STDERR" "Commit not found:" "tag rm should report unknown commit"
 }
 
-case_095_tag_rm_invalid_name() {
+case_096_tag_rm_invalid_name() {
   local long_tag
   long_tag="$(make_long_tag)"
   setup_commit_without_tags
@@ -1305,19 +1321,20 @@ run_case "journal non-empty" case_079_journal_non_empty
 run_case "journal empty" case_080_journal_empty
 run_case "journal rejects extra args" case_081_journal_rejects_extra_args
 run_case "tag ls with tags" case_082_tag_ls_with_tags
-run_case "tag ls without tags" case_083_tag_ls_without_tags
-run_case "tag ls unknown commit" case_084_tag_ls_unknown_commit
-run_case "tag add single" case_085_tag_add_single
-run_case "tag add multiple" case_086_tag_add_multiple
-run_case "tag add existing only" case_087_tag_add_existing_only
-run_case "tag add unknown commit" case_088_tag_add_unknown_commit
-run_case "tag add invalid name" case_089_tag_add_invalid_name
-run_case "tag rm single" case_090_tag_rm_single
-run_case "tag rm multiple" case_091_tag_rm_multiple
-run_case "tag rm no tags" case_092_tag_rm_no_tags
-run_case "tag rm no matching tags" case_093_tag_rm_no_matching_tags
-run_case "tag rm unknown commit" case_094_tag_rm_unknown_commit
-run_case "tag rm invalid name" case_095_tag_rm_invalid_name
+run_case "tag field only" case_083_tag_field_only
+run_case "tag ls without tags" case_084_tag_ls_without_tags
+run_case "tag ls unknown commit" case_085_tag_ls_unknown_commit
+run_case "tag add single" case_086_tag_add_single
+run_case "tag add multiple" case_087_tag_add_multiple
+run_case "tag add existing only" case_088_tag_add_existing_only
+run_case "tag add unknown commit" case_089_tag_add_unknown_commit
+run_case "tag add invalid name" case_090_tag_add_invalid_name
+run_case "tag rm single" case_091_tag_rm_single
+run_case "tag rm multiple" case_092_tag_rm_multiple
+run_case "tag rm no tags" case_093_tag_rm_no_tags
+run_case "tag rm no matching tags" case_094_tag_rm_no_matching_tags
+run_case "tag rm unknown commit" case_095_tag_rm_unknown_commit
+run_case "tag rm invalid name" case_096_tag_rm_invalid_name
 run_case "help default" case_096_help_default
 run_case "help topic ignored" case_097_help_topic_ignored
 run_case "help short alias" case_098_help_short_alias

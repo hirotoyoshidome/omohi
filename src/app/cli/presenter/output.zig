@@ -648,7 +648,14 @@ fn renderShowJson(
 }
 
 // Renders tags for a commit as owned CLI output.
-pub fn tagListResult(allocator: std.mem.Allocator, commit_id: []const u8, tags: *const tag_ops.TagList) ![]u8 {
+pub fn tagListResult(
+    allocator: std.mem.Allocator,
+    commit_id: []const u8,
+    tags: *const tag_ops.TagList,
+    fields: []const parser_types.TagField,
+) ![]u8 {
+    if (fields.len != 0) return writeTagFieldLines(allocator, tags.items, fields);
+
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
     const writer = out.writer();
@@ -660,7 +667,13 @@ pub fn tagListResult(allocator: std.mem.Allocator, commit_id: []const u8, tags: 
 }
 
 // Renders the global tag-name list as owned CLI output.
-pub fn tagNameListResult(allocator: std.mem.Allocator, tags: *const tag_ops.TagNameList) ![]u8 {
+pub fn tagNameListResult(
+    allocator: std.mem.Allocator,
+    tags: *const tag_ops.TagNameList,
+    fields: []const parser_types.TagField,
+) ![]u8 {
+    if (fields.len != 0) return writeTagFieldLines(allocator, tags.items, fields);
+
     var out = std.array_list.Managed(u8).init(allocator);
     errdefer out.deinit();
     const writer = out.writer();
@@ -766,6 +779,26 @@ fn writeTagLines(writer: anytype, tags: []const []u8) !void {
     }
 }
 
+// Writes one line per tag for selected tag fields and emits nothing for empty lists.
+fn writeTagFieldLines(
+    allocator: std.mem.Allocator,
+    tags: []const []u8,
+    fields: []const parser_types.TagField,
+) ![]u8 {
+    if (!containsTagField(fields, .tag)) return allocator.alloc(u8, 0);
+
+    var out = std.array_list.Managed(u8).init(allocator);
+    errdefer out.deinit();
+    const writer = out.writer();
+
+    for (tags) |tag_name| {
+        try writer.writeAll(tag_name);
+        try writer.writeByte('\n');
+    }
+
+    return out.toOwnedSlice();
+}
+
 // Writes one selected text value with a leading space separator after the first column.
 fn writeSelectedValue(writer: anytype, first: *bool, value: []const u8) !void {
     if (!first.*) try writer.writeByte(' ');
@@ -812,6 +845,14 @@ fn containsFindField(fields: []const parser_types.FindField, needle: parser_type
 
 // Reports whether the given `show` field list contains the requested field.
 fn containsShowField(fields: []const parser_types.ShowField, needle: parser_types.ShowField) bool {
+    for (fields) |field| {
+        if (field == needle) return true;
+    }
+    return false;
+}
+
+// Reports whether the given `tag` field list contains the requested field.
+fn containsTagField(fields: []const parser_types.TagField, needle: parser_types.TagField) bool {
     for (fields) |field| {
         if (field == needle) return true;
     }
@@ -1863,7 +1904,7 @@ test "tagNameListResult renders count and one tag per line" {
     try tags.append(try std.testing.allocator.dupe(u8, "mobile"));
     try tags.append(try std.testing.allocator.dupe(u8, "release"));
 
-    const output = try tagNameListResult(std.testing.allocator, &tags);
+    const output = try tagNameListResult(std.testing.allocator, &tags, &.{});
     defer std.testing.allocator.free(output);
 
     try std.testing.expectEqualStrings(
@@ -1888,6 +1929,7 @@ test "tagListResult renders count and one tag per line" {
         std.testing.allocator,
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         &tags,
+        &.{},
     );
     defer std.testing.allocator.free(output);
 
@@ -1927,6 +1969,7 @@ test "tagListResult renders none when no tags exist" {
         std.testing.allocator,
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         &tags,
+        &.{},
     );
     defer std.testing.allocator.free(output);
 
@@ -1941,7 +1984,7 @@ test "tagNameListResult renders none when no tags exist" {
     var tags = tag_ops.TagNameList.init(std.testing.allocator);
     defer tags.deinit();
 
-    const output = try tagNameListResult(std.testing.allocator, &tags);
+    const output = try tagNameListResult(std.testing.allocator, &tags, &.{});
     defer std.testing.allocator.free(output);
 
     try std.testing.expectEqualStrings(
@@ -1949,6 +1992,71 @@ test "tagNameListResult renders none when no tags exist" {
             "(none)\n",
         output,
     );
+}
+
+test "tagNameListResult renders selected tag field only" {
+    var tags = tag_ops.TagNameList.init(std.testing.allocator);
+    defer {
+        for (tags.items) |tag_name| std.testing.allocator.free(tag_name);
+        tags.deinit();
+    }
+
+    try tags.append(try std.testing.allocator.dupe(u8, "mobile"));
+    try tags.append(try std.testing.allocator.dupe(u8, "release"));
+
+    const output = try tagNameListResult(std.testing.allocator, &tags, &.{.tag});
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "mobile\n" ++
+            "release\n",
+        output,
+    );
+}
+
+test "tagListResult renders selected tag field only" {
+    var tags = tag_ops.TagList.init(std.testing.allocator);
+    defer {
+        for (tags.items) |tag_name| std.testing.allocator.free(tag_name);
+        tags.deinit();
+    }
+
+    try tags.append(try std.testing.allocator.dupe(u8, "mobile"));
+    try tags.append(try std.testing.allocator.dupe(u8, "release"));
+
+    const output = try tagListResult(
+        std.testing.allocator,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        &tags,
+        &.{.tag},
+    );
+    defer std.testing.allocator.free(output);
+
+    try std.testing.expectEqualStrings(
+        "mobile\n" ++
+            "release\n",
+        output,
+    );
+}
+
+test "tag field output emits empty output for empty lists" {
+    var global_tags = tag_ops.TagNameList.init(std.testing.allocator);
+    defer global_tags.deinit();
+    var commit_tags = tag_ops.TagList.init(std.testing.allocator);
+    defer commit_tags.deinit();
+
+    const global_output = try tagNameListResult(std.testing.allocator, &global_tags, &.{.tag});
+    defer std.testing.allocator.free(global_output);
+    try std.testing.expectEqualStrings("", global_output);
+
+    const commit_output = try tagListResult(
+        std.testing.allocator,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        &commit_tags,
+        &.{.tag},
+    );
+    defer std.testing.allocator.free(commit_output);
+    try std.testing.expectEqualStrings("", commit_output);
 }
 
 test "tagRmResult renders no-matching branch" {

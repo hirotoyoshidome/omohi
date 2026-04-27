@@ -259,26 +259,36 @@ pub const all = [_]CommandSpec{
     },
     .{
         .name = "tag",
-        .usage = "tag",
+        .usage = "tag [--field <tag>]...",
         .summary = "List all known tag names.",
         .positionals = &.{},
-        .options = &.{},
-        .examples = &.{"omohi tag"},
+        .options = &.{
+            .{ .long = "field", .short = null, .value_name = "tag", .required = false, .repeatable = true, .description = "Select one or more fields. Repeat to keep field order." },
+        },
+        .examples = &.{ "omohi tag", "omohi tag --field tag" },
         .notes = &.{
             "Lists persisted tag names in ascending order.",
+            "When `--field` is set, only the selected tag values are printed, one per line.",
             "Use `tag ls <commitId>` to inspect tags attached to one commit.",
         },
     },
     .{
         .name = "tag ls",
-        .usage = "tag ls <commitId>",
+        .usage = "tag ls [--field <tag>]... <commitId>",
         .summary = "List tags for one commit.",
         .positionals = &.{
             .{ .name = "commitId", .required = true, .repeatable = false, .description = "64-char commit ID." },
         },
-        .options = &.{},
-        .examples = &.{"omohi tag ls aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-        .notes = &.{},
+        .options = &.{
+            .{ .long = "field", .short = null, .value_name = "tag", .required = false, .repeatable = true, .description = "Select one or more fields. Repeat to keep field order." },
+        },
+        .examples = &.{
+            "omohi tag ls aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "omohi tag ls --field tag aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        },
+        .notes = &.{
+            "When `--field` is set, only the selected tag values are printed, one per line.",
+        },
     },
     .{
         .name = "tag add",
@@ -411,6 +421,8 @@ fn assertFieldValueSpecs() void {
     assertOptionValueSpecForCommand("tracklist", "field", parser_types.TracklistField);
     assertOptionValueSpecForCommand("find", "field", parser_types.FindField);
     assertOptionValueSpecForCommand("show", "field", parser_types.ShowField);
+    assertOptionValueSpecForCommand("tag", "field", parser_types.TagField);
+    assertOptionValueSpecForCommand("tag ls", "field", parser_types.TagField);
 }
 
 // Verifies that a command option's allowed values match an enum's tag names.
@@ -496,6 +508,8 @@ fn optionTakesValue(comptime command_name: []const u8, comptime option_long: []c
     if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "field")) return true;
     if (std.mem.eql(u8, command_name, "show") and std.mem.eql(u8, option_long, "output")) return true;
     if (std.mem.eql(u8, command_name, "show") and std.mem.eql(u8, option_long, "field")) return true;
+    if (std.mem.eql(u8, command_name, "tag") and std.mem.eql(u8, option_long, "field")) return true;
+    if (std.mem.eql(u8, command_name, "tag ls") and std.mem.eql(u8, option_long, "field")) return true;
     @compileError(std.fmt.comptimePrint(
         "missing parser option behavior mapping for command '{s}' option '--{s}'",
         .{ command_name, option_long },

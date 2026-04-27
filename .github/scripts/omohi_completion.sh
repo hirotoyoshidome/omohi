@@ -41,7 +41,13 @@ case "$*" in
     printf '%s\n' track untrack add rm commit status tracklist version find show tag help -h --help -v --version
     ;;
   "omohi tag " )
-    printf '%s\n' ls add rm
+    printf '%s\n' ls add rm --field
+    ;;
+  "omohi tag --field " )
+    printf '%s\n' tag
+    ;;
+  "omohi tag ls --field " )
+    printf '%s\n' tag
     ;;
   "omohi commit " )
     printf '%s\n' -m --message -t --tag --dry-run
@@ -130,7 +136,9 @@ assert_reply() {
 }
 
 assert_reply "track untrack add rm commit status tracklist version find show tag help -h --help -v --version" omohi ""
-assert_reply "ls add rm" omohi tag ""
+assert_reply "ls add rm --field" omohi tag ""
+assert_reply "tag" omohi tag --field ""
+assert_reply "tag" omohi tag ls --field ""
 assert_reply "-m --message -t --tag --dry-run" omohi commit ""
 assert_reply "--message" omohi commit --m
 assert_reply "-a --all" omohi add -

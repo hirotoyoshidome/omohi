@@ -462,17 +462,27 @@ List all known tag names.
 .TP
 .B Usage
 .nf
-omohi tag
+omohi tag [\-\-field <tag>]...
 .fi
+.TP
+.B Options
+.RS 4
+.B \-\-field <tag>
+optional, repeatable: Select one or more fields. Repeat to keep field order.
+.RE
 .TP
 .B Examples
 .nf
 omohi tag
+omohi tag \-\-field tag
 .fi
 .TP
 .B Notes
 .RS 4
 Lists persisted tag names in ascending order.
+.RE
+.RS 4
+When `\-\-field` is set, only the selected tag values are printed, one per line.
 .RE
 .RS 4
 Use `tag ls <commitId>` to inspect tags attached to one commit.
@@ -484,7 +494,7 @@ List tags for one commit.
 .TP
 .B Usage
 .nf
-omohi tag ls <commitId>
+omohi tag ls [\-\-field <tag>]... <commitId>
 .fi
 .TP
 .B Positionals
@@ -493,10 +503,22 @@ omohi tag ls <commitId>
 required: 64\-char commit ID.
 .RE
 .TP
+.B Options
+.RS 4
+.B \-\-field <tag>
+optional, repeatable: Select one or more fields. Repeat to keep field order.
+.RE
+.TP
 .B Examples
 .nf
 omohi tag ls aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+omohi tag ls \-\-field tag aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 .fi
+.TP
+.B Notes
+.RS 4
+When `\-\-field` is set, only the selected tag values are printed, one per line.
+.RE
 .SS tag add
 .TP
 .B Summary

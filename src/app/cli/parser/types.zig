@@ -28,6 +28,10 @@ pub const ShowField = enum {
     tags,
 };
 
+pub const TagField = enum {
+    tag,
+};
+
 pub const TrackArgs = struct {
     paths: []const []const u8,
 };
@@ -79,10 +83,13 @@ pub const ShowArgs = struct {
 
 pub const JournalArgs = struct {};
 
-pub const TagArgs = void;
+pub const TagArgs = struct {
+    fields: []const TagField,
+};
 
 pub const TagLsArgs = struct {
     commit_id: []const u8,
+    fields: []const TagField,
 };
 
 pub const TagAddArgs = struct {
@@ -131,6 +138,8 @@ pub fn deinitParsedRequest(allocator: std.mem.Allocator, parsed: *ParsedRequest)
         .tracklist => |args| allocator.free(args.fields),
         .find => |args| allocator.free(args.fields),
         .show => |args| allocator.free(args.fields),
+        .tag => |args| allocator.free(args.fields),
+        .tag_ls => |args| allocator.free(args.fields),
         else => {},
     }
 }
