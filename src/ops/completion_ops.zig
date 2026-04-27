@@ -421,6 +421,18 @@ test "complete returns commit ids for show and tags for tag rm" {
     }
 }
 
+test "complete returns tag subcommands for bare tag command" {
+    const allocator = std.testing.allocator;
+    const words = [_][]const u8{ "omohi", "tag", "" };
+    var list = try complete(allocator, null, &words, 2);
+    defer freeCandidateList(allocator, &list);
+
+    try std.testing.expectEqual(@as(usize, 3), list.items.len);
+    try std.testing.expectEqualStrings("ls", list.items[0]);
+    try std.testing.expectEqualStrings("add", list.items[1]);
+    try std.testing.expectEqualStrings("rm", list.items[2]);
+}
+
 test "complete returns rm options and staged paths" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
