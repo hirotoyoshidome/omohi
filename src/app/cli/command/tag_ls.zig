@@ -17,7 +17,7 @@ pub fn run(allocator: std.mem.Allocator, args: parser_types.TagLsArgs) !command_
     };
     defer tag_ops.freeTagList(allocator, &tags);
 
-    const output = try presenter.tagListResult(allocator, args.commit_id, &tags);
+    const output = try presenter.tagListResult(allocator, args.commit_id, &tags, args.fields);
     return .{ .output = output, .to_stderr = false, .exit_code = exit_code.ok };
 }
 

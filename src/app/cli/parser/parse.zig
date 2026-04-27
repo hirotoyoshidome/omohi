@@ -24,10 +24,11 @@ pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.
     }
 
     if (std.mem.eql(u8, argv[0], "tag")) {
-        if (argv.len == 1) return try parseNoArgsCommand(.tag, argv[1..]);
-        if (std.mem.eql(u8, argv[1], "ls")) return try parseTagLs(argv[2..]);
+        if (argv.len == 1) return try parseTag(argv[1..], allocator);
+        if (std.mem.eql(u8, argv[1], "ls")) return try parseTagLs(argv[2..], allocator);
         if (std.mem.eql(u8, argv[1], "add")) return try parseTagAdd(argv[2..]);
         if (std.mem.eql(u8, argv[1], "rm")) return try parseTagRm(argv[2..]);
+        if (std.mem.startsWith(u8, argv[1], "-")) return try parseTag(argv[1..], allocator);
         return error.InvalidCommand;
     }
 
@@ -284,10 +285,77 @@ fn parseJournal(args: []const []const u8) !types.ParsedRequest {
     return .{ .journal = .{} };
 }
 
-// Parses `tag ls <commitId>`.
-fn parseTagLs(args: []const []const u8) !types.ParsedRequest {
-    if (args.len != 1) return error.MissingArgument;
-    return .{ .tag_ls = .{ .commit_id = args[0] } };
+// Parses `tag` options for field selection.
+fn parseTag(args: []const []const u8, allocator: std.mem.Allocator) !types.ParsedRequest {
+    var fields = std.array_list.Managed(types.TagField).init(allocator);
+    errdefer fields.deinit();
+
+    var idx: usize = 0;
+    var stop_option = false;
+    while (idx < args.len) : (idx += 1) {
+        const token = args[idx];
+
+        if (!stop_option and scan.isDoubleDash(token)) {
+            stop_option = true;
+            continue;
+        }
+
+        if (!stop_option) {
+            if (scan.parseLongOption(token)) |opt| {
+                if (scan.equalsIgnoreAsciiCase(opt.key, "field")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
+                    try fields.append(try parseTagField(value));
+                    continue;
+                }
+
+                return error.UnknownOption;
+            }
+        }
+
+        return error.UnexpectedArgument;
+    }
+
+    return .{ .tag = .{
+        .fields = try fields.toOwnedSlice(),
+    } };
+}
+
+// Parses `tag ls <commitId>` plus field selection options.
+fn parseTagLs(args: []const []const u8, allocator: std.mem.Allocator) !types.ParsedRequest {
+    var fields = std.array_list.Managed(types.TagField).init(allocator);
+    errdefer fields.deinit();
+
+    var commit_id: ?[]const u8 = null;
+    var idx: usize = 0;
+    var stop_option = false;
+    while (idx < args.len) : (idx += 1) {
+        const token = args[idx];
+
+        if (!stop_option and scan.isDoubleDash(token)) {
+            stop_option = true;
+            continue;
+        }
+
+        if (!stop_option) {
+            if (scan.parseLongOption(token)) |opt| {
+                if (scan.equalsIgnoreAsciiCase(opt.key, "field")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
+                    try fields.append(try parseTagField(value));
+                    continue;
+                }
+
+                return error.UnknownOption;
+            }
+        }
+
+        if (commit_id != null) return error.UnexpectedArgument;
+        commit_id = token;
+    }
+
+    return .{ .tag_ls = .{
+        .commit_id = commit_id orelse return error.MissingArgument,
+        .fields = try fields.toOwnedSlice(),
+    } };
 }
 
 // Parses `tag add <commitId> <tagNames...>`.
@@ -590,6 +658,12 @@ fn parseShowField(value: []const u8) !types.ShowField {
     return error.InvalidArgument;
 }
 
+// Parses a `tag` field name into its enum form.
+fn parseTagField(value: []const u8) !types.TagField {
+    if (scan.equalsIgnoreAsciiCase(value, "tag")) return .tag;
+    return error.InvalidArgument;
+}
+
 test "parser preserves show unknown long option behavior" {
     const allocator = std.testing.allocator;
     const argv = [_][]const u8{ "show", "--bogus" };
@@ -609,7 +683,10 @@ test "parser resolves longest command match for tag subcommands" {
     defer types.deinitParsedRequest(allocator, &parsed);
 
     switch (parsed) {
-        .tag_ls => |args| try std.testing.expectEqualStrings("abc", args.commit_id),
+        .tag_ls => |args| {
+            try std.testing.expectEqualStrings("abc", args.commit_id);
+            try std.testing.expectEqual(@as(usize, 0), args.fields.len);
+        },
         else => return error.UnexpectedResult,
     }
 }
@@ -621,8 +698,41 @@ test "parser accepts bare tag command" {
     defer types.deinitParsedRequest(allocator, &parsed);
 
     switch (parsed) {
-        .tag => {},
+        .tag => |args| try std.testing.expectEqual(@as(usize, 0), args.fields.len),
         else => return error.UnexpectedResult,
+    }
+}
+
+test "parser accepts tag field selection" {
+    const allocator = std.testing.allocator;
+
+    {
+        const argv = [_][]const u8{ "tag", "--field", "tag" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .tag => |args| {
+                try std.testing.expectEqual(@as(usize, 1), args.fields.len);
+                try std.testing.expectEqual(types.TagField.tag, args.fields[0]);
+            },
+            else => return error.UnexpectedResult,
+        }
+    }
+
+    {
+        const argv = [_][]const u8{ "tag", "ls", "abc", "--field=tag" };
+        var parsed = try parseArgs(allocator, &argv);
+        defer types.deinitParsedRequest(allocator, &parsed);
+
+        switch (parsed) {
+            .tag_ls => |args| {
+                try std.testing.expectEqualStrings("abc", args.commit_id);
+                try std.testing.expectEqual(@as(usize, 1), args.fields.len);
+                try std.testing.expectEqual(types.TagField.tag, args.fields[0]);
+            },
+            else => return error.UnexpectedResult,
+        }
     }
 }
 
@@ -1231,6 +1341,14 @@ test "parser rejects unknown reference fields" {
     }
     {
         const argv = [_][]const u8{ "show", "--field", "unknown", "abc" };
+        try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &argv));
+    }
+    {
+        const argv = [_][]const u8{ "tag", "--field", "unknown" };
+        try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &argv));
+    }
+    {
+        const argv = [_][]const u8{ "tag", "ls", "abc", "--field", "unknown" };
         try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &argv));
     }
 }
