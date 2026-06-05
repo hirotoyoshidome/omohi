@@ -42,6 +42,7 @@ pub fn fromParsedRequest(
             .tagNames = args.tag_names,
         }),
         .journal => null,
+        .backup => null,
         .complete => null,
         else => null,
     };

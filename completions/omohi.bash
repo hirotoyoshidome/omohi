@@ -8,7 +8,7 @@ _omohi_complete() {
   fi
   cword=${COMP_CWORD}
 
-  local top_level_commands="track untrack add rm commit status tracklist version find show journal tag help"
+  local top_level_commands="track untrack add rm commit status tracklist version find show journal backup tag help"
   local top_level_aliases="-h --help -v --version"
   local completion_command="${OMOHI_COMPLETION_COMMAND:-omohi}"
 
@@ -57,6 +57,19 @@ _omohi_complete() {
       return 0
       ;;
     status|version|journal)
+      return 0
+      ;;
+    backup)
+      if [[ "${prev}" == "--max-size" ]]; then
+        _omohi_collect_candidates
+        return 0
+      fi
+      if [[ -z "${cur}" || "${cur}" == -* ]]; then
+        _omohi_collect_candidates
+        return 0
+      fi
+      compopt -o filenames 2>/dev/null || true
+      COMPREPLY=( $(compgen -f -- "${cur}") )
       return 0
       ;;
     rm)
