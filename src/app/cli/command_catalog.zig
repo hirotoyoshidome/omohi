@@ -41,6 +41,7 @@ pub const public_command_tags = [_]ParsedRequestTag{
     .find,
     .show,
     .journal,
+    .backup,
     .tag,
     .tag_ls,
     .tag_add,
@@ -255,6 +256,27 @@ pub const all = [_]CommandSpec{
             "Shows the latest 500 successful mutating command records.",
             "Displays timestamps in the local timezone.",
             "TTY output is paged with less when available.",
+        },
+    },
+    .{
+        .name = "backup",
+        .usage = "backup [--max-size <bytes>] <archivePath>",
+        .summary = "Create a full tar.gz backup archive of ~/.omohi.",
+        .positionals = &.{
+            .{ .name = "archivePath", .required = true, .repeatable = false, .description = "Path to the backup archive to create." },
+        },
+        .options = &.{
+            .{ .long = "max-size", .short = null, .value_name = "bytes", .required = false, .repeatable = false, .description = "Reject the backup if the estimated archive size exceeds this byte count. Defaults to 1073741824." },
+        },
+        .examples = &.{
+            "omohi backup ~/omohi-backup.tar.gz",
+            "omohi backup --max-size 2147483648 ~/omohi-backup.tar.gz",
+        },
+        .notes = &.{
+            "The archive is written atomically through a temporary file beside the target path.",
+            "The target archive must not already exist and must be outside ~/.omohi.",
+            "`LOCK` and `.trash` directories are excluded from the archive.",
+            "Backups are always full backups in this version.",
         },
     },
     .{
@@ -508,6 +530,7 @@ fn optionTakesValue(comptime command_name: []const u8, comptime option_long: []c
     if (std.mem.eql(u8, command_name, "find") and std.mem.eql(u8, option_long, "field")) return true;
     if (std.mem.eql(u8, command_name, "show") and std.mem.eql(u8, option_long, "output")) return true;
     if (std.mem.eql(u8, command_name, "show") and std.mem.eql(u8, option_long, "field")) return true;
+    if (std.mem.eql(u8, command_name, "backup") and std.mem.eql(u8, option_long, "max-size")) return true;
     if (std.mem.eql(u8, command_name, "tag") and std.mem.eql(u8, option_long, "field")) return true;
     if (std.mem.eql(u8, command_name, "tag ls") and std.mem.eql(u8, option_long, "field")) return true;
     @compileError(std.fmt.comptimePrint(
