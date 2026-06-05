@@ -151,5 +151,13 @@ Agents should also refer to directories under `docs/` when they are relevant to 
 - Ensure formatting is applied. Use `make fmt-check` at minimum.
 - Prefer `make check` when the change scope is broad enough to affect multiple quality gates.
 
-## 12. Commit Policy
+## 12. Commit and PR Policy
 - When committing changes created with AI assistance, include an appropriate `Co-authored-by` trailer for the AI tool in the commit message.
+- When asked to publish only staged changes, commit only the current index. Leave unstaged and untracked worktree changes untouched.
+- Use repository branch prefixes that drive PR metadata:
+  - `feature/<description>` for feature or documentation/process improvements that should receive enhancement metadata.
+  - `fix/<description>` for bug fixes.
+  - `docs/<description>` for documentation-only changes that should receive documentation metadata.
+- Do not add an AI-tool prefix such as `[codex]` to branch names, commit subjects, or PR titles unless the user explicitly asks for it.
+- Prefer `gh` for PR creation when available. If sandboxed `gh` auth appears invalid, retry the check with the required execution permissions before falling back to another path.
+- Open draft PRs by default unless the user explicitly asks for a ready-for-review PR.
