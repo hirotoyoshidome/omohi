@@ -18,6 +18,7 @@ const local_head = @import("./local/head.zig");
 const local_journal = @import("./local/journal.zig");
 const local_directory_tree_files = @import("./local/directory_tree_files.zig");
 const local_version = @import("./local/version.zig");
+const local_backup = @import("./local/backup.zig");
 const version_guard = @import("./storage/version_guard.zig");
 const ContentEntry = @import("./object/content_entry.zig").ContentEntry;
 const hash = @import("./object/hash.zig");
@@ -120,6 +121,9 @@ pub const JournalEntry = local_journal.JournalEntry;
 /// Owns journal entries returned by `journal`.
 pub const JournalEntryList = local_journal.JournalEntryList;
 
+/// Describes a completed backup archive.
+pub const BackupResult = local_backup.BackupResult;
+
 /// Carries commit metadata, entries, and tags for `show`.
 pub const CommitDetails = struct {
     commit_id: constrained_types.CommitId,
@@ -188,6 +192,29 @@ pub fn appendJournal(
         .local_ts = local_ts,
         .command_type = command_type,
         .payload_json = payload_json,
+    });
+}
+
+/// Writes a full backup archive for the opened store directory.
+/// Memory: borrowed path inputs, temporary allocations use allocator
+/// Lifetime: returned result is independent of allocator
+/// Errors: version, lock, validation, size limit, and filesystem/archive write failures
+/// Caller responsibilities: pass absolute normalized store and archive paths
+pub fn backupStore(
+    allocator: std.mem.Allocator,
+    omohi_dir: std.fs.Dir,
+    store_path: []const u8,
+    archive_path: []const u8,
+    max_size: u64,
+) !BackupResult {
+    try ensureStoreVersion(allocator, omohi_dir);
+    try lock.acquireLock(omohi_dir);
+    defer lock.releaseLock(omohi_dir);
+
+    return local_backup.writeBackup(allocator, omohi_dir, .{
+        .store_path = store_path,
+        .archive_path = archive_path,
+        .max_size = max_size,
     });
 }
 

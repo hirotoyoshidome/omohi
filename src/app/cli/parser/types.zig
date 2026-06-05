@@ -83,6 +83,11 @@ pub const ShowArgs = struct {
 
 pub const JournalArgs = struct {};
 
+pub const BackupArgs = struct {
+    archive_path: []const u8,
+    max_size: u64,
+};
+
 pub const TagArgs = struct {
     fields: []const TagField,
 };
@@ -123,6 +128,7 @@ pub const ParsedRequest = union(enum) {
     find: FindArgs,
     show: ShowArgs,
     journal: JournalArgs,
+    backup: BackupArgs,
     tag: TagArgs,
     tag_ls: TagLsArgs,
     tag_add: TagAddArgs,

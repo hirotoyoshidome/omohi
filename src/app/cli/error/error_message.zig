@@ -33,6 +33,10 @@ pub fn forRuntimeError(err: anyerror) []const u8 {
         error.AlreadyTracked => "The file is already tracked.",
         error.InvalidTrackedTarget => "Track target must be a file path or a directory expanded by the CLI.",
         error.FileTooLarge => "File is too large to stage.",
+        error.BackupTooLarge => "Backup is too large. Use --max-size to raise the limit or reduce stored data.",
+        error.BackupTargetExists => "Backup target already exists. Choose a new archive path.",
+        error.BackupTargetInsideStore => "Backup target must be outside ~/.omohi.",
+        error.UnsupportedBackupEntry => "Store contains an unsupported entry type for backup.",
         else => "Operation failed due to an unexpected system error.",
     };
 }

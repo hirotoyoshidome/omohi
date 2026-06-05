@@ -455,6 +455,47 @@ Displays timestamps in the local timezone.
 .RS 4
 TTY output is paged with less when available.
 .RE
+.SS backup
+.TP
+.B Summary
+Create a full tar.gz backup archive of ~/.omohi.
+.TP
+.B Usage
+.nf
+omohi backup [\-\-max\-size <bytes>] <archivePath>
+.fi
+.TP
+.B Positionals
+.RS 4
+.B archivePath
+required: Path to the backup archive to create.
+.RE
+.TP
+.B Options
+.RS 4
+.B \-\-max\-size <bytes>
+optional: Reject the backup if the estimated archive size exceeds this byte count. Defaults to 1073741824.
+.RE
+.TP
+.B Examples
+.nf
+omohi backup ~/omohi\-backup.tar.gz
+omohi backup \-\-max\-size 2147483648 ~/omohi\-backup.tar.gz
+.fi
+.TP
+.B Notes
+.RS 4
+The archive is written atomically through a temporary file beside the target path.
+.RE
+.RS 4
+The target archive must not already exist and must be outside ~/.omohi.
+.RE
+.RS 4
+`LOCK` and `.trash` directories are excluded from the archive.
+.RE
+.RS 4
+Backups are always full backups in this version.
+.RE
 .SS tag
 .TP
 .B Summary

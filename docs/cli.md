@@ -17,6 +17,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 | `find` | `find [--tag <tag>] [--empty|--no-empty] [--since <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--until <YYYY-MM-DD|YYYY-MM-DDTHH:MM:SS>] [--limit <1-500>] [--output <text|json>] [--field <commit_id|message|created_at>]...` | Search commits by optional tag, empty-commit, and local-time range filters. |
 | `show` | `show [--output <text|json>] [--field <commit_id|message|created_at|paths|tags>]... <commitId>` | Show one commit details payload. |
 | `journal` | `journal` | Show recent journal logs in reverse chronological order. |
+| `backup` | `backup [--max-size <bytes>] <archivePath>` | Create a full tar.gz backup archive of ~/.omohi. |
 | `tag` | `tag [--field <tag>]...` | List all known tag names. |
 | `tag ls` | `tag ls [--field <tag>]... <commitId>` | List tags for one commit. |
 | `tag add` | `tag add <commitId> <tagNames...>` | Attach one or more tags to a commit. |
@@ -234,6 +235,23 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
   - Shows the latest 500 successful mutating command records.
   - Displays timestamps in the local timezone.
   - TTY output is paged with less when available.
+
+### backup
+
+- Usage: `omohi backup [--max-size <bytes>] <archivePath>`
+- Summary: Create a full tar.gz backup archive of ~/.omohi.
+- Positionals:
+  - `archivePath` (required): Path to the backup archive to create.
+- Options:
+  - `--max-size` `<bytes>` (optional): Reject the backup if the estimated archive size exceeds this byte count. Defaults to 1073741824.
+- Examples:
+  - `omohi backup ~/omohi-backup.tar.gz`
+  - `omohi backup --max-size 2147483648 ~/omohi-backup.tar.gz`
+- Notes:
+  - The archive is written atomically through a temporary file beside the target path.
+  - The target archive must not already exist and must be outside ~/.omohi.
+  - `LOCK` and `.trash` directories are excluded from the archive.
+  - Backups are always full backups in this version.
 
 ### tag
 
