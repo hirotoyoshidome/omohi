@@ -38,7 +38,7 @@ shift
 
 case "$*" in
   "omohi " )
-    printf '%s\n' track untrack add rm commit status tracklist version find show tag help -h --help -v --version
+    printf '%s\n' track untrack add rm commit status tracklist version find show journal backup tag help -h --help -v --version
     ;;
   "omohi tag " )
     printf '%s\n' ls add rm --field
@@ -94,6 +94,12 @@ case "$*" in
   "omohi tracklist --field " )
     printf '%s\n' id path
     ;;
+  "omohi backup " )
+    printf '%s\n' --max-size
+    ;;
+  "omohi backup --" )
+    printf '%s\n' --max-size
+    ;;
   "omohi untrack " )
     printf '%s\n' 11111111111111111111111111111111 22222222222222222222222222222222
     ;;
@@ -135,7 +141,7 @@ assert_reply() {
   fi
 }
 
-assert_reply "track untrack add rm commit status tracklist version find show tag help -h --help -v --version" omohi ""
+assert_reply "track untrack add rm commit status tracklist version find show journal backup tag help -h --help -v --version" omohi ""
 assert_reply "ls add rm --field" omohi tag ""
 assert_reply "tag" omohi tag --field ""
 assert_reply "tag" omohi tag ls --field ""
@@ -153,6 +159,8 @@ assert_reply "--output" omohi tracklist --o
 assert_reply "text json" omohi tracklist --output ""
 assert_reply "id path" omohi tracklist --field ""
 assert_reply "" omohi status ""
+assert_reply "--max-size" omohi backup --
+assert_reply "" omohi backup --max-size ""
 assert_reply "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" omohi show ""
 assert_reply "" omohi commit --message ""
 assert_reply "11111111111111111111111111111111 22222222222222222222222222222222" omohi untrack ""

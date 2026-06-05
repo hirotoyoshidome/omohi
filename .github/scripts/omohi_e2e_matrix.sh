@@ -1075,6 +1075,49 @@ case_081_journal_rejects_extra_args() {
   assert_contains "$RUN_STDERR" "Unexpected argument." "journal should report usage error"
 }
 
+case_081_backup_full_archive() {
+  local archive listing
+  setup_commit_without_tags
+  printf 'stale lock\n' > "$HOME_DIR/.omohi/LOCK"
+  mkdir -p "$HOME_DIR/.omohi/tracked/.trash"
+  printf 'deleted\n' > "$HOME_DIR/.omohi/tracked/.trash/deleted"
+  rm -f "$HOME_DIR/.omohi/LOCK"
+
+  archive="$WORK_DIR/backup.tar.gz"
+  run_omohi_capture backup "$archive"
+  assert_eq "0" "$RUN_CODE" "backup should succeed"
+  assert_contains "$RUN_STDOUT" "Backed up ~/.omohi to $archive" "backup should report target"
+  assert_file_exists "$archive" "backup archive should exist"
+
+  listing="$(tar -tzf "$archive")"
+  assert_contains "$listing" ".omohi/VERSION" "backup should include VERSION"
+  assert_contains "$listing" ".omohi/tracked/" "backup should include tracked data"
+  assert_not_contains "$listing" "LOCK" "backup should exclude LOCK"
+  assert_not_contains "$listing" ".trash" "backup should exclude trash data"
+}
+
+case_081_backup_rejects_existing_target() {
+  local archive
+  setup_commit_without_tags
+  archive="$WORK_DIR/existing.tar.gz"
+  printf 'existing\n' > "$archive"
+
+  run_omohi_capture backup "$archive"
+  assert_eq "4" "$RUN_CODE" "backup should reject existing target"
+  assert_contains "$RUN_STDERR" "Backup target already exists." "backup should explain existing target"
+}
+
+case_081_backup_rejects_small_max_size() {
+  local archive
+  setup_commit_without_tags
+  archive="$WORK_DIR/small.tar.gz"
+
+  run_omohi_capture backup --max-size 1 "$archive"
+  assert_eq "4" "$RUN_CODE" "backup should reject too-small max size"
+  assert_contains "$RUN_STDERR" "Backup is too large." "backup should explain size limit"
+  assert_file_missing "$archive" "backup should not leave archive when size guard fails"
+}
+
 case_082_tag_ls_with_tags() {
   setup_commit_with_two_files_and_tags
   run_omohi_capture tag ls "$LAST_COMMIT_ID"
@@ -1320,6 +1363,9 @@ run_case "show unknown commit" case_078_show_unknown_commit
 run_case "journal non-empty" case_079_journal_non_empty
 run_case "journal empty" case_080_journal_empty
 run_case "journal rejects extra args" case_081_journal_rejects_extra_args
+run_case "backup full archive" case_081_backup_full_archive
+run_case "backup rejects existing target" case_081_backup_rejects_existing_target
+run_case "backup rejects small max size" case_081_backup_rejects_small_max_size
 run_case "tag ls with tags" case_082_tag_ls_with_tags
 run_case "tag field only" case_083_tag_field_only
 run_case "tag ls without tags" case_084_tag_ls_without_tags
