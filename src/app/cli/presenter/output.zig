@@ -10,6 +10,7 @@ const find_ops = @import("../../../ops/find_ops.zig");
 const show_ops = @import("../../../ops/show_ops.zig");
 const tag_ops = @import("../../../ops/tag_ops.zig");
 const journal_ops = @import("../../../ops/journal_ops.zig");
+const backup_ops = @import("../../../ops/backup_ops.zig");
 
 pub const TagRemoveOutcome = enum {
     no_tags,
@@ -242,6 +243,19 @@ pub fn rmMultiResult(allocator: std.mem.Allocator, outcome: *const rm_ops.RmOutc
 // Renders the created commit id as owned CLI output.
 pub fn commitResult(allocator: std.mem.Allocator, commit_id: [64]u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "Committed {s}.\n", .{&commit_id});
+}
+
+// Renders backup completion as owned CLI output.
+pub fn backupResult(
+    allocator: std.mem.Allocator,
+    archive_path: []const u8,
+    result: backup_ops.BackupResult,
+) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        "Backed up ~/.omohi to {s} ({d} bytes).\n",
+        .{ archive_path, result.archive_size },
+    );
 }
 
 // Renders journal entries as owned CLI output.

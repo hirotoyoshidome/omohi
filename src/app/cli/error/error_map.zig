@@ -15,7 +15,11 @@ pub fn exitCodeFor(err: anyerror) u8 {
         err == error.LockAlreadyAcquired or
         err == error.CommitNotFound or
         err == error.OmohiNotInitialized or
-        err == error.FileTooLarge)
+        err == error.FileTooLarge or
+        err == error.BackupTooLarge or
+        err == error.BackupTargetExists or
+        err == error.BackupTargetInsideStore or
+        err == error.UnsupportedBackupEntry)
     {
         return exit_code.use_case_error;
     }

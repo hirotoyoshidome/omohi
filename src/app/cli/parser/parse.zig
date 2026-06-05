@@ -43,6 +43,7 @@ pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.
     if (std.mem.eql(u8, argv[0], "find")) return try parseFind(allocator, argv[1..]);
     if (std.mem.eql(u8, argv[0], "show")) return try parseShow(allocator, argv[1..]);
     if (std.mem.eql(u8, argv[0], "journal")) return try parseJournal(argv[1..]);
+    if (std.mem.eql(u8, argv[0], "backup")) return try parseBackup(argv[1..]);
 
     return error.InvalidCommand;
 }
@@ -283,6 +284,43 @@ fn parseRm(args: []const []const u8) !types.ParsedRequest {
 fn parseJournal(args: []const []const u8) !types.ParsedRequest {
     if (args.len != 0) return error.UnexpectedArgument;
     return .{ .journal = .{} };
+}
+
+// Parses `backup <archivePath>` plus backup size guard options.
+fn parseBackup(args: []const []const u8) !types.ParsedRequest {
+    var max_size: u64 = 1024 * 1024 * 1024;
+    var archive_path: ?[]const u8 = null;
+    var idx: usize = 0;
+    var stop_option = false;
+    while (idx < args.len) : (idx += 1) {
+        const token = args[idx];
+
+        if (!stop_option and scan.isDoubleDash(token)) {
+            stop_option = true;
+            continue;
+        }
+
+        if (!stop_option) {
+            if (scan.parseLongOption(token)) |opt| {
+                if (scan.equalsIgnoreAsciiCase(opt.key, "max-size")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
+                    max_size = std.fmt.parseInt(u64, value, 10) catch return error.InvalidArgument;
+                    if (max_size == 0) return error.InvalidArgument;
+                    continue;
+                }
+
+                return error.UnknownOption;
+            }
+        }
+
+        if (archive_path != null) return error.UnexpectedArgument;
+        archive_path = token;
+    }
+
+    return .{ .backup = .{
+        .archive_path = archive_path orelse return error.MissingArgument,
+        .max_size = max_size,
+    } };
 }
 
 // Parses `tag` options for field selection.
@@ -1215,6 +1253,30 @@ test "parser accepts tracklist output and repeated fields" {
         },
         else => return error.UnexpectedResult,
     }
+}
+
+test "parser accepts backup archive path and max size" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{ "backup", "--max-size=2048", "backup.tar.gz" };
+    var parsed = try parseArgs(allocator, &argv);
+    defer types.deinitParsedRequest(allocator, &parsed);
+
+    switch (parsed) {
+        .backup => |args| {
+            try std.testing.expectEqualStrings("backup.tar.gz", args.archive_path);
+            try std.testing.expectEqual(@as(u64, 2048), args.max_size);
+        },
+        else => return error.UnexpectedResult,
+    }
+}
+
+test "parser rejects invalid backup inputs" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.MissingArgument, parseArgs(allocator, &.{"backup"}));
+    try std.testing.expectError(error.MissingValue, parseArgs(allocator, &.{ "backup", "--max-size" }));
+    try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "backup", "--max-size", "0", "backup.tar.gz" }));
+    try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "backup", "--max-size", "abc", "backup.tar.gz" }));
+    try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &.{ "backup", "a.tar.gz", "b.tar.gz" }));
 }
 
 test "parser accepts find output and repeated fields" {
