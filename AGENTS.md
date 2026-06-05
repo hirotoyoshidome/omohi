@@ -150,3 +150,6 @@ Agents should also refer to directories under `docs/` when they are relevant to 
 - If completion is driven by a hand-maintained source or test fixture rather than generated docs, update that source directly and keep it in sync with the command catalog.
 - Ensure formatting is applied. Use `make fmt-check` at minimum.
 - Prefer `make check` when the change scope is broad enough to affect multiple quality gates.
+
+## 12. Commit Policy
+- When committing changes created with AI assistance, include an appropriate `Co-authored-by` trailer for the AI tool in the commit message.
