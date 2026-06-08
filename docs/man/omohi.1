@@ -496,6 +496,52 @@ The target archive must not already exist and must be outside ~/.omohi.
 .RS 4
 Backups are always full backups in this version.
 .RE
+.SS restore
+.TP
+.B Summary
+Restore ~/.omohi from a full tar.gz backup archive.
+.TP
+.B Usage
+.nf
+omohi restore [\-\-replace] [\-\-max\-size <bytes>] <archivePath>
+.fi
+.TP
+.B Positionals
+.RS 4
+.B archivePath
+required: Path to the backup archive to restore.
+.RE
+.TP
+.B Options
+.RS 4
+.B \-\-replace
+optional: Replace an existing non\-empty ~/.omohi after moving it to a rollback directory.
+.RE
+.RS 4
+.B \-\-max\-size <bytes>
+optional: Reject the restore if the archive or extracted file payload exceeds this byte count. Defaults to 1073741824.
+.RE
+.TP
+.B Examples
+.nf
+omohi restore ~/omohi\-backup.tar.gz
+omohi restore \-\-replace ~/omohi\-backup.tar.gz
+omohi restore \-\-max\-size 2147483648 ~/omohi\-backup.tar.gz
+.fi
+.TP
+.B Notes
+.RS 4
+The archive must be a full backup produced by `omohi backup`.
+.RE
+.RS 4
+Existing non\-empty ~/.omohi is rejected unless `\-\-replace` is set.
+.RE
+.RS 4
+`\-\-replace` moves the previous store to a rollback directory beside ~/.omohi before installing the restored store.
+.RE
+.RS 4
+Stored absolute paths are restored unchanged; paths from another environment may appear as `missing` in `omohi status`.
+.RE
 .SS tag
 .TP
 .B Summary

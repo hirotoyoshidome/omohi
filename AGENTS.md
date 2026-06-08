@@ -44,7 +44,7 @@ Agents should also refer to directories under `docs/` when they are relevant to 
 
 ## 4. CLI Contract (Must Preserve)
 - Target commands:
-  - `track`, `untrack`, `add`, `rm`, `commit`, `status`, `tracklist`, `find`, `show`, `tag ls`, `tag add`, `tag rm`, `help`
+  - `track`, `untrack`, `add`, `rm`, `commit`, `status`, `tracklist`, `find`, `show`, `backup`, `restore`, `tag ls`, `tag add`, `tag rm`, `help`
 - Parser behavior:
   - Resolve commands by longest match (including subcommands).
   - Support `--key=value`, `--key value`, and `-k value`.
