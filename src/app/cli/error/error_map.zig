@@ -5,6 +5,7 @@ const exit_code = @import("exit_code.zig");
 pub fn exitCodeFor(err: anyerror) u8 {
     if (err == error.DataDestroyed) return exit_code.data_destroyed;
     if (err == error.MissingStoreVersion) return exit_code.data_destroyed;
+    if (err == error.InvalidRestoreArchive) return exit_code.use_case_error;
 
     const name = @errorName(err);
     if (std.mem.startsWith(u8, name, "Invalid")) return exit_code.domain_error;
@@ -19,7 +20,11 @@ pub fn exitCodeFor(err: anyerror) u8 {
         err == error.BackupTooLarge or
         err == error.BackupTargetExists or
         err == error.BackupTargetInsideStore or
-        err == error.UnsupportedBackupEntry)
+        err == error.UnsupportedBackupEntry or
+        err == error.RestoreTooLarge or
+        err == error.RestoreTargetExists or
+        err == error.UnsupportedRestoreEntry or
+        err == error.InvalidRestoreArchive)
     {
         return exit_code.use_case_error;
     }

@@ -88,6 +88,12 @@ pub const BackupArgs = struct {
     max_size: u64,
 };
 
+pub const RestoreArgs = struct {
+    archive_path: []const u8,
+    replace: bool,
+    max_size: u64,
+};
+
 pub const TagArgs = struct {
     fields: []const TagField,
 };
@@ -129,6 +135,7 @@ pub const ParsedRequest = union(enum) {
     show: ShowArgs,
     journal: JournalArgs,
     backup: BackupArgs,
+    restore: RestoreArgs,
     tag: TagArgs,
     tag_ls: TagLsArgs,
     tag_add: TagAddArgs,

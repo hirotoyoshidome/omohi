@@ -37,6 +37,10 @@ pub fn forRuntimeError(err: anyerror) []const u8 {
         error.BackupTargetExists => "Backup target already exists. Choose a new archive path.",
         error.BackupTargetInsideStore => "Backup target must be outside ~/.omohi.",
         error.UnsupportedBackupEntry => "Store contains an unsupported entry type for backup.",
+        error.RestoreTooLarge => "Restore archive is too large. Use --max-size to raise the limit or choose a smaller backup.",
+        error.RestoreTargetExists => "Store already exists. Use --replace to move the current store aside and restore the backup.",
+        error.InvalidRestoreArchive => "Restore archive is invalid. Use an archive created by `omohi backup`.",
+        error.UnsupportedRestoreEntry => "Restore archive contains an unsupported entry type or excluded store path.",
         else => "Operation failed due to an unexpected system error.",
     };
 }

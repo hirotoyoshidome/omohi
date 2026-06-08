@@ -1118,6 +1118,55 @@ case_081_backup_rejects_small_max_size() {
   assert_file_missing "$archive" "backup should not leave archive when size guard fails"
 }
 
+case_081_restore_full_archive() {
+  local archive
+  setup_commit_without_tags
+  archive="$WORK_DIR/restore.tar.gz"
+
+  run_omohi_capture backup "$archive"
+  assert_eq "0" "$RUN_CODE" "backup should succeed before restore"
+  rm -rf "$HOME_DIR/.omohi"
+
+  run_omohi_capture restore "$archive"
+  assert_eq "0" "$RUN_CODE" "restore should succeed"
+  assert_contains "$RUN_STDOUT" "Restored ~/.omohi from $archive" "restore should report source archive"
+  assert_file_exists "$HOME_DIR/.omohi/VERSION" "restore should recreate store metadata"
+
+  run_omohi_capture find
+  assert_eq "0" "$RUN_CODE" "find should work after restore"
+  assert_contains "$RUN_STDOUT" "Found 1 commit(s)." "restore should preserve commits"
+}
+
+case_081_restore_rejects_existing_target() {
+  local archive
+  setup_commit_without_tags
+  archive="$WORK_DIR/restore-existing.tar.gz"
+
+  run_omohi_capture backup "$archive"
+  assert_eq "0" "$RUN_CODE" "backup should succeed before restore rejection"
+
+  run_omohi_capture restore "$archive"
+  assert_eq "4" "$RUN_CODE" "restore should reject existing store"
+  assert_contains "$RUN_STDERR" "Store already exists." "restore should explain existing target"
+}
+
+case_081_restore_replace_moves_existing_store() {
+  local archive rollback_path
+  setup_commit_without_tags
+  archive="$WORK_DIR/restore-replace.tar.gz"
+
+  run_omohi_capture backup "$archive"
+  assert_eq "0" "$RUN_CODE" "backup should succeed before restore replace"
+  printf 'old\n' > "$HOME_DIR/.omohi/OLD_MARKER"
+
+  run_omohi_capture restore --replace "$archive"
+  assert_eq "0" "$RUN_CODE" "restore --replace should succeed"
+  assert_contains "$RUN_STDOUT" "Previous store moved to " "restore --replace should report rollback path"
+  rollback_path="$(printf '%s\n' "$RUN_STDOUT" | awk '/Previous store moved to / { sub(/^Previous store moved to /, ""); print; exit }')"
+  assert_file_exists "$rollback_path/OLD_MARKER" "restore --replace should leave previous store rollback"
+  assert_file_missing "$HOME_DIR/.omohi/OLD_MARKER" "restore --replace should install restored store"
+}
+
 case_082_tag_ls_with_tags() {
   setup_commit_with_two_files_and_tags
   run_omohi_capture tag ls "$LAST_COMMIT_ID"
@@ -1366,6 +1415,9 @@ run_case "journal rejects extra args" case_081_journal_rejects_extra_args
 run_case "backup full archive" case_081_backup_full_archive
 run_case "backup rejects existing target" case_081_backup_rejects_existing_target
 run_case "backup rejects small max size" case_081_backup_rejects_small_max_size
+run_case "restore full archive" case_081_restore_full_archive
+run_case "restore rejects existing target" case_081_restore_rejects_existing_target
+run_case "restore replace moves existing store" case_081_restore_replace_moves_existing_store
 run_case "tag ls with tags" case_082_tag_ls_with_tags
 run_case "tag field only" case_083_tag_field_only
 run_case "tag ls without tags" case_084_tag_ls_without_tags

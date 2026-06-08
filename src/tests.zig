@@ -23,6 +23,7 @@ const _store_local_trash = @import("store/local/trash.zig");
 const _store_local_version = @import("store/local/version.zig");
 const _store_local_journal = @import("store/local/journal.zig");
 const _store_local_backup = @import("store/local/backup.zig");
+const _store_local_restore = @import("store/local/restore.zig");
 // testing
 const _testing_persistence_fixture_inspector = @import("testing/persistence_fixture_inspector.zig");
 const _testing_store_api_test_support = @import("testing/store_api_test_support.zig");
@@ -40,6 +41,7 @@ const _ops_completion = @import("ops/completion_ops.zig");
 const _ops_journal_append = @import("ops/journal/append.zig");
 const _ops_journal = @import("ops/journal_ops.zig");
 const _ops_backup = @import("ops/backup_ops.zig");
+const _ops_restore = @import("ops/restore_ops.zig");
 
 // app/cli tests
 const _app_cli_run = @import("app/cli/run.zig");
@@ -55,6 +57,7 @@ const _app_cli_output = @import("app/cli/presenter/output.zig");
 const _app_cli_version = @import("app/cli/command/version.zig");
 const _app_cli_journal = @import("app/cli/command/journal.zig");
 const _app_cli_backup = @import("app/cli/command/backup.zig");
+const _app_cli_restore = @import("app/cli/command/restore.zig");
 const _app_cli_command_catalog = @import("app/cli/command_catalog.zig");
 const _app_cli_docs_render_markdown = @import("app/cli/docs/render_markdown.zig");
 const _app_cli_docs_render_man = @import("app/cli/docs/render_man.zig");
@@ -81,6 +84,7 @@ test "load modules" {
     _ = _store_local_version;
     _ = _store_local_journal;
     _ = _store_local_backup;
+    _ = _store_local_restore;
     _ = _testing_persistence_fixture_inspector;
     _ = _testing_store_api_test_support;
     _ = _ops_track;
@@ -95,6 +99,7 @@ test "load modules" {
     _ = _ops_journal_append;
     _ = _ops_journal;
     _ = _ops_backup;
+    _ = _ops_restore;
     _ = _app_cli_run;
     _ = _app_cli_error_map;
     _ = _app_cli_error_message;
@@ -108,6 +113,7 @@ test "load modules" {
     _ = _app_cli_version;
     _ = _app_cli_journal;
     _ = _app_cli_backup;
+    _ = _app_cli_restore;
     _ = _app_cli_command_catalog;
     _ = _app_cli_docs_render_markdown;
     _ = _app_cli_docs_render_man;

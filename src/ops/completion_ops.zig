@@ -5,7 +5,7 @@ const store_api = @import("../store/api.zig");
 pub const CandidateList = std.array_list.Managed([]u8);
 
 const top_level_commands = [_][]const u8{
-    "track", "untrack", "add", "rm", "commit", "status", "tracklist", "version", "find", "show", "journal", "backup", "tag", "help",
+    "track", "untrack", "add", "rm", "commit", "status", "tracklist", "version", "find", "show", "journal", "backup", "restore", "tag", "help",
 };
 const top_level_aliases = [_][]const u8{ "-h", "--help", "-v", "--version" };
 const tag_commands = [_][]const u8{ "ls", "add", "rm" };
@@ -17,13 +17,14 @@ const tracklist_options = [_][]const u8{ "--output", "--field" };
 const find_options = [_][]const u8{ "-t", "--tag", "--empty", "--no-empty", "-s", "--since", "-u", "--until", "--limit", "--output", "--field" };
 const show_options = [_][]const u8{ "--output", "--field" };
 const backup_options = [_][]const u8{"--max-size"};
+const restore_options = [_][]const u8{ "--replace", "--max-size" };
 const tag_options = [_][]const u8{"--field"};
 const output_values = [_][]const u8{ "text", "json" };
 const tracklist_field_values = [_][]const u8{ "id", "path" };
 const find_field_values = [_][]const u8{ "commit_id", "message", "created_at" };
 const show_field_values = [_][]const u8{ "commit_id", "message", "created_at", "paths", "tags" };
 const tag_field_values = [_][]const u8{"tag"};
-const help_topics = [_][]const u8{ "track", "untrack", "add", "rm", "commit", "status", "tracklist", "version", "find", "show", "journal", "backup", "tag", "help" };
+const help_topics = [_][]const u8{ "track", "untrack", "add", "rm", "commit", "status", "tracklist", "version", "find", "show", "journal", "backup", "restore", "tag", "help" };
 
 // Reports whether completion at the current cursor position needs store-backed data.
 pub fn requiresStore(words: []const []const u8, index: usize) bool {
@@ -151,6 +152,11 @@ pub fn complete(
     if (std.mem.eql(u8, command, "backup")) {
         if (expectsValue(words, index, "--max-size", "")) return out;
         try appendFilteredStatic(allocator, &out, &backup_options, current);
+        return out;
+    }
+    if (std.mem.eql(u8, command, "restore")) {
+        if (expectsValue(words, index, "--max-size", "")) return out;
+        try appendFilteredStatic(allocator, &out, &restore_options, current);
         return out;
     }
     if (std.mem.eql(u8, command, "rm") and index == 2) {
@@ -560,6 +566,28 @@ test "complete returns backup options" {
 
     {
         const words = [_][]const u8{ "omohi", "backup", "--max-size", "" };
+        var list = try complete(allocator, null, &words, 3);
+        defer freeCandidateList(allocator, &list);
+
+        try std.testing.expectEqual(@as(usize, 0), list.items.len);
+    }
+}
+
+test "complete returns restore options" {
+    const allocator = std.testing.allocator;
+
+    {
+        const words = [_][]const u8{ "omohi", "restore", "--" };
+        var list = try complete(allocator, null, &words, 2);
+        defer freeCandidateList(allocator, &list);
+
+        try std.testing.expectEqual(@as(usize, 2), list.items.len);
+        try std.testing.expectEqualStrings("--replace", list.items[0]);
+        try std.testing.expectEqualStrings("--max-size", list.items[1]);
+    }
+
+    {
+        const words = [_][]const u8{ "omohi", "restore", "--max-size", "" };
         var list = try complete(allocator, null, &words, 3);
         defer freeCandidateList(allocator, &list);
 

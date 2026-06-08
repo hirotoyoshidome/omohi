@@ -18,6 +18,7 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
 | `show` | `show [--output <text|json>] [--field <commit_id|message|created_at|paths|tags>]... <commitId>` | Show one commit details payload. |
 | `journal` | `journal` | Show recent journal logs in reverse chronological order. |
 | `backup` | `backup [--max-size <bytes>] <archivePath>` | Create a full tar.gz backup archive of ~/.omohi. |
+| `restore` | `restore [--replace] [--max-size <bytes>] <archivePath>` | Restore ~/.omohi from a full tar.gz backup archive. |
 | `tag` | `tag [--field <tag>]...` | List all known tag names. |
 | `tag ls` | `tag ls [--field <tag>]... <commitId>` | List tags for one commit. |
 | `tag add` | `tag add <commitId> <tagNames...>` | Attach one or more tags to a commit. |
@@ -252,6 +253,25 @@ This file is generated from `src/app/cli/command_catalog.zig`. Do not edit manua
   - The target archive must not already exist and must be outside ~/.omohi.
   - `LOCK` and `.trash` directories are excluded from the archive.
   - Backups are always full backups in this version.
+
+### restore
+
+- Usage: `omohi restore [--replace] [--max-size <bytes>] <archivePath>`
+- Summary: Restore ~/.omohi from a full tar.gz backup archive.
+- Positionals:
+  - `archivePath` (required): Path to the backup archive to restore.
+- Options:
+  - `--replace` (optional): Replace an existing non-empty ~/.omohi after moving it to a rollback directory.
+  - `--max-size` `<bytes>` (optional): Reject the restore if the archive or extracted file payload exceeds this byte count. Defaults to 1073741824.
+- Examples:
+  - `omohi restore ~/omohi-backup.tar.gz`
+  - `omohi restore --replace ~/omohi-backup.tar.gz`
+  - `omohi restore --max-size 2147483648 ~/omohi-backup.tar.gz`
+- Notes:
+  - The archive must be a full backup produced by `omohi backup`.
+  - Existing non-empty ~/.omohi is rejected unless `--replace` is set.
+  - `--replace` moves the previous store to a rollback directory beside ~/.omohi before installing the restored store.
+  - Stored absolute paths are restored unchanged; paths from another environment may appear as `missing` in `omohi status`.
 
 ### tag
 
