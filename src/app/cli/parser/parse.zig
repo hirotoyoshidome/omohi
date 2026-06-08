@@ -44,6 +44,7 @@ pub fn parseArgs(allocator: std.mem.Allocator, argv: []const []const u8) !types.
     if (std.mem.eql(u8, argv[0], "show")) return try parseShow(allocator, argv[1..]);
     if (std.mem.eql(u8, argv[0], "journal")) return try parseJournal(argv[1..]);
     if (std.mem.eql(u8, argv[0], "backup")) return try parseBackup(argv[1..]);
+    if (std.mem.eql(u8, argv[0], "restore")) return try parseRestore(argv[1..]);
 
     return error.InvalidCommand;
 }
@@ -319,6 +320,50 @@ fn parseBackup(args: []const []const u8) !types.ParsedRequest {
 
     return .{ .backup = .{
         .archive_path = archive_path orelse return error.MissingArgument,
+        .max_size = max_size,
+    } };
+}
+
+// Parses `restore <archivePath>` plus replacement and size guard options.
+fn parseRestore(args: []const []const u8) !types.ParsedRequest {
+    var max_size: u64 = 1024 * 1024 * 1024;
+    var archive_path: ?[]const u8 = null;
+    var replace = false;
+    var idx: usize = 0;
+    var stop_option = false;
+    while (idx < args.len) : (idx += 1) {
+        const token = args[idx];
+
+        if (!stop_option and scan.isDoubleDash(token)) {
+            stop_option = true;
+            continue;
+        }
+
+        if (!stop_option) {
+            if (scan.parseLongOption(token)) |opt| {
+                if (scan.equalsIgnoreAsciiCase(opt.key, "max-size")) {
+                    const value = try scan.optionValue(args, &idx, opt.value);
+                    max_size = std.fmt.parseInt(u64, value, 10) catch return error.InvalidArgument;
+                    if (max_size == 0) return error.InvalidArgument;
+                    continue;
+                }
+                if (scan.equalsIgnoreAsciiCase(opt.key, "replace")) {
+                    if (opt.value != null) return error.InvalidArgument;
+                    replace = true;
+                    continue;
+                }
+
+                return error.UnknownOption;
+            }
+        }
+
+        if (archive_path != null) return error.UnexpectedArgument;
+        archive_path = token;
+    }
+
+    return .{ .restore = .{
+        .archive_path = archive_path orelse return error.MissingArgument,
+        .replace = replace,
         .max_size = max_size,
     } };
 }
@@ -1277,6 +1322,31 @@ test "parser rejects invalid backup inputs" {
     try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "backup", "--max-size", "0", "backup.tar.gz" }));
     try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "backup", "--max-size", "abc", "backup.tar.gz" }));
     try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &.{ "backup", "a.tar.gz", "b.tar.gz" }));
+}
+
+test "parser accepts restore archive path replace and max size" {
+    const allocator = std.testing.allocator;
+    const argv = [_][]const u8{ "restore", "--replace", "--max-size=2048", "backup.tar.gz" };
+    var parsed = try parseArgs(allocator, &argv);
+    defer types.deinitParsedRequest(allocator, &parsed);
+
+    switch (parsed) {
+        .restore => |args| {
+            try std.testing.expectEqualStrings("backup.tar.gz", args.archive_path);
+            try std.testing.expect(args.replace);
+            try std.testing.expectEqual(@as(u64, 2048), args.max_size);
+        },
+        else => return error.UnexpectedResult,
+    }
+}
+
+test "parser rejects invalid restore inputs" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.MissingArgument, parseArgs(allocator, &.{"restore"}));
+    try std.testing.expectError(error.MissingValue, parseArgs(allocator, &.{ "restore", "--max-size" }));
+    try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "restore", "--max-size", "0", "backup.tar.gz" }));
+    try std.testing.expectError(error.InvalidArgument, parseArgs(allocator, &.{ "restore", "--replace=true", "backup.tar.gz" }));
+    try std.testing.expectError(error.UnexpectedArgument, parseArgs(allocator, &.{ "restore", "a.tar.gz", "b.tar.gz" }));
 }
 
 test "parser accepts find output and repeated fields" {

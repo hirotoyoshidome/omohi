@@ -11,6 +11,7 @@ const show_ops = @import("../../../ops/show_ops.zig");
 const tag_ops = @import("../../../ops/tag_ops.zig");
 const journal_ops = @import("../../../ops/journal_ops.zig");
 const backup_ops = @import("../../../ops/backup_ops.zig");
+const restore_ops = @import("../../../ops/restore_ops.zig");
 
 pub const TagRemoveOutcome = enum {
     no_tags,
@@ -256,6 +257,30 @@ pub fn backupResult(
         "Backed up ~/.omohi to {s} ({d} bytes).\n",
         .{ archive_path, result.archive_size },
     );
+}
+
+// Renders restore completion as owned CLI output.
+pub fn restoreResult(
+    allocator: std.mem.Allocator,
+    archive_path: []const u8,
+    result: restore_ops.RestoreResult,
+) ![]u8 {
+    var out = std.array_list.Managed(u8).init(allocator);
+    errdefer out.deinit();
+    const writer = out.writer();
+
+    try writer.print(
+        "Restored ~/.omohi from {s} ({d} entries).\n",
+        .{ archive_path, result.entry_count },
+    );
+    if (result.missing_tracked_count != 0) {
+        try writer.print("Missing tracked target(s): {d}\n", .{result.missing_tracked_count});
+    }
+    if (result.rollback_path) |path| {
+        try writer.print("Previous store moved to {s}\n", .{path});
+    }
+
+    return out.toOwnedSlice();
 }
 
 // Renders journal entries as owned CLI output.

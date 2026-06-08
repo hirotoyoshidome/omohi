@@ -13,6 +13,7 @@ const find = @import("../command/find.zig");
 const show = @import("../command/show.zig");
 const journal = @import("../command/journal.zig");
 const backup = @import("../command/backup.zig");
+const restore = @import("../command/restore.zig");
 const tag = @import("../command/tag.zig");
 const tag_ls = @import("../command/tag_ls.zig");
 const tag_add = @import("../command/tag_add.zig");
@@ -35,6 +36,7 @@ pub fn dispatch(allocator: std.mem.Allocator, parsed: parser_types.ParsedRequest
         .show => |args| try show.run(allocator, args),
         .journal => |args| try journal.run(allocator, args),
         .backup => |args| try backup.run(allocator, args),
+        .restore => |args| try restore.run(allocator, args),
         .tag => |args| try tag.run(allocator, args),
         .tag_ls => |args| try tag_ls.run(allocator, args),
         .tag_add => |args| try tag_add.run(allocator, args),
