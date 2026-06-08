@@ -19,6 +19,7 @@ const local_journal = @import("./local/journal.zig");
 const local_directory_tree_files = @import("./local/directory_tree_files.zig");
 const local_version = @import("./local/version.zig");
 const local_backup = @import("./local/backup.zig");
+const local_restore = @import("./local/restore.zig");
 const version_guard = @import("./storage/version_guard.zig");
 const ContentEntry = @import("./object/content_entry.zig").ContentEntry;
 const hash = @import("./object/hash.zig");
@@ -123,6 +124,8 @@ pub const JournalEntryList = local_journal.JournalEntryList;
 
 /// Describes a completed backup archive.
 pub const BackupResult = local_backup.BackupResult;
+/// Describes a completed restore operation.
+pub const RestoreResult = local_restore.RestoreResult;
 
 /// Carries commit metadata, entries, and tags for `show`.
 pub const CommitDetails = struct {
@@ -216,6 +219,35 @@ pub fn backupStore(
         .archive_path = archive_path,
         .max_size = max_size,
     });
+}
+
+/// Restores a full backup archive into the user-level store directory.
+/// Memory: borrowed path inputs, returned result may own rollback_path
+/// Lifetime: rollback_path remains valid until freeRestoreResult
+/// Errors: validation, version, size limit, and filesystem/archive failures
+/// Caller responsibilities: pass absolute normalized store and archive paths
+pub fn restoreStore(
+    allocator: std.mem.Allocator,
+    store_path: []const u8,
+    archive_path: []const u8,
+    replace_existing: bool,
+    max_size: u64,
+) !RestoreResult {
+    return local_restore.restoreBackup(allocator, .{
+        .store_path = store_path,
+        .archive_path = archive_path,
+        .replace_existing = replace_existing,
+        .max_size = max_size,
+    });
+}
+
+/// Releases owned memory from a restore result.
+/// Memory: frees allocator-owned rollback path when present
+/// Lifetime: result is invalid after this call
+/// Errors: none
+/// Caller responsibilities: call once for restoreStore results
+pub fn freeRestoreResult(allocator: std.mem.Allocator, result: *RestoreResult) void {
+    local_restore.freeRestoreResult(allocator, result);
 }
 
 // Reports whether the opened store directory currently has no entries.
